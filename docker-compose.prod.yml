@@ -1,22 +1,5 @@
 services:
 
-  caddy:
-    image: caddy:2-alpine
-    container_name: caddy
-    restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
-      - "443:443/udp"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
-    depends_on:
-      - chatwoot
-      - evolution
-      - internal-chat
-
   postgres:
     image: pgvector/pgvector:pg16
     container_name: postgres
@@ -59,7 +42,9 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    # Sem "ports" — o Caddy faz o roteamento
+    # Porta exposta no localhost para o Caddy do sistema acessar
+    ports:
+      - "127.0.0.1:3000:3000"
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/ >/dev/null || exit 1"]
       interval: 30s
@@ -183,7 +168,9 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    # Sem "ports" — o Caddy faz o roteamento
+    # Porta exposta no localhost para o Caddy do sistema acessar
+    ports:
+      - "127.0.0.1:8080:8080"
     environment:
 
       SERVER_TYPE: http
@@ -215,7 +202,9 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    # Sem "ports" — o Caddy faz o roteamento
+    # Porta exposta no localhost para o Caddy do sistema acessar
+    ports:
+      - "127.0.0.1:4000:4000"
     environment:
       PORT: 4000
       NODE_ENV: production
