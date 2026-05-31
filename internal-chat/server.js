@@ -553,7 +553,25 @@ io.on('connection', socket => {
   });
 });
 
-migrate()
+async function migrateWithRetry(maxAttempts = 20, delayMs = 5000) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      await migrate();
+      return;
+    } catch (error) {
+      const isNotReady = error.code === '42P01' || error.message?.includes('does not exist');
+      if (isNotReady && attempt < maxAttempts) {
+        console.log(`[internal-chat] Banco ainda nao esta pronto (tentativa ${attempt}/${maxAttempts}). Aguardando ${delayMs / 1000}s...`);
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+      } else {
+        console.error('[internal-chat] Falha ao inicializar:', error);
+        process.exit(1);
+      }
+    }
+  }
+}
+
+migrateWithRetry()
   .then(() => {
     server.listen(port, () => {
       console.log(`Fluvius internal chat listening on ${port}`);
