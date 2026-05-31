@@ -2,15 +2,15 @@
 
 # Chatwoot principal
 fluvius.finderbit.com.br {
-    reverse_proxy chatwoot:3000
+    reverse_proxy 127.0.0.1:3000
 }
 
 # Evolution API
 evolution.fluvius.finderbit.com.br {
-    reverse_proxy evolution:8080
+    reverse_proxy 127.0.0.1:8080
 }
 
 # Chat interno entre agentes
 chat.fluvius.finderbit.com.br {
-    reverse_proxy internal-chat:4000
+    reverse_proxy 127.0.0.1:4000
 }
