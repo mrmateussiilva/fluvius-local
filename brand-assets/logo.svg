@@ -1,0 +1,6 @@
+<svg width="220" height="56" viewBox="0 0 220 56" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Fluvius">
+  <rect width="220" height="56" rx="12" fill="#052E1C"/>
+  <path d="M24 36C24 26.6 31.6 19 41 19H52C52 28.4 44.4 36 35 36H24Z" fill="#22C55E"/>
+  <path d="M35 20C35 12.8 40.8 7 48 7H58C58 14.2 52.2 20 45 20H35Z" fill="#86EFAC"/>
+  <text x="74" y="36" fill="#ECFDF5" font-family="Inter, Arial, sans-serif" font-size="27" font-weight="700" letter-spacing="0">Fluvius</text>
+</svg>

@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Fluvius Chat Interno</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <img src="/brand-assets/logo.svg" alt="" />
+          <div>
+            <strong>Fluvius</strong>
+            <span>Chat interno</span>
+          </div>
+        </div>
+
+        <label class="field">
+          <span>Entrar como</span>
+          <select id="agentSelect"></select>
+        </label>
+
+        <div class="internalHeader">
+          <div>
+            <strong>Chat interno</strong>
+            <span id="embeddedUser"></span>
+          </div>
+          <button id="newGroupButton" type="button" aria-label="Novo grupo">+</button>
+        </div>
+
+        <div class="searchBox">
+          <input id="searchInput" autocomplete="off" placeholder="Buscar conversa ou agente" />
+        </div>
+
+        <div class="tabs" role="tablist" aria-label="Chat interno">
+          <button id="roomsTab" class="active" type="button">Conversas</button>
+          <button id="agentsTab" type="button">Agentes</button>
+        </div>
+
+        <section id="roomsPanel" class="panel">
+          <div class="panelHeader">
+            <h2>Conversas</h2>
+          </div>
+          <div id="roomList" class="list"></div>
+        </section>
+
+        <section id="agentsPanel" class="panel hidden">
+          <div class="panelHeader">
+            <h2>Agentes</h2>
+          </div>
+          <div id="agentList" class="list"></div>
+        </section>
+      </aside>
+
+      <section class="chat">
+        <header class="chatHeader">
+          <div>
+            <h1 id="roomTitle">Selecione uma conversa</h1>
+            <p id="roomSubtitle">Mensagens internas não são enviadas ao cliente.</p>
+          </div>
+        </header>
+        <div id="messages" class="messages"></div>
+        <div id="typingIndicator" class="typingIndicator"></div>
+        <form id="messageForm" class="composer">
+          <textarea id="messageInput" rows="1" autocomplete="off" placeholder="Escreva uma mensagem interna"></textarea>
+          <button id="sendButton" type="submit">Enviar</button>
+        </form>
+      </section>
+    </main>
+
+    <div id="notice" class="notice" role="status" aria-live="polite"></div>
+
+    <dialog id="groupDialog">
+      <form method="dialog" class="dialogBody">
+        <h2>Novo grupo</h2>
+        <label class="field">
+          <span>Nome do grupo</span>
+          <input id="groupTitle" />
+        </label>
+        <div id="groupParticipants" class="checks"></div>
+        <div class="dialogActions">
+          <button value="cancel" type="submit">Cancelar</button>
+          <button id="createGroupButton" value="default" type="button">Criar</button>
+        </div>
+      </form>
+    </dialog>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="/app.js"></script>
+  </body>
+</html>

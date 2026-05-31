@@ -1,0 +1,214 @@
+services:
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${CHATWOOT_POSTGRES_DB}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${CHATWOOT_POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7
+    container_name: redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: mailpit
+    restart: unless-stopped
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+
+  chatwoot:
+    image: fluvius-chatwoot:local
+    build:
+      context: ./chatwoot-custom
+      args:
+        VITE_INTERNAL_CHAT_API_URL: ${INTERNAL_CHAT_PUBLIC_URL}
+    container_name: chatwoot
+    restart: unless-stopped
+    depends_on:
+      - postgres
+      - redis
+      - mailpit
+    ports:
+      - "3000:3000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/ >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    environment:
+      RAILS_ENV: production
+      NODE_ENV: production
+
+      SECRET_KEY_BASE: ${CHATWOOT_SECRET_KEY_BASE}
+
+      FRONTEND_URL: ${CHATWOOT_FRONTEND_URL}
+
+      DEFAULT_LOCALE: ${CHATWOOT_DEFAULT_LOCALE}
+
+      REDIS_URL: redis://redis:6379
+
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DATABASE: ${CHATWOOT_POSTGRES_DB}
+      POSTGRES_USERNAME: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+
+      ENABLE_ACCOUNT_SIGNUP: ${CHATWOOT_ENABLE_ACCOUNT_SIGNUP}
+      ALLOW_PRIVATE_WEBHOOK_URLS: ${ALLOW_PRIVATE_WEBHOOK_URLS}
+
+      MAILER_SENDER_EMAIL: ${MAILER_SENDER_EMAIL}
+      SMTP_ADDRESS: ${SMTP_ADDRESS}
+      SMTP_PORT: ${SMTP_PORT}
+      SMTP_AUTHENTICATION: ${SMTP_AUTHENTICATION}
+      SMTP_ENABLE_STARTTLS_AUTO: ${SMTP_ENABLE_STARTTLS_AUTO}
+      SMTP_SSL: ${SMTP_SSL}
+      SMTP_TLS: ${SMTP_TLS}
+
+    volumes:
+      - ./chatwoot-initializers/allow_private_webhooks.rb:/app/config/initializers/allow_private_webhooks.rb:ro
+      - ./chatwoot-initializers/z_fluvius_ai_agents.rb:/app/config/initializers/z_fluvius_ai_agents.rb:ro
+      - ./brand-assets:/app/public/brand-assets:ro
+      - ./brand-assets:/app/public/packs/brand-assets:ro
+
+    command: >
+      sh -c "
+        rm -f tmp/pids/server.pid &&
+        bundle exec rails db:chatwoot_prepare &&
+        bundle exec rails s -p 3000 -b 0.0.0.0
+      "
+
+  sidekiq:
+    image: fluvius-chatwoot:local
+    build:
+      context: ./chatwoot-custom
+      args:
+        VITE_INTERNAL_CHAT_API_URL: ${INTERNAL_CHAT_PUBLIC_URL}
+    container_name: chatwoot-sidekiq
+    restart: unless-stopped
+    depends_on:
+      - postgres
+      - redis
+      - mailpit
+    environment:
+      RAILS_ENV: production
+      NODE_ENV: production
+
+      SECRET_KEY_BASE: ${CHATWOOT_SECRET_KEY_BASE}
+
+      FRONTEND_URL: ${CHATWOOT_FRONTEND_URL}
+
+      DEFAULT_LOCALE: ${CHATWOOT_DEFAULT_LOCALE}
+
+      REDIS_URL: redis://redis:6379
+
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DATABASE: ${CHATWOOT_POSTGRES_DB}
+      POSTGRES_USERNAME: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+
+      ENABLE_ACCOUNT_SIGNUP: ${CHATWOOT_ENABLE_ACCOUNT_SIGNUP}
+      ALLOW_PRIVATE_WEBHOOK_URLS: ${ALLOW_PRIVATE_WEBHOOK_URLS}
+
+      MAILER_SENDER_EMAIL: ${MAILER_SENDER_EMAIL}
+      SMTP_ADDRESS: ${SMTP_ADDRESS}
+      SMTP_PORT: ${SMTP_PORT}
+      SMTP_AUTHENTICATION: ${SMTP_AUTHENTICATION}
+      SMTP_ENABLE_STARTTLS_AUTO: ${SMTP_ENABLE_STARTTLS_AUTO}
+      SMTP_SSL: ${SMTP_SSL}
+      SMTP_TLS: ${SMTP_TLS}
+
+    volumes:
+      - ./chatwoot-initializers/allow_private_webhooks.rb:/app/config/initializers/allow_private_webhooks.rb:ro
+      - ./chatwoot-initializers/z_fluvius_ai_agents.rb:/app/config/initializers/z_fluvius_ai_agents.rb:ro
+
+    command: bundle exec sidekiq -C config/sidekiq.yml
+
+  evolution:
+    image: evoapicloud/evolution-api:v2.3.7
+    container_name: evolution
+    restart: unless-stopped
+    depends_on:
+      - postgres
+      - redis
+    ports:
+      - "8080:8080"
+    environment:
+
+      SERVER_TYPE: http
+      SERVER_PORT: 8080
+      SERVER_URL: ${EVOLUTION_SERVER_URL}
+
+      AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY}
+
+      DATABASE_ENABLED: "true"
+      DATABASE_PROVIDER: postgresql
+
+      DATABASE_CONNECTION_URI: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${EVOLUTION_POSTGRES_DB}
+
+      CACHE_REDIS_ENABLED: "true"
+      CACHE_REDIS_URI: redis://redis:6379/0
+
+      LOG_LEVEL: ERROR
+
+      CONFIG_SESSION_PHONE_CLIENT: ${EVOLUTION_SESSION_PHONE_CLIENT}
+
+      CHATWOOT_ENABLED: "true"
+
+  internal-chat:
+    image: node:22-alpine
+    container_name: fluvius-internal-chat
+    restart: unless-stopped
+    depends_on:
+      - postgres
+    working_dir: /app
+    ports:
+      - "4000:4000"
+    environment:
+      PORT: 4000
+      INTERNAL_CHAT_ALLOWED_ORIGINS: ${INTERNAL_CHAT_ALLOWED_ORIGINS}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DATABASE: ${CHATWOOT_POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - ./internal-chat:/app
+      - ./brand-assets:/app/public/brand-assets:ro
+      - internal_chat_node_modules:/app/node_modules
+      - internal_chat_uploads:/app/public/uploads
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:4000/health >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    command: sh -c "npm install && npm start"
+
+volumes:
+  postgres_data:
+  internal_chat_node_modules:
+  internal_chat_uploads:

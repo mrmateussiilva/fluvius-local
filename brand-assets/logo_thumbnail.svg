@@ -1,0 +1,6 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Fluvius">
+  <rect width="512" height="512" rx="112" fill="#052E1C"/>
+  <path d="M126 330C126 242.2 197.2 171 285 171H386C386 258.8 314.8 330 227 330H126Z" fill="#22C55E"/>
+  <path d="M226 178C226 110.1 281.1 55 349 55H438C438 122.9 382.9 178 315 178H226Z" fill="#86EFAC"/>
+  <path d="M155 386H238C302 386 354 334 354 270V250H271V270C271 288.2 256.2 303 238 303H155V386Z" fill="#DCFCE7"/>
+</svg>

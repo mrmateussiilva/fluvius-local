@@ -1,0 +1,245 @@
+services:
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - chatwoot
+      - evolution
+      - internal-chat
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${CHATWOOT_POSTGRES_DB}
+    # Sem "ports" — banco nao fica exposto na internet
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${CHATWOOT_POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    restart: unless-stopped
+    # Sem "ports" — redis nao fica exposto na internet
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  chatwoot:
+    # Use a imagem publicada no Docker Hub ou GHCR apos o build local:
+    # docker build -t seu-usuario/fluvius-chatwoot:latest ./chatwoot-custom
+    # docker push seu-usuario/fluvius-chatwoot:latest
+    image: ${CHATWOOT_IMAGE:-fluvius-chatwoot:local}
+    container_name: chatwoot
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    # Sem "ports" — o Caddy faz o roteamento
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/ >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+    environment:
+      RAILS_ENV: production
+      NODE_ENV: production
+
+      SECRET_KEY_BASE: ${CHATWOOT_SECRET_KEY_BASE}
+
+      FRONTEND_URL: ${CHATWOOT_FRONTEND_URL}
+
+      DEFAULT_LOCALE: ${CHATWOOT_DEFAULT_LOCALE}
+
+      REDIS_URL: redis://redis:6379
+
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DATABASE: ${CHATWOOT_POSTGRES_DB}
+      POSTGRES_USERNAME: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+
+      ENABLE_ACCOUNT_SIGNUP: ${CHATWOOT_ENABLE_ACCOUNT_SIGNUP}
+      ALLOW_PRIVATE_WEBHOOK_URLS: "false"
+
+      MAILER_SENDER_EMAIL: ${MAILER_SENDER_EMAIL}
+      SMTP_ADDRESS: ${SMTP_ADDRESS}
+      SMTP_PORT: ${SMTP_PORT}
+      SMTP_USERNAME: ${SMTP_USERNAME}
+      SMTP_PASSWORD: ${SMTP_PASSWORD}
+      SMTP_AUTHENTICATION: ${SMTP_AUTHENTICATION}
+      SMTP_ENABLE_STARTTLS_AUTO: ${SMTP_ENABLE_STARTTLS_AUTO}
+      SMTP_SSL: ${SMTP_SSL}
+      SMTP_TLS: ${SMTP_TLS}
+
+      # Storage de arquivos (uploads, audio, imagens) - escolha uma opcao:
+      # Opcao A: armazenar localmente no container (volume mapeado abaixo)
+      ACTIVE_STORAGE_SERVICE: local
+      # Opcao B: usar S3-compativel (descomente e preencha no .env)
+      # ACTIVE_STORAGE_SERVICE: amazon
+      # S3_BUCKET_NAME: ${S3_BUCKET_NAME}
+      # AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      # AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      # AWS_REGION: ${AWS_REGION}
+      # S3_ENDPOINT: ${S3_ENDPOINT}
+
+    volumes:
+      # Volume persistente para uploads e arquivos de midia do Chatwoot
+      - chatwoot_storage:/app/storage
+      - chatwoot_public_uploads:/app/public/uploads
+
+    command: >
+      sh -c "
+        rm -f tmp/pids/server.pid &&
+        bundle exec rails db:chatwoot_prepare &&
+        bundle exec rails s -p 3000 -b 0.0.0.0
+      "
+
+  sidekiq:
+    image: ${CHATWOOT_IMAGE:-fluvius-chatwoot:local}
+    container_name: chatwoot-sidekiq
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      RAILS_ENV: production
+      NODE_ENV: production
+
+      SECRET_KEY_BASE: ${CHATWOOT_SECRET_KEY_BASE}
+
+      FRONTEND_URL: ${CHATWOOT_FRONTEND_URL}
+
+      DEFAULT_LOCALE: ${CHATWOOT_DEFAULT_LOCALE}
+
+      REDIS_URL: redis://redis:6379
+
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DATABASE: ${CHATWOOT_POSTGRES_DB}
+      POSTGRES_USERNAME: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+
+      ENABLE_ACCOUNT_SIGNUP: ${CHATWOOT_ENABLE_ACCOUNT_SIGNUP}
+      ALLOW_PRIVATE_WEBHOOK_URLS: "false"
+
+      MAILER_SENDER_EMAIL: ${MAILER_SENDER_EMAIL}
+      SMTP_ADDRESS: ${SMTP_ADDRESS}
+      SMTP_PORT: ${SMTP_PORT}
+      SMTP_USERNAME: ${SMTP_USERNAME}
+      SMTP_PASSWORD: ${SMTP_PASSWORD}
+      SMTP_AUTHENTICATION: ${SMTP_AUTHENTICATION}
+      SMTP_ENABLE_STARTTLS_AUTO: ${SMTP_ENABLE_STARTTLS_AUTO}
+      SMTP_SSL: ${SMTP_SSL}
+      SMTP_TLS: ${SMTP_TLS}
+
+      ACTIVE_STORAGE_SERVICE: local
+      # ACTIVE_STORAGE_SERVICE: amazon
+      # S3_BUCKET_NAME: ${S3_BUCKET_NAME}
+      # AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      # AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      # AWS_REGION: ${AWS_REGION}
+      # S3_ENDPOINT: ${S3_ENDPOINT}
+
+    volumes:
+      - chatwoot_storage:/app/storage
+      - chatwoot_public_uploads:/app/public/uploads
+
+    command: bundle exec sidekiq -C config/sidekiq.yml
+
+  evolution:
+    image: evoapicloud/evolution-api:v2.3.7
+    container_name: evolution
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    # Sem "ports" — o Caddy faz o roteamento
+    environment:
+
+      SERVER_TYPE: http
+      SERVER_PORT: 8080
+      SERVER_URL: ${EVOLUTION_SERVER_URL}
+
+      AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY}
+
+      DATABASE_ENABLED: "true"
+      DATABASE_PROVIDER: postgresql
+      DATABASE_CONNECTION_URI: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${EVOLUTION_POSTGRES_DB}
+
+      CACHE_REDIS_ENABLED: "true"
+      CACHE_REDIS_URI: redis://redis:6379/0
+
+      LOG_LEVEL: ERROR
+
+      CONFIG_SESSION_PHONE_CLIENT: ${EVOLUTION_SESSION_PHONE_CLIENT}
+
+      CHATWOOT_ENABLED: "true"
+
+    volumes:
+      - evolution_instances:/evolution/instances
+
+  internal-chat:
+    image: ${INTERNAL_CHAT_IMAGE:-pelucia32/fluvius-internal-chat:latest}
+    container_name: fluvius-internal-chat
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # Sem "ports" — o Caddy faz o roteamento
+    environment:
+      PORT: 4000
+      NODE_ENV: production
+      INTERNAL_CHAT_ALLOWED_ORIGINS: ${INTERNAL_CHAT_ALLOWED_ORIGINS}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DATABASE: ${CHATWOOT_POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - internal_chat_uploads:/app/public/uploads
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:4000/health >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+volumes:
+  postgres_data:
+  redis_data:
+  caddy_data:
+  caddy_config:
+  chatwoot_storage:
+  chatwoot_public_uploads:
+  evolution_instances:
+  internal_chat_uploads:

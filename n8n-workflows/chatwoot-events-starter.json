@@ -1,0 +1,164 @@
+{
+  "name": "Fluvius - Chatwoot Events Starter",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "chatwoot-events",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "f4d8ad5a-50e7-4358-bf69-b0b97842b017",
+      "name": "Chatwoot Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "chatwoot-events"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.body.event }}",
+                    "rightValue": "conversation_created",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "conversation_created"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.body.event }}",
+                    "rightValue": "message_created",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "message_created"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.body.event }}",
+                    "rightValue": "conversation_status_changed",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "conversation_status_changed"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "41dfe06b-aa84-47fc-bde5-01cf5e5a8a39",
+      "name": "Route Event",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        220,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"ok\":true,\"event\":\"{{$json.body.event}}\"}",
+        "options": {}
+      },
+      "id": "f0dc21bf-ce54-4d25-8ccf-5d5a25837660",
+      "name": "Respond OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        460,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Chatwoot Webhook": {
+      "main": [
+        [
+          {
+            "node": "Route Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Event": {
+      "main": [
+        [
+          {
+            "node": "Respond OK",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond OK",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

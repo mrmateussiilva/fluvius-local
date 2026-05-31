@@ -1,0 +1,10 @@
+# Segredos — nunca commitar
+.env
+.env.production
+
+# Dados e temporários
+backups/
+node_modules/
+internal-chat/node_modules/
+*.tar.gz
+/tmp/
