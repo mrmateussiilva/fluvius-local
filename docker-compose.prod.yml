@@ -53,6 +53,7 @@ services:
       start_period: 90s
     environment:
       RAILS_ENV: production
+      RACK_TIMEOUT: "60"
       RAILS_LOG_TO_STDOUT: "true"
       NODE_ENV: production
 
@@ -117,6 +118,7 @@ services:
         condition: service_healthy
     environment:
       RAILS_ENV: production
+      RACK_TIMEOUT: "60"
       RAILS_LOG_TO_STDOUT: "true"
       NODE_ENV: production
 
