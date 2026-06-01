@@ -35,6 +35,10 @@ services:
     # docker build -t seu-usuario/fluvius-chatwoot:latest ./chatwoot-custom
     # docker push seu-usuario/fluvius-chatwoot:latest
     image: ${CHATWOOT_IMAGE:-fluvius-chatwoot:local}
+    build:
+      context: ./chatwoot-custom
+      args:
+        VITE_INTERNAL_CHAT_API_URL: ${INTERNAL_CHAT_PUBLIC_URL}
     container_name: chatwoot
     restart: unless-stopped
     depends_on:
@@ -113,6 +117,10 @@ services:
 
   sidekiq:
     image: ${CHATWOOT_IMAGE:-fluvius-chatwoot:local}
+    build:
+      context: ./chatwoot-custom
+      args:
+        VITE_INTERNAL_CHAT_API_URL: ${INTERNAL_CHAT_PUBLIC_URL}
     container_name: chatwoot-sidekiq
     restart: unless-stopped
     depends_on:
@@ -208,7 +216,9 @@ services:
       - evolution_instances:/evolution/instances
 
   internal-chat:
-    image: ${INTERNAL_CHAT_IMAGE:-pelucia32/fluvius-internal-chat:latest}
+    image: ${INTERNAL_CHAT_IMAGE:-fluvius-internal-chat:local}
+    build:
+      context: ./internal-chat
     container_name: fluvius-internal-chat
     restart: unless-stopped
     depends_on:
