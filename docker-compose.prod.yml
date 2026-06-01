@@ -53,6 +53,10 @@ services:
       start_period: 90s
     environment:
       RAILS_ENV: production
+      WEB_CONCURRENCY: "0"
+      MAX_THREADS: "2"
+      SIDEKIQ_CONCURRENCY: "2"
+      DISABLE_TELEMETRY: "true"
       RACK_TIMEOUT_SERVICE_TIMEOUT: "120"
       RAILS_LOG_TO_STDOUT: "true"
       NODE_ENV: production
@@ -118,6 +122,10 @@ services:
         condition: service_healthy
     environment:
       RAILS_ENV: production
+      WEB_CONCURRENCY: "0"
+      MAX_THREADS: "2"
+      SIDEKIQ_CONCURRENCY: "2"
+      DISABLE_TELEMETRY: "true"
       RACK_TIMEOUT_SERVICE_TIMEOUT: "120"
       RAILS_LOG_TO_STDOUT: "true"
       NODE_ENV: production
