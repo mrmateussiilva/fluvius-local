@@ -11,4 +11,4 @@ COPY initializers/ /app/config/initializers/
 RUN apk add --no-cache npm && \
     npm install -g pnpm@10.2.0 && \
     pnpm install --frozen-lockfile && \
-    SECRET_KEY_BASE=fluvius_assets_precompile RAILS_ENV=production bundle exec rails assets:precompile
+    NODE_OPTIONS="--max-old-space-size=4096" SECRET_KEY_BASE=fluvius_assets_precompile RAILS_ENV=production bundle exec rails assets:precompile
