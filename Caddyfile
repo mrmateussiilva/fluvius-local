@@ -1,8 +1,11 @@
-# Caddyfile - Fluvius Production
-
 # Chatwoot principal
 fluvius.finderbit.com.br {
-    reverse_proxy 127.0.0.1:3000
+    reverse_proxy 127.0.0.1:3000 {
+        header_up Host {host}
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-Proto https
+        header_down Location "http://127.0.0.1:3000" "https://fluvius.finderbit.com.br"
+    }
 }
 
 # Evolution API
