@@ -11,6 +11,12 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const uploadDir = path.join(__dirname, 'public', 'uploads');
 
 const port = Number(process.env.PORT || 4000);
+const EVOLUTION_URL = String(process.env.EVOLUTION_SERVER_URL || 'http://evolution:8080');
+const EVOLUTION_API_KEY = String(process.env.EVOLUTION_API_KEY || '');
+const CHATWOOT_URL = String(process.env.CHATWOOT_FRONTEND_URL || 'http://chatwoot:3000');
+const CHATWOOT_API_TOKEN = String(process.env.CHATWOOT_USER_ACCESS_TOKEN || '');
+const CHATWOOT_ACCOUNT_ID = String(process.env.CHATWOOT_ACCOUNT_ID || '1');
+
 const allowedOrigins = String(process.env.INTERNAL_CHAT_ALLOWED_ORIGINS || '*')
   .split(',')
   .map(origin => origin.trim())
@@ -480,7 +486,104 @@ app.post('/api/rooms/:roomId/messages', async (req, res) => {
   res.json(message);
 });
 
+// ─── WhatsApp Connection Manager ─────────────────────────────────────────────
+
+async function evoFetch(path, options = {}) {
+  const res = await fetch(`${EVOLUTION_URL}${path}`, {
+    ...options,
+    headers: { apikey: EVOLUTION_API_KEY, 'Content-Type': 'application/json', ...(options.headers || {}) },
+  });
+  const text = await res.text();
+  try { return { status: res.status, data: JSON.parse(text) }; } catch { return { status: res.status, data: text }; }
+}
+
+async function cwtFetch(path, options = {}) {
+  const res = await fetch(`${CHATWOOT_URL}${path}`, {
+    ...options,
+    headers: { api_access_token: CHATWOOT_API_TOKEN, 'Content-Type': 'application/json', ...(options.headers || {}) },
+  });
+  const text = await res.text();
+  try { return { status: res.status, data: JSON.parse(text) }; } catch { return { status: res.status, data: text }; }
+}
+
+// List all Evolution instances
+app.get('/manager/api/instances', async (_req, res) => {
+  const { status, data } = await evoFetch('/instance/fetchInstances');
+  res.status(status).json(data);
+});
+
+// Get QR code for an instance
+app.get('/manager/api/instances/:name/qr', async (req, res) => {
+  const { status, data } = await evoFetch(`/instance/connect/${req.params.name}`);
+  res.status(status).json(data);
+});
+
+// Get connection status
+app.get('/manager/api/instances/:name/status', async (req, res) => {
+  const { status, data } = await evoFetch(`/instance/connectionState/${req.params.name}`);
+  res.status(status).json(data);
+});
+
+// Create instance + Chatwoot inbox and link them
+app.post('/manager/api/instances', async (req, res) => {
+  const { name } = req.body;
+  if (!name) return res.status(400).json({ error: 'name is required' });
+
+  // 1. Create Evolution instance
+  const evo = await evoFetch('/instance/create', {
+    method: 'POST',
+    body: JSON.stringify({ instanceName: name, integration: 'WHATSAPP-BAILEYS' }),
+  });
+  if (evo.status >= 300) return res.status(evo.status).json({ step: 'create_instance', error: evo.data });
+
+  // 2. Create Chatwoot inbox
+  const cwt = await cwtFetch(`/api/v1/accounts/${CHATWOOT_ACCOUNT_ID}/inboxes`, {
+    method: 'POST',
+    body: JSON.stringify({ name, channel: { type: 'api', webhook_url: '' } }),
+  });
+  if (cwt.status >= 300) return res.status(cwt.status).json({ step: 'create_inbox', error: cwt.data });
+
+  const inboxToken = cwt.data?.channel_id ? cwt.data : cwt.data;
+  const accessToken = cwt.data?.inbox_identifier || cwt.data?.channel?.identifier || '';
+
+  // 3. Link Evolution → Chatwoot
+  await evoFetch(`/chatwoot/set/${name}`, {
+    method: 'POST',
+    body: JSON.stringify({
+      enabled: true,
+      account_id: CHATWOOT_ACCOUNT_ID,
+      token: accessToken,
+      url: CHATWOOT_URL,
+      sign_msg: false,
+      reopen_conversation: true,
+      conversation_pending: false,
+    }),
+  });
+
+  res.json({ instance: evo.data, inbox: cwt.data });
+});
+
+// Delete instance
+app.delete('/manager/api/instances/:name', async (req, res) => {
+  const { status, data } = await evoFetch(`/instance/delete/${req.params.name}`, { method: 'DELETE' });
+  res.status(status).json(data);
+});
+
+// Logout instance
+app.post('/manager/api/instances/:name/logout', async (req, res) => {
+  const { status, data } = await evoFetch(`/instance/logout/${req.params.name}`, { method: 'DELETE' });
+  res.status(status).json(data);
+});
+
+// Serve manager page
+app.get('/manager', (_req, res) => {
+  res.sendFile('manager.html', { root: 'public' });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 app.get('/', (_req, res) => {
+
   res.sendFile('index.html', { root: 'public' });
 });
 
