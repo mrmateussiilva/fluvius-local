@@ -309,33 +309,91 @@
 </head>
 <body>
 
+<style>
+  .tab-nav { padding: 8px 16px; border: none; background: transparent; color: var(--muted); font-size: 13px; font-weight: 500; border-radius: 6px; cursor: pointer; transition: all 0.2s; font-family: inherit; }
+  .tab-nav.active { background: var(--surface); color: var(--text); box-shadow: 0 1px 4px #0003; }
+  .main-tab { display: none; }
+  .main-tab.active { display: block; animation: fadeIn 0.2s ease; }
+  .client-table { width: 100%; border-collapse: collapse; }
+  .client-table th, .client-table td { padding: 12px 16px; text-align: left; font-size: 13px; border-bottom: 1px solid var(--border); }
+  .client-table th { color: var(--muted); font-weight: 500; background: var(--surface2); }
+  .client-table tr:hover td { background: var(--surface2); }
+  .client-table .link-cell { display: flex; align-items: center; gap: 6px; }
+  .copy-link { background: none; border: none; cursor: pointer; color: var(--muted); font-size: 14px; padding: 2px 4px; border-radius: 4px; transition: color 0.2s; }
+  .copy-link:hover { color: var(--green); }
+  .table-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+</style>
 <header>
   <div class="logo">
     <div class="logo-icon">📱</div>
     <div>
-      <h1>Gerenciador de Conexões</h1>
-      <span>Fluvius · WhatsApp via Evolution API</span>
+      <h1>Gerenciador Fluvius</h1>
+      <span>Painel de Administração</span>
     </div>
   </div>
-  <div style="display:flex;gap:10px;">
-    <button class="btn btn-ghost" onclick="loadInstances()">⟳ Atualizar</button>
-    <button class="btn btn-primary" onclick="openModal()">+ Nova Conexão</button>
-  </div>
+  <nav style="display:flex;gap:4px;background:var(--surface2);border-radius:8px;padding:4px">
+    <button class="tab-nav active" id="navClients" onclick="showTab('clients')">👥 Clientes</button>
+    <button class="tab-nav" id="navInstances" onclick="showTab('instances')">⚙️ Instâncias Raw</button>
+  </nav>
 </header>
 
-<div id="configHint" class="config-hint hidden">
-  <strong>⚙️ Token de API necessário</strong>
-  Para criar inboxes automaticamente, adicione <code>CHATWOOT_USER_ACCESS_TOKEN</code> e <code>CHATWOOT_ACCOUNT_ID</code> no <code>.env.production</code> da VPS e reinicie o container.
+<!-- Clients Tab -->
+<div class="main-tab active" id="tabClients">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px">
+    <div>
+      <h2 style="font-size:16px;font-weight:600">Clientes</h2>
+      <p style="font-size:13px;color:var(--muted)">Gerencie os clientes e seus links de onboarding</p>
+    </div>
+    <div style="display:flex;gap:10px">
+      <button class="btn btn-ghost" onclick="loadClients()">⟳ Atualizar</button>
+      <button class="btn btn-primary" onclick="openClientModal()">+ Novo Cliente</button>
+    </div>
+  </div>
+  <div class="table-wrap" id="clientsTable">
+    <div class="loading-wrap"><span class="spinner"></span> Carregando clientes...</div>
+  </div>
 </div>
 
-<div class="grid" id="grid">
-  <div class="loading-wrap"><span class="spinner"></span> Carregando instâncias...</div>
+<!-- Instances Tab -->
+<div class="main-tab" id="tabInstances">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px">
+    <div>
+      <h2 style="font-size:16px;font-weight:600">Instâncias Evolution</h2>
+      <p style="font-size:13px;color:var(--muted)">Visualização técnica das instâncias na Evolution API</p>
+    </div>
+    <div style="display:flex;gap:10px">
+      <button class="btn btn-ghost" onclick="loadInstances()">⟳ Atualizar</button>
+    </div>
+  </div>
+  <div class="grid" id="grid">
+    <div class="loading-wrap"><span class="spinner"></span> Carregando instâncias...</div>
+  </div>
 </div>
 
-<!-- Modal -->
+<!-- Client Modal -->
+<div class="modal-overlay hidden" id="clientModal">
+  <div class="modal">
+    <h2>Novo Cliente</h2>
+    <p>O sistema criará automaticamente a instância WhatsApp e a inbox no Chatwoot.</p>
+    <div class="form-group">
+      <label>Nome da empresa / cliente</label>
+      <input type="text" id="clientNameInput" placeholder="Ex: Loja do João, Suporte Finderbit" />
+    </div>
+    <div class="form-group">
+      <label>E-mail do cliente <span style="color:var(--muted);font-weight:400">(opcional)</span></label>
+      <input type="email" id="clientEmailInput" placeholder="cliente@empresa.com" />
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeClientModal()">Cancelar</button>
+      <button class="btn btn-primary" id="btnCreateClient" onclick="createClient()">Criar Cliente</button>
+    </div>
+  </div>
+</div>
+
+<!-- Instance Modal (kept for raw instances tab) -->
 <div class="modal-overlay hidden" id="modal">
   <div class="modal">
-    <h2>Nova Conexão WhatsApp</h2>
+    <h2>Nova Instância</h2>
     <p>Cria uma instância na Evolution API e vincula automaticamente ao Chatwoot.</p>
     <div class="form-group">
       <label>Nome da instância</label>
@@ -352,6 +410,16 @@
 
 <script>
   const API = '/manager/api';
+  const CHAT_BASE = window.location.origin;
+
+  function showTab(tab) {
+    document.getElementById('tabClients').classList.toggle('active', tab === 'clients');
+    document.getElementById('tabInstances').classList.toggle('active', tab === 'instances');
+    document.getElementById('navClients').classList.toggle('active', tab === 'clients');
+    document.getElementById('navInstances').classList.toggle('active', tab === 'instances');
+    if (tab === 'clients') loadClients();
+    if (tab === 'instances') loadInstances();
+  }
 
   function toast(msg, type = 'success') {
     const el = document.createElement('div');
@@ -361,6 +429,131 @@
     setTimeout(() => el.remove(), 4000);
   }
 
+  // ─── Client management ───────────────────────────────────────────────────────
+
+  function openClientModal() {
+    document.getElementById('clientModal').classList.remove('hidden');
+    document.getElementById('clientNameInput').focus();
+  }
+  function closeClientModal() {
+    document.getElementById('clientModal').classList.add('hidden');
+    document.getElementById('clientNameInput').value = '';
+    document.getElementById('clientEmailInput').value = '';
+  }
+  document.getElementById('clientModal').addEventListener('click', e => {
+    if (e.target === document.getElementById('clientModal')) closeClientModal();
+  });
+  document.getElementById('clientNameInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter') createClient();
+  });
+
+  async function loadClients() {
+    const wrap = document.getElementById('clientsTable');
+    wrap.innerHTML = `<div class="loading-wrap"><span class="spinner"></span> Carregando...</div>`;
+    try {
+      const r = await fetch(`${API}/clients`);
+      const clients = await r.json();
+      if (!clients.length) {
+        wrap.innerHTML = `<div class="empty-state"><div class="icon">👥</div><h3>Nenhum cliente cadastrado</h3><p>Clique em "+ Novo Cliente" para começar</p></div>`;
+        return;
+      }
+      wrap.innerHTML = `
+        <table class="client-table">
+          <thead>
+            <tr>
+              <th>Cliente</th>
+              <th>Status</th>
+              <th>Número Conectado</th>
+              <th>Link de Onboarding</th>
+              <th>Criado em</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            ${clients.map(c => {
+              const link = `${CHAT_BASE}/onboard/${c.token}`;
+              const date = new Date(c.created_at).toLocaleDateString('pt-BR');
+              return `<tr>
+                <td><strong>${c.name}</strong>${c.email ? `<br><span style="color:var(--muted);font-size:12px">${c.email}</span>` : ''}</td>
+                <td>${statusBadge(c.status)}</td>
+                <td style="color:var(--muted)">${c.phone || '—'}</td>
+                <td>
+                  <div class="link-cell">
+                    <a href="${link}" target="_blank" style="color:var(--accent);font-size:12px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block">${link}</a>
+                    <button class="copy-link" title="Copiar link" onclick="copyLink('${link}', this)">📋</button>
+                  </div>
+                </td>
+                <td style="color:var(--muted)">${date}</td>
+                <td>
+                  <button class="btn btn-danger" onclick="deleteClient(${c.id}, '${c.name}')">🗑</button>
+                </td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      `;
+    } catch (e) {
+      wrap.innerHTML = `<div class="empty-state"><div class="icon">⚠️</div><h3>Erro ao carregar</h3><p>${e.message}</p></div>`;
+    }
+  }
+
+  function copyLink(url, btn) {
+    navigator.clipboard.writeText(url);
+    btn.textContent = '✓';
+    setTimeout(() => btn.textContent = '📋', 2000);
+    toast('Link copiado!');
+  }
+
+  async function createClient() {
+    const name = document.getElementById('clientNameInput').value.trim();
+    const email = document.getElementById('clientEmailInput').value.trim();
+    if (!name) { toast('Informe o nome do cliente', 'error'); return; }
+
+    const btn = document.getElementById('btnCreateClient');
+    btn.innerHTML = `<span class="spinner"></span> Provisionando...`;
+    btn.disabled = true;
+
+    try {
+      const r = await fetch(`${API}/clients`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, email }),
+      });
+      const data = await r.json();
+      if (!r.ok) {
+        toast(`Erro: ${JSON.stringify(data.error || data)}`, 'error');
+      } else {
+        toast(`Cliente "${name}" criado! Link de onboarding gerado.`);
+        closeClientModal();
+        await loadClients();
+      }
+    } catch (e) {
+      toast(`Erro: ${e.message}`, 'error');
+    } finally {
+      btn.innerHTML = 'Criar Cliente';
+      btn.disabled = false;
+    }
+  }
+
+  async function deleteClient(id, name) {
+    if (!confirm(`Excluir o cliente "${name}"? A instância WhatsApp também será removida.`)) return;
+    await fetch(`${API}/clients/${id}`, { method: 'DELETE' });
+    toast(`${name} excluído`, 'error');
+    loadClients();
+  }
+
+  function statusBadge(status) {
+    const map = {
+      connected: ['badge-open', '✓ Conectado'],
+      pending: ['badge-connecting', '⟳ Aguardando'],
+      disconnected: ['badge-close', '✗ Desconectado'],
+    };
+    const [cls, label] = map[status] || ['badge-unknown', status];
+    return `<span class="badge ${cls}">${label}</span>`;
+  }
+
+  // ─── Instance management (kept for raw tab) ───────────────────────────────────
+
   function openModal() {
     document.getElementById('modal').classList.remove('hidden');
     document.getElementById('instanceName').focus();
@@ -369,16 +562,14 @@
     document.getElementById('modal').classList.add('hidden');
     document.getElementById('instanceName').value = '';
   }
-
   document.getElementById('modal').addEventListener('click', e => {
     if (e.target === document.getElementById('modal')) closeModal();
   });
-
   document.getElementById('instanceName').addEventListener('keydown', e => {
     if (e.key === 'Enter') createInstance();
   });
 
-  function statusBadge(state) {
+  function instStatusBadge(state) {
     const map = {
       open: ['badge-open', '✓ Conectado'],
       close: ['badge-close', '✗ Desconectado'],
@@ -405,7 +596,7 @@
           </div>
         `;
       } else {
-        qrEl.innerHTML = `<p style="color:var(--red)">Não foi possível gerar o QR Code. Verifique se a instância está desconectada.</p>`;
+        qrEl.innerHTML = `<p style="color:var(--red)">Não foi possível gerar o QR Code.</p>`;
       }
     } catch {
       qrEl.innerHTML = `<p style="color:var(--red)">Erro ao buscar QR Code</p>`;
@@ -420,7 +611,7 @@
   }
 
   async function deleteInstance(name) {
-    if (!confirm(`Excluir permanentemente a instância "${name}"? Esta ação não pode ser desfeita.`)) return;
+    if (!confirm(`Excluir permanentemente a instância "${name}"?`)) return;
     await fetch(`${API}/instances/${encodeURIComponent(name)}`, { method: 'DELETE' });
     toast(`${name} excluído`, 'error');
     setTimeout(loadInstances, 500);
@@ -440,35 +631,18 @@
       <div class="card-header">
         <div>
           <div class="instance-name">${name}</div>
-          ${statusBadge(state)}
+          ${instStatusBadge(state)}
         </div>
       </div>
-      ${isOpen && phone ? `
-        <div class="phone-info">
-          <span class="icon">📱</span>
-          <div>
-            <div style="font-weight:600">${phone}</div>
-            <div style="font-size:12px;color:var(--muted)">Número conectado</div>
-          </div>
-        </div>
-      ` : ''}
+      ${isOpen && phone ? `<div class="phone-info"><span class="icon">📱</span><div><div style="font-weight:600">${phone}</div><div style="font-size:12px;color:var(--muted)">Número conectado</div></div></div>` : ''}
       ${!isOpen ? `<div class="qr-section"><p>Clique em "Ver QR Code" para conectar o WhatsApp</p></div>` : ''}
       <div class="card-actions">
         ${!isOpen ? `<button class="btn btn-primary btn-sm" onclick="getQR('${name}', this.closest('.card'))">📷 Ver QR Code</button>` : ''}
         ${isOpen ? `<button class="btn btn-ghost btn-sm" onclick="logout('${name}')">↩ Desconectar</button>` : ''}
-        <button class="btn btn-ghost btn-sm" onclick="refreshCard('${name}', this.closest('.card'))">⟳ Status</button>
         <button class="btn btn-danger" onclick="deleteInstance('${name}')">🗑 Excluir</button>
       </div>
     `;
     return card;
-  }
-
-  async function refreshCard(name, cardEl) {
-    const r = await fetch(`${API}/instances/${encodeURIComponent(name)}/status`);
-    const data = await r.json();
-    const state = (data?.instance?.state || data?.state || '').toLowerCase();
-    const badgeEl = cardEl.querySelector('.badge');
-    if (badgeEl) badgeEl.outerHTML = statusBadge(state);
   }
 
   async function loadInstances() {
@@ -480,31 +654,21 @@
       const list = Array.isArray(data) ? data : (data?.instances || []);
       grid.innerHTML = '';
       if (!list.length) {
-        grid.innerHTML = `
-          <div class="empty-state">
-            <div class="icon">📱</div>
-            <h3>Nenhuma conexão criada</h3>
-            <p>Clique em "+ Nova Conexão" para começar</p>
-          </div>`;
+        grid.innerHTML = `<div class="empty-state"><div class="icon">📱</div><h3>Nenhuma instância</h3></div>`;
         return;
       }
-      for (const inst of list) {
-        const instData = inst.instance || inst;
-        grid.appendChild(renderCard(instData));
-      }
+      for (const inst of list) grid.appendChild(renderCard(inst.instance || inst));
     } catch (e) {
-      grid.innerHTML = `<div class="empty-state"><div class="icon">⚠️</div><h3>Erro ao carregar</h3><p>${e.message}</p></div>`;
+      grid.innerHTML = `<div class="empty-state"><div class="icon">⚠️</div><h3>Erro: ${e.message}</h3></div>`;
     }
   }
 
   async function createInstance() {
     const name = document.getElementById('instanceName').value.trim();
-    if (!name) { toast('Informe o nome da instância', 'error'); return; }
-
+    if (!name) { toast('Informe o nome', 'error'); return; }
     const btn = document.getElementById('btnCreate');
     btn.innerHTML = `<span class="spinner"></span> Criando...`;
     btn.disabled = true;
-
     try {
       const r = await fetch(`${API}/instances`, {
         method: 'POST',
@@ -512,29 +676,14 @@
         body: JSON.stringify({ name }),
       });
       const data = await r.json();
-      if (!r.ok) {
-        toast(`Erro: ${JSON.stringify(data.error || data)}`, 'error');
-      } else {
-        toast(`Instância "${name}" criada! Escaneie o QR Code.`);
-        closeModal();
-        await loadInstances();
-        // Auto-open QR for new instance
-        setTimeout(() => {
-          const card = document.getElementById(`card-${name}`);
-          if (card) getQR(name, card);
-        }, 500);
-      }
-    } catch (e) {
-      toast(`Erro: ${e.message}`, 'error');
-    } finally {
-      btn.innerHTML = 'Criar Conexão';
-      btn.disabled = false;
-    }
+      if (!r.ok) toast(`Erro: ${JSON.stringify(data.error || data)}`, 'error');
+      else { toast(`Instância "${name}" criada!`); closeModal(); loadInstances(); }
+    } catch (e) { toast(`Erro: ${e.message}`, 'error'); }
+    finally { btn.innerHTML = 'Criar Conexão'; btn.disabled = false; }
   }
 
-  // Auto-refresh every 30s
-  loadInstances();
-  setInterval(loadInstances, 30000);
+  // Init
+  loadClients();
 </script>
 </body>
 </html>

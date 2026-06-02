@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Fluvius — Conectar WhatsApp</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --green: #22c55e;
+      --green-dark: #16a34a;
+      --green-light: #dcfce7;
+      --bg: #f0fdf4;
+      --surface: #ffffff;
+      --border: #e2e8f0;
+      --text: #0f172a;
+      --muted: #64748b;
+      --radius: 16px;
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+
+    .card {
+      background: var(--surface);
+      border-radius: 24px;
+      box-shadow: 0 20px 60px #0001, 0 4px 16px #0001;
+      width: 100%;
+      max-width: 440px;
+      overflow: hidden;
+    }
+
+    /* Header */
+    .card-header {
+      background: linear-gradient(135deg, #16a34a, #22c55e);
+      padding: 32px 32px 28px;
+      color: white;
+      text-align: center;
+    }
+
+    .logo-wrap {
+      width: 64px;
+      height: 64px;
+      background: #ffffff22;
+      border-radius: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 32px;
+      margin: 0 auto 16px;
+    }
+
+    .card-header h1 { font-size: 22px; font-weight: 800; margin-bottom: 4px; }
+    .card-header .subtitle { font-size: 14px; opacity: 0.85; }
+    .client-name {
+      margin-top: 12px;
+      background: #ffffff22;
+      border-radius: 8px;
+      padding: 6px 14px;
+      display: inline-block;
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .card-body { padding: 28px 32px 32px; }
+
+    /* Steps indicator */
+    .steps {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0;
+      margin-bottom: 28px;
+    }
+    .step {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+    }
+    .step-circle {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: var(--border);
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      font-weight: 700;
+      transition: all 0.3s;
+    }
+    .step-circle.active { background: var(--green); color: white; }
+    .step-circle.done { background: var(--green-dark); color: white; }
+    .step-label { font-size: 11px; color: var(--muted); font-weight: 500; }
+    .step-line {
+      flex: 1;
+      height: 2px;
+      background: var(--border);
+      margin: 0 4px;
+      margin-bottom: 18px;
+      transition: background 0.3s;
+    }
+    .step-line.done { background: var(--green); }
+
+    /* Tabs */
+    .tabs {
+      display: flex;
+      background: #f8fafc;
+      border-radius: 10px;
+      padding: 4px;
+      margin-bottom: 24px;
+    }
+    .tab {
+      flex: 1;
+      padding: 9px;
+      text-align: center;
+      font-size: 13px;
+      font-weight: 500;
+      border-radius: 7px;
+      cursor: pointer;
+      color: var(--muted);
+      transition: all 0.2s;
+      border: none;
+      background: transparent;
+    }
+    .tab.active { background: white; color: var(--text); box-shadow: 0 1px 4px #0001; font-weight: 600; }
+
+    /* Panel */
+    .panel { display: none; }
+    .panel.active { display: block; animation: fadeIn 0.25s ease; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+
+    /* QR Box */
+    .qr-box {
+      background: #f8fafc;
+      border-radius: 12px;
+      padding: 20px;
+      text-align: center;
+    }
+    .qr-box img { max-width: 220px; width: 100%; border-radius: 8px; }
+    .qr-placeholder {
+      width: 200px;
+      height: 200px;
+      border: 2px dashed var(--border);
+      border-radius: 12px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      margin: 0 auto;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .instructions {
+      margin-top: 16px;
+      text-align: left;
+    }
+    .instructions h3 { font-size: 13px; font-weight: 600; color: var(--muted); margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .instructions ol { padding-left: 18px; display: flex; flex-direction: column; gap: 6px; }
+    .instructions li { font-size: 13px; color: var(--muted); line-height: 1.5; }
+    .instructions strong { color: var(--text); }
+
+    /* Phone form */
+    .phone-form {}
+    .phone-form p { font-size: 14px; color: var(--muted); margin-bottom: 20px; line-height: 1.6; }
+
+    .input-group {
+      display: flex;
+      align-items: center;
+      border: 1.5px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+      transition: border-color 0.2s;
+    }
+    .input-group:focus-within { border-color: var(--green); }
+    .input-prefix {
+      padding: 12px 14px;
+      background: #f8fafc;
+      font-size: 14px;
+      color: var(--muted);
+      font-weight: 500;
+      border-right: 1.5px solid var(--border);
+    }
+    .input-group input {
+      flex: 1;
+      padding: 12px 14px;
+      font-size: 15px;
+      border: none;
+      background: transparent;
+      font-family: inherit;
+      color: var(--text);
+    }
+    .input-group input:focus { outline: none; }
+    .input-group input::placeholder { color: #cbd5e1; }
+
+    .code-box {
+      background: linear-gradient(135deg, #f0fdf4, #dcfce7);
+      border: 2px solid var(--green);
+      border-radius: 12px;
+      padding: 20px;
+      text-align: center;
+      display: none;
+      margin-top: 20px;
+    }
+    .code-box.visible { display: block; animation: fadeIn 0.3s ease; }
+    .code-box label { font-size: 12px; font-weight: 600; color: var(--green-dark); text-transform: uppercase; letter-spacing: 0.5px; display: block; margin-bottom: 10px; }
+    .pairing-code {
+      font-size: 36px;
+      font-weight: 800;
+      letter-spacing: 10px;
+      color: var(--green-dark);
+      font-variant-numeric: tabular-nums;
+    }
+    .code-box p { font-size: 13px; color: var(--muted); margin-top: 10px; }
+
+    /* Buttons */
+    .btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      width: 100%;
+      padding: 14px;
+      border-radius: 10px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      transition: all 0.2s;
+      font-family: inherit;
+      margin-top: 16px;
+    }
+    .btn-green { background: var(--green); color: white; }
+    .btn-green:hover { background: var(--green-dark); transform: translateY(-1px); box-shadow: 0 4px 16px #22c55e44; }
+    .btn-green:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+
+    .btn-outline {
+      background: transparent;
+      color: var(--muted);
+      border: 1.5px solid var(--border);
+      margin-top: 10px;
+    }
+    .btn-outline:hover { border-color: var(--muted); color: var(--text); }
+
+    /* Spinner */
+    .spinner {
+      width: 18px; height: 18px;
+      border: 2px solid transparent;
+      border-top-color: currentColor;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      display: inline-block;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Success Screen */
+    .success-screen {
+      text-align: center;
+      padding: 16px 0;
+      display: none;
+    }
+    .success-screen.visible { display: block; animation: fadeIn 0.4s ease; }
+    .success-icon {
+      width: 80px;
+      height: 80px;
+      background: linear-gradient(135deg, #22c55e, #16a34a);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 40px;
+      margin: 0 auto 20px;
+      box-shadow: 0 8px 24px #22c55e44;
+      animation: pop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+    @keyframes pop { from { transform: scale(0); } to { transform: scale(1); } }
+    .success-screen h2 { font-size: 22px; font-weight: 800; margin-bottom: 8px; }
+    .success-screen p { font-size: 14px; color: var(--muted); line-height: 1.6; }
+    .connected-phone {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--green-light);
+      color: var(--green-dark);
+      border-radius: 8px;
+      padding: 8px 16px;
+      font-size: 15px;
+      font-weight: 600;
+      margin: 16px auto;
+    }
+    .access-box {
+      background: #f8fafc;
+      border-radius: 12px;
+      padding: 16px;
+      margin-top: 20px;
+      text-align: left;
+    }
+    .access-box h3 { font-size: 13px; font-weight: 600; color: var(--muted); margin-bottom: 10px; }
+    .access-link {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: white;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 14px;
+      color: var(--green-dark);
+      font-weight: 500;
+    }
+    .copy-btn {
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: var(--muted);
+      font-size: 16px;
+      padding: 2px;
+      transition: color 0.2s;
+    }
+    .copy-btn:hover { color: var(--green); }
+
+    /* Invalid state */
+    .invalid-screen {
+      text-align: center;
+      padding: 32px 0;
+    }
+    .invalid-screen .icon { font-size: 48px; margin-bottom: 16px; }
+    .invalid-screen h2 { font-size: 18px; margin-bottom: 8px; }
+    .invalid-screen p { font-size: 14px; color: var(--muted); }
+
+    .footer { margin-top: 20px; font-size: 12px; color: #94a3b8; text-align: center; }
+  </style>
+</head>
+<body>
+
+<div class="card" id="mainCard">
+  <div class="card-header">
+    <div class="logo-wrap">💬</div>
+    <h1>Conectar WhatsApp</h1>
+    <p class="subtitle">Configuração rápida e automática</p>
+    <div class="client-name" id="clientNameBadge">Carregando...</div>
+  </div>
+
+  <div class="card-body" id="cardBody">
+    <div style="text-align:center;padding:32px 0;color:#94a3b8">
+      <span class="spinner" style="width:24px;height:24px"></span>
+    </div>
+  </div>
+</div>
+
+<div class="footer">Fluvius · Plataforma de Atendimento</div>
+
+<script>
+  const token = location.pathname.split('/onboard/')[1]?.split('/')[0];
+  const BASE = `/onboard/${token}`;
+  let polling = null;
+
+  async function init() {
+    try {
+      const r = await fetch(`${BASE}/info`);
+      const data = await r.json();
+      if (!r.ok) return showInvalid(data.error || 'Link inválido');
+      document.getElementById('clientNameBadge').textContent = data.name;
+      if (data.status === 'connected') return showSuccess(data.phone, data.name);
+      showConnect(data.name);
+    } catch {
+      showInvalid('Não foi possível carregar. Verifique sua conexão.');
+    }
+  }
+
+  function showInvalid(msg) {
+    document.getElementById('cardBody').innerHTML = `
+      <div class="invalid-screen">
+        <div class="icon">🔗</div>
+        <h2>Link inválido</h2>
+        <p>${msg}</p>
+      </div>
+    `;
+  }
+
+  function showConnect(clientName) {
+    document.getElementById('cardBody').innerHTML = `
+      <div class="steps">
+        <div class="step">
+          <div class="step-circle active" id="step1">1</div>
+          <span class="step-label">Escolher</span>
+        </div>
+        <div class="step-line" id="line1"></div>
+        <div class="step">
+          <div class="step-circle" id="step2">2</div>
+          <span class="step-label">Conectar</span>
+        </div>
+        <div class="step-line" id="line2"></div>
+        <div class="step">
+          <div class="step-circle" id="step3">3</div>
+          <span class="step-label">Pronto</span>
+        </div>
+      </div>
+
+      <div class="tabs">
+        <button class="tab active" id="tabQR" onclick="switchTab('qr')">📱 QR Code</button>
+        <button class="tab" id="tabPhone" onclick="switchTab('phone')">🔢 Número Fixo</button>
+      </div>
+
+      <div class="panel active" id="panelQR">
+        <div class="qr-box">
+          <div class="qr-placeholder" id="qrPlaceholder">
+            <span style="font-size:32px">📷</span>
+            <span>Clique para gerar</span>
+          </div>
+          <img id="qrImg" style="display:none" />
+        </div>
+        <div class="instructions">
+          <h3>Como escanear</h3>
+          <ol>
+            <li>Abra o <strong>WhatsApp</strong> no seu celular</li>
+            <li>Toque em <strong>⋮ Menu → Dispositivos Conectados</strong></li>
+            <li>Toque em <strong>Conectar um Dispositivo</strong></li>
+            <li>Aponte a câmera para o QR Code acima</li>
+          </ol>
+        </div>
+        <button class="btn btn-green" id="btnGetQR" onclick="loadQR()">📷 Gerar QR Code</button>
+      </div>
+
+      <div class="panel" id="panelPhone">
+        <div class="phone-form">
+          <p>Digite o número do WhatsApp que deseja conectar. Você receberá um <strong>código de 8 dígitos</strong> para digitar no aplicativo.</p>
+          <div class="input-group">
+            <span class="input-prefix">🇧🇷 +55</span>
+            <input type="tel" id="phoneInput" placeholder="11 99999-9999" maxlength="15"
+              oninput="this.value=this.value.replace(/[^0-9]/g,'')"
+              onkeydown="if(event.key==='Enter')requestCode()" />
+          </div>
+          <div class="code-box" id="codeBox">
+            <label>Digite este código no WhatsApp</label>
+            <div class="pairing-code" id="pairingCode">••••••••</div>
+            <p>WhatsApp → Dispositivos Conectados → Conectar → Usar número de telefone</p>
+          </div>
+          <button class="btn btn-green" id="btnPhone" onclick="requestCode()">🔢 Solicitar Código</button>
+        </div>
+      </div>
+
+      <div class="success-screen" id="successScreen"></div>
+    `;
+
+    document.getElementById('step2').addEventListener('click', () => {});
+  }
+
+  function switchTab(tab) {
+    document.getElementById('tabQR').classList.toggle('active', tab === 'qr');
+    document.getElementById('tabPhone').classList.toggle('active', tab === 'phone');
+    document.getElementById('panelQR').classList.toggle('active', tab === 'qr');
+    document.getElementById('panelPhone').classList.toggle('active', tab === 'phone');
+  }
+
+  async function loadQR() {
+    const btn = document.getElementById('btnGetQR');
+    const placeholder = document.getElementById('qrPlaceholder');
+    const img = document.getElementById('qrImg');
+    btn.innerHTML = `<span class="spinner"></span> Gerando...`;
+    btn.disabled = true;
+    placeholder.innerHTML = `<span class="spinner" style="width:32px;height:32px"></span><span>Gerando QR Code...</span>`;
+
+    try {
+      const r = await fetch(`${BASE}/qr`);
+      const data = await r.json();
+      const base64 = data?.base64 || data?.qrcode?.base64 || '';
+      if (base64) {
+        img.src = base64;
+        img.style.display = 'block';
+        placeholder.style.display = 'none';
+        btn.innerHTML = '↻ Gerar novo QR Code';
+        btn.disabled = false;
+        setStep(2);
+        startPolling();
+      } else {
+        placeholder.innerHTML = `<span style="font-size:24px">⚠️</span><span>Erro ao gerar QR. Tente novamente.</span>`;
+        btn.innerHTML = '📷 Tentar novamente';
+        btn.disabled = false;
+      }
+    } catch {
+      placeholder.innerHTML = `<span style="font-size:24px">⚠️</span><span>Erro de conexão</span>`;
+      btn.innerHTML = '📷 Tentar novamente';
+      btn.disabled = false;
+    }
+  }
+
+  async function requestCode() {
+    const phone = '55' + document.getElementById('phoneInput').value.replace(/\D/g, '');
+    if (phone.length < 12) {
+      alert('Digite um número válido com DDD (ex: 11 99999-9999)');
+      return;
+    }
+    const btn = document.getElementById('btnPhone');
+    btn.innerHTML = `<span class="spinner"></span> Enviando...`;
+    btn.disabled = true;
+    try {
+      const r = await fetch(`${BASE}/phone`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone }),
+      });
+      const data = await r.json();
+      const code = data?.code || data?.pairingCode || '';
+      if (code) {
+        document.getElementById('pairingCode').textContent = code;
+        document.getElementById('codeBox').classList.add('visible');
+        btn.innerHTML = '↻ Novo código';
+        btn.disabled = false;
+        setStep(2);
+        startPolling();
+      } else {
+        btn.innerHTML = '🔢 Tentar novamente';
+        btn.disabled = false;
+        alert(data?.error || 'Erro ao solicitar código. Tente novamente.');
+      }
+    } catch {
+      btn.innerHTML = '🔢 Tentar novamente';
+      btn.disabled = false;
+    }
+  }
+
+  function setStep(n) {
+    for (let i = 1; i <= 3; i++) {
+      const el = document.getElementById(`step${i}`);
+      if (!el) continue;
+      el.className = 'step-circle' + (i < n ? ' done' : i === n ? ' active' : '');
+      if (i < n && document.getElementById(`line${i}`)) {
+        document.getElementById(`line${i}`).classList.add('done');
+      }
+    }
+  }
+
+  function startPolling() {
+    if (polling) clearInterval(polling);
+    polling = setInterval(checkStatus, 3000);
+  }
+
+  async function checkStatus() {
+    try {
+      const r = await fetch(`${BASE}/status`);
+      const data = await r.json();
+      if (data.state === 'open') {
+        clearInterval(polling);
+        const info = await (await fetch(`${BASE}/info`)).json();
+        setStep(3);
+        showSuccess(data.phone || info.phone, info.name);
+      }
+    } catch { /* ignore */ }
+  }
+
+  function showSuccess(phone, name) {
+    const chatwootUrl = window.CHATWOOT_URL || `https://fluvius.finderbit.com.br`;
+    document.getElementById('cardBody').innerHTML = `
+      <div class="success-screen visible">
+        <div class="success-icon">✅</div>
+        <h2>WhatsApp Conectado!</h2>
+        <p>Sua linha foi conectada com sucesso. Agora você pode começar a atender seus clientes.</p>
+        ${phone ? `<div class="connected-phone">📱 ${phone}</div>` : ''}
+        <div class="access-box">
+          <h3>Acesse seu painel de atendimento</h3>
+          <div class="access-link">
+            <span>${chatwootUrl}</span>
+            <button class="copy-btn" onclick="navigator.clipboard.writeText('${chatwootUrl}');this.textContent='✓'" title="Copiar">📋</button>
+          </div>
+          <a href="${chatwootUrl}" target="_blank" style="display:flex;align-items:center;justify-content:center;gap:8px;margin-top:10px;background:#16a34a;color:white;border-radius:10px;padding:12px;font-size:14px;font-weight:600;text-decoration:none;transition:all 0.2s" onmouseover="this.style.background='#15803d'" onmouseout="this.style.background='#16a34a'">
+            Abrir Painel de Atendimento →
+          </a>
+        </div>
+      </div>
+    `;
+  }
+
+  init();
+</script>
+</body>
+</html>

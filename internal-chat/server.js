@@ -2,6 +2,7 @@ import express from 'express';
 import fs from 'fs/promises';
 import http from 'http';
 import path from 'path';
+import { randomBytes } from 'crypto';
 import { Server } from 'socket.io';
 import pg from 'pg';
 import { fileURLToPath } from 'url';
@@ -127,6 +128,20 @@ async function migrate() {
 
     CREATE INDEX IF NOT EXISTS index_internal_chat_messages_room_id_id
       ON internal_chat_messages(room_id, id);
+
+    CREATE TABLE IF NOT EXISTS fluvius_clients (
+      id          BIGSERIAL PRIMARY KEY,
+      name        TEXT NOT NULL,
+      email       TEXT,
+      token       TEXT UNIQUE NOT NULL,
+      instance_name TEXT,
+      inbox_id    INTEGER,
+      inbox_token TEXT,
+      phone       TEXT,
+      status      TEXT NOT NULL DEFAULT 'pending',
+      created_at  TIMESTAMP NOT NULL DEFAULT NOW(),
+      updated_at  TIMESTAMP NOT NULL DEFAULT NOW()
+    );
   `);
 }
 
@@ -486,7 +501,7 @@ app.post('/api/rooms/:roomId/messages', async (req, res) => {
   res.json(message);
 });
 
-// ─── WhatsApp Connection Manager ─────────────────────────────────────────────
+// ─── WhatsApp Connection Manager & Client Provisioning ──────────────────────
 
 async function evoFetch(path, options = {}) {
   const res = await fetch(`${EVOLUTION_URL}${path}`, {
@@ -578,6 +593,137 @@ app.post('/manager/api/instances/:name/logout', async (req, res) => {
 // Serve manager page
 app.get('/manager', (_req, res) => {
   res.sendFile('manager.html', { root: 'public' });
+});
+
+// ─── Client Provisioning ─────────────────────────────────────────────────────
+
+// List clients
+app.get('/manager/api/clients', async (_req, res) => {
+  const { rows } = await pool.query('SELECT * FROM fluvius_clients ORDER BY created_at DESC');
+  res.json(rows);
+});
+
+// Create and fully provision a client
+app.post('/manager/api/clients', async (req, res) => {
+  const name = String(req.body.name || '').trim();
+  const email = String(req.body.email || '').trim();
+  if (!name) return res.status(400).json({ error: 'name is required' });
+
+  const token = randomBytes(24).toString('base64url');
+  const instanceName = `fluvius-${name.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').slice(0, 32)}-${Date.now().toString(36)}`;
+
+  // 1. Create Evolution instance
+  const evo = await evoFetch('/instance/create', {
+    method: 'POST',
+    body: JSON.stringify({ instanceName, integration: 'WHATSAPP-BAILEYS' }),
+  });
+  if (evo.status >= 300) return res.status(evo.status).json({ step: 'create_instance', error: evo.data });
+
+  // 2. Create Chatwoot inbox
+  let inboxId = null;
+  let inboxToken = '';
+  if (CHATWOOT_API_TOKEN) {
+    const cwt = await cwtFetch(`/api/v1/accounts/${CHATWOOT_ACCOUNT_ID}/inboxes`, {
+      method: 'POST',
+      body: JSON.stringify({ name, channel: { type: 'api', webhook_url: '' } }),
+    });
+    if (cwt.status < 300) {
+      inboxId = cwt.data?.id || null;
+      inboxToken = cwt.data?.inbox_identifier || cwt.data?.channel?.identifier || '';
+
+      // 3. Link Evolution → Chatwoot
+      await evoFetch(`/chatwoot/set/${instanceName}`, {
+        method: 'POST',
+        body: JSON.stringify({
+          enabled: true,
+          account_id: CHATWOOT_ACCOUNT_ID,
+          token: inboxToken,
+          url: 'http://chatwoot:3000',
+          sign_msg: false,
+          reopen_conversation: true,
+          conversation_pending: false,
+        }),
+      });
+    }
+  }
+
+  // 4. Save client to DB
+  const { rows } = await pool.query(
+    `INSERT INTO fluvius_clients (name, email, token, instance_name, inbox_id, inbox_token, status)
+     VALUES ($1, $2, $3, $4, $5, $6, 'pending') RETURNING *`,
+    [name, email || null, token, instanceName, inboxId, inboxToken],
+  );
+
+  res.json(rows[0]);
+});
+
+// Delete client + Evolution instance
+app.delete('/manager/api/clients/:id', async (req, res) => {
+  const id = Number(req.params.id);
+  const { rows } = await pool.query('SELECT * FROM fluvius_clients WHERE id = $1', [id]);
+  if (!rows.length) return res.status(404).json({ error: 'not found' });
+  const client = rows[0];
+  if (client.instance_name) {
+    await evoFetch(`/instance/delete/${client.instance_name}`, { method: 'DELETE' });
+  }
+  await pool.query('DELETE FROM fluvius_clients WHERE id = $1', [id]);
+  res.json({ ok: true });
+});
+
+// ─── Client Onboarding Routes ─────────────────────────────────────────────────
+
+async function getClientByToken(token) {
+  const { rows } = await pool.query('SELECT * FROM fluvius_clients WHERE token = $1', [token]);
+  return rows[0] || null;
+}
+
+// Onboarding page
+app.get('/onboard/:token', (_req, res) => {
+  res.sendFile('onboard.html', { root: 'public' });
+});
+
+// Get client info (for onboarding page JS)
+app.get('/onboard/:token/info', async (req, res) => {
+  const client = await getClientByToken(req.params.token);
+  if (!client) return res.status(404).json({ error: 'Link inválido ou expirado' });
+  res.json({ name: client.name, status: client.status, phone: client.phone });
+});
+
+// Get QR code for onboarding
+app.get('/onboard/:token/qr', async (req, res) => {
+  const client = await getClientByToken(req.params.token);
+  if (!client) return res.status(404).json({ error: 'Link inválido' });
+  const { status, data } = await evoFetch(`/instance/connect/${client.instance_name}`);
+  res.status(status).json(data);
+});
+
+// Request phone pairing code
+app.post('/onboard/:token/phone', async (req, res) => {
+  const client = await getClientByToken(req.params.token);
+  if (!client) return res.status(404).json({ error: 'Link inválido' });
+  const phone = String(req.body.phone || '').replace(/\D/g, '');
+  if (!phone || phone.length < 10) return res.status(400).json({ error: 'Número inválido' });
+  const { status, data } = await evoFetch(`/instance/pairingCode/${client.instance_name}`, {
+    method: 'POST',
+    body: JSON.stringify({ number: phone }),
+  });
+  res.status(status).json(data);
+});
+
+// Check connection status (for polling)
+app.get('/onboard/:token/status', async (req, res) => {
+  const client = await getClientByToken(req.params.token);
+  if (!client) return res.status(404).json({ error: 'Link inválido' });
+  const { data } = await evoFetch(`/instance/connectionState/${client.instance_name}`);
+  const state = (data?.instance?.state || data?.state || '').toLowerCase();
+  const phone = data?.instance?.profileName || data?.instance?.wuid?.replace('@s.whatsapp.net','') || '';
+  if (state === 'open' && client.status !== 'connected') {
+    await pool.query(
+      'UPDATE fluvius_clients SET status=$1, phone=$2, updated_at=NOW() WHERE token=$3',
+      ['connected', phone || client.phone, req.params.token],
+    );
+  }
+  res.json({ state, phone });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
