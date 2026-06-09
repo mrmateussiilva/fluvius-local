@@ -1,8 +1,10 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { useRoute } from 'vue-router';
 import { useMapGetter } from 'dashboard/composables/store';
 
 const API_BASE = import.meta.env.VITE_INTERNAL_CHAT_API_URL || 'http://localhost:4000';
+const route = useRoute();
 
 const currentUserId = useMapGetter('getCurrentUserID');
 const currentUser = useMapGetter('getCurrentUser');
@@ -39,6 +41,7 @@ let mediaRecorder = null;
 let audioChunks = [];
 
 const userId = computed(() => Number(currentUserId.value || 0));
+const accountId = computed(() => Number(route.params.accountId || route.params.account_id || 0));
 
 const currentAgent = computed(() => {
   return agents.value.find(agent => Number(agent.id) === userId.value) || {
@@ -166,7 +169,7 @@ async function request(path, options = {}) {
 }
 
 async function uploadFile(file) {
-  const response = await fetch(`${API_BASE}/api/uploads?userId=${userId.value}`, {
+  const response = await fetch(`${API_BASE}/api/uploads?userId=${userId.value}&accountId=${accountId.value}`, {
     method: 'POST',
     headers: {
       'Content-Type': file.type || 'application/octet-stream',
@@ -222,18 +225,19 @@ function scrollToBottom() {
 }
 
 async function loadAgents() {
-  agents.value = await request('/api/agents');
+  const payload = await request(`/api/agents?userId=${userId.value}&accountId=${accountId.value}`);
+  agents.value = payload.agents || [];
 }
 
 async function loadRooms() {
   if (!userId.value) return;
-  rooms.value = await request(`/api/rooms?userId=${userId.value}`);
+  rooms.value = await request(`/api/rooms?userId=${userId.value}&accountId=${accountId.value}`);
 }
 
 async function markRoomRead(roomId) {
   await request(`/api/rooms/${roomId}/read`, {
     method: 'POST',
-    body: JSON.stringify({ userId: userId.value }),
+    body: JSON.stringify({ userId: userId.value, accountId: accountId.value }),
   });
 }
 
@@ -241,12 +245,12 @@ async function openRoom(roomId) {
   currentRoomId.value = Number(roomId);
   loadingRoom.value = true;
   typingUserIds.value.clear();
-  socket?.emit('join', { userId: userId.value, roomId: currentRoomId.value });
+  socket?.emit('join', { userId: userId.value, accountId: accountId.value, roomId: currentRoomId.value });
 
   try {
     const [room, items] = await Promise.all([
-      request(`/api/rooms/${currentRoomId.value}?userId=${userId.value}`),
-      request(`/api/rooms/${currentRoomId.value}/messages?userId=${userId.value}`),
+      request(`/api/rooms/${currentRoomId.value}?userId=${userId.value}&accountId=${accountId.value}`),
+      request(`/api/rooms/${currentRoomId.value}/messages?userId=${userId.value}&accountId=${accountId.value}`),
     ]);
     currentRoom.value = {
       ...room,
@@ -270,7 +274,7 @@ async function openRoom(roomId) {
 async function refreshCurrentRoomMessages() {
   if (!currentRoomId.value || loadingRoom.value) return;
   try {
-    const items = await request(`/api/rooms/${currentRoomId.value}/messages?userId=${userId.value}`);
+    const items = await request(`/api/rooms/${currentRoomId.value}/messages?userId=${userId.value}&accountId=${accountId.value}`);
     if (items.length !== messages.value.length || items.at(-1)?.id !== messages.value.at(-1)?.id) {
       messages.value = items;
       scrollToBottom();
@@ -285,7 +289,7 @@ async function startDm(otherUserId) {
   try {
     const room = await request('/api/rooms/dm', {
       method: 'POST',
-      body: JSON.stringify({ userId: userId.value, otherUserId }),
+      body: JSON.stringify({ userId: userId.value, accountId: accountId.value, otherUserId }),
     });
     activeTab.value = 'rooms';
     await loadRooms();
@@ -307,6 +311,7 @@ async function createGroup() {
       method: 'POST',
       body: JSON.stringify({
         userId: userId.value,
+        accountId: accountId.value,
         title: groupTitle.value,
         participantIds,
       }),
@@ -324,10 +329,10 @@ async function createGroup() {
 
 function emitTyping() {
   if (!currentRoomId.value) return;
-  socket?.emit('typing:start', { userId: userId.value, roomId: currentRoomId.value });
+  socket?.emit('typing:start', { userId: userId.value, accountId: accountId.value, roomId: currentRoomId.value });
   window.clearTimeout(typingTimer);
   typingTimer = window.setTimeout(() => {
-    socket?.emit('typing:stop', { userId: userId.value, roomId: currentRoomId.value });
+    socket?.emit('typing:stop', { userId: userId.value, accountId: accountId.value, roomId: currentRoomId.value });
   }, 1200);
 }
 
@@ -370,7 +375,7 @@ function sendMessage() {
   if ((!content && !attachment) || !currentRoomId.value || sending.value) return;
 
   sending.value = true;
-  socket?.emit('typing:stop', { userId: userId.value, roomId: currentRoomId.value });
+  socket?.emit('typing:stop', { userId: userId.value, accountId: accountId.value, roomId: currentRoomId.value });
 
   const finishSend = response => {
     sending.value = false;
@@ -390,6 +395,7 @@ function sendMessage() {
   if (socket?.connected && !attachment) {
     socket.emit('message:create', {
       userId: userId.value,
+      accountId: accountId.value,
       roomId: currentRoomId.value,
       content,
       attachment,
@@ -406,7 +412,7 @@ function sendMessage() {
 
   request(`/api/rooms/${currentRoomId.value}/messages`, {
     method: 'POST',
-    body: JSON.stringify({ userId: userId.value, content, attachment }),
+    body: JSON.stringify({ userId: userId.value, accountId: accountId.value, content, attachment }),
   })
     .then(message => finishSend({ ok: true, message }))
     .catch(() => finishSend({ ok: false }));
@@ -445,9 +451,9 @@ async function connectSocket() {
   await loadSocketScript();
   socket = window.io(API_BASE, { transports: ['websocket', 'polling'] });
   socket.on('connect', () => {
-    socket.emit('user:join', { userId: userId.value });
+    socket.emit('user:join', { userId: userId.value, accountId: accountId.value });
     if (currentRoomId.value) {
-      socket.emit('join', { userId: userId.value, roomId: currentRoomId.value });
+      socket.emit('join', { userId: userId.value, accountId: accountId.value, roomId: currentRoomId.value });
     }
   });
   socket.on('message:new', handleNewMessage);
@@ -498,7 +504,8 @@ watch(userId, async nextUserId => {
   currentRoom.value = null;
   currentRoomId.value = null;
   messages.value = [];
-  socket?.emit('user:join', { userId: nextUserId });
+  socket?.emit('user:join', { userId: nextUserId, accountId: accountId.value });
+  await loadAgents();
   await loadRooms();
 });
 </script>

@@ -322,7 +322,25 @@
   .copy-link { background: none; border: none; cursor: pointer; color: var(--muted); font-size: 14px; padding: 2px 4px; border-radius: 4px; transition: color 0.2s; }
   .copy-link:hover { color: var(--green); }
   .table-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+  .auth-screen { min-height: 100vh; display: none; align-items: center; justify-content: center; padding: 24px; }
+  .auth-card { width: min(420px, 100%); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; box-shadow: 0 18px 60px #0005; }
+  .auth-card h1 { font-size: 20px; margin-bottom: 6px; }
+  .auth-card p { color: var(--muted); font-size: 13px; margin-bottom: 20px; }
+  body.auth-required header,
+  body.auth-required .main-tab { display: none; }
+  body.auth-required .auth-screen { display: flex; }
 </style>
+<div class="auth-screen" id="authScreen">
+  <form class="auth-card" onsubmit="loginManager(event)">
+    <h1>Gerenciador Fluvius</h1>
+    <p>Informe o token administrativo para acessar o provisionamento de clientes.</p>
+    <div class="form-group">
+      <label>Token administrativo</label>
+      <input type="password" id="managerTokenInput" autocomplete="current-password" />
+    </div>
+    <button class="btn btn-primary" id="btnManagerLogin" type="submit" style="width:100%">Entrar</button>
+  </form>
+</div>
 <header>
   <div class="logo">
     <div class="logo-icon">📱</div>
@@ -334,6 +352,8 @@
   <nav style="display:flex;gap:4px;background:var(--surface2);border-radius:8px;padding:4px">
     <button class="tab-nav active" id="navClients" onclick="showTab('clients')">👥 Clientes</button>
     <button class="tab-nav" id="navInstances" onclick="showTab('instances')">⚙️ Instâncias Raw</button>
+    <button class="tab-nav" onclick="checkHealth()">🩺 Status</button>
+    <button class="tab-nav" onclick="logoutManager()">Sair</button>
   </nav>
 </header>
 
@@ -373,19 +393,19 @@
 <!-- Client Modal -->
 <div class="modal-overlay hidden" id="clientModal">
   <div class="modal">
-    <h2>Novo Cliente</h2>
-    <p>O sistema criará automaticamente o canal WhatsApp e o configurará no Fluvius.</p>
+    <h2>Nova Empresa</h2>
+    <p>O sistema criará automaticamente uma conta no Chatwoot, um canal WhatsApp e configurará tudo.</p>
     <div class="form-group">
-      <label>Nome da empresa / cliente</label>
+      <label>Nome da empresa</label>
       <input type="text" id="clientNameInput" placeholder="Ex: Loja do João, Suporte Finderbit" />
     </div>
     <div class="form-group">
-      <label>E-mail do cliente <span style="color:var(--muted);font-weight:400">(opcional)</span></label>
-      <input type="email" id="clientEmailInput" placeholder="cliente@empresa.com" />
+      <label>E-mail do administrador <span style="color:var(--muted);font-weight:400">(login no Chatwoot)</span></label>
+      <input type="email" id="clientEmailInput" placeholder="admin@empresa.com" />
     </div>
     <div class="modal-actions">
       <button class="btn btn-ghost" onclick="closeClientModal()">Cancelar</button>
-      <button class="btn btn-primary" id="btnCreateClient" onclick="createClient()">Criar Cliente</button>
+      <button class="btn btn-primary" id="btnCreateClient" onclick="createClient()">Criar Empresa</button>
     </div>
   </div>
 </div>
@@ -406,11 +426,143 @@
   </div>
 </div>
 
+<!-- Agents Modal -->
+<div class="modal-overlay hidden" id="agentsModal">
+  <div class="modal">
+    <h2>Adicionar Agentes</h2>
+    <p id="agentsClientName">Cole uma linha por agente no formato: Nome, email.</p>
+    <div class="form-group">
+      <label>Agentes</label>
+      <textarea id="agentsInput" rows="10" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:12px;font-family:inherit" placeholder="Maria Silva, maria@empresa.com&#10;João Santos, joao@empresa.com"></textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeAgentsModal()">Cancelar</button>
+      <button class="btn btn-primary" id="btnCreateAgents" onclick="createAgents()">Criar Agentes</button>
+    </div>
+  </div>
+</div>
+
+<!-- Agent Credentials Modal -->
+<div class="modal-overlay hidden" id="agentCredentialsModal">
+  <div class="modal">
+    <h2>Agentes Criados</h2>
+    <p>Copie as credenciais agora. As senhas não ficam salvas.</p>
+    <div id="agentCredentialsContent" style="background:var(--surface2);border-radius:8px;padding:16px;margin-bottom:20px;font-size:13px;line-height:2;max-height:360px;overflow:auto"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="document.getElementById('agentCredentialsModal').classList.add('hidden')">Fechar</button>
+      <button class="btn btn-primary" onclick="copyAgentCredentials()">Copiar Credenciais</button>
+    </div>
+  </div>
+</div>
+
+<!-- Health Modal -->
+<div class="modal-overlay hidden" id="healthModal">
+  <div class="modal">
+    <h2>Status do Sistema</h2>
+    <p>Verifique a conectividade com as APIs dependentes.</p>
+    <div id="healthContent" style="margin-bottom: 24px;">
+      <div class="loading-wrap"><span class="spinner"></span> Verificando...</div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="document.getElementById('healthModal').classList.add('hidden')">Fechar</button>
+      <button class="btn btn-primary" onclick="checkHealth()">Testar Novamente</button>
+    </div>
+  </div>
+</div>
+
+<!-- Credentials Modal (shown after client creation) -->
+<div class="modal-overlay hidden" id="credentialsModal">
+  <div class="modal">
+    <h2>🎉 Empresa Criada!</h2>
+    <p>Compartilhe as informações abaixo com o cliente. A senha é temporária e deve ser trocada no primeiro acesso.</p>
+    <div id="credentialsContent" style="background:var(--surface2);border-radius:8px;padding:16px;margin-bottom:20px;font-size:13px;line-height:2;"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="document.getElementById('credentialsModal').classList.add('hidden')">Fechar</button>
+      <button class="btn btn-primary" onclick="copyCredentials()">📋 Copiar Informações</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast-container" id="toasts"></div>
 
 <script>
   const API = '/manager/api';
   const CHAT_BASE = window.location.origin;
+
+  const errorLabels = {
+    validate_email: 'Este e-mail já foi provisionado.',
+    create_chatwoot_account: 'Não foi possível criar a conta no Chatwoot.',
+    create_chatwoot_user: 'Não foi possível criar o usuário administrador.',
+    associate_user: 'Não foi possível vincular o usuário à conta.',
+    create_instance: 'Não foi possível criar a instância WhatsApp.',
+    create_inbox: 'Não foi possível criar o canal no Chatwoot.',
+    link_chatwoot: 'Não foi possível vincular Evolution ao Chatwoot.',
+    enable_history_sync: 'Não foi possível habilitar sincronização de histórico na Evolution.',
+    update_inbox_webhook: 'Não foi possível configurar o webhook do canal.',
+    provision_client: 'Não foi possível concluir o provisionamento.',
+    import_history: 'Não foi possível importar o histórico da Evolution.',
+    create_agent_user: 'Não foi possível criar um dos agentes.',
+    associate_agent: 'Não foi possível vincular um agente à empresa.',
+    add_agents_to_inbox: 'Não foi possível adicionar os agentes ao canal WhatsApp.',
+    create_agents: 'Não foi possível criar os agentes.',
+  };
+
+  function requireLogin() {
+    document.body.classList.add('auth-required');
+    setTimeout(() => document.getElementById('managerTokenInput').focus(), 0);
+  }
+
+  function unlockManager() {
+    document.body.classList.remove('auth-required');
+  }
+
+  async function apiFetch(url, options = {}) {
+    const r = await fetch(url, options);
+    if (r.status === 401) {
+      requireLogin();
+      throw new Error('Acesso administrativo necessário');
+    }
+    return r;
+  }
+
+  function readableError(data) {
+    if (data?.step && errorLabels[data.step]) return errorLabels[data.step];
+    if (data?.error === 'email_already_provisioned') return 'Este e-mail já foi provisionado.';
+    if (typeof data?.error === 'string') return data.error;
+    return JSON.stringify(data?.error || data || {});
+  }
+
+  async function loginManager(event) {
+    event.preventDefault();
+    const btn = document.getElementById('btnManagerLogin');
+    const token = document.getElementById('managerTokenInput').value.trim();
+    btn.disabled = true;
+    btn.innerHTML = `<span class="spinner"></span> Entrando...`;
+    try {
+      const r = await fetch('/manager/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token }),
+      });
+      const data = await r.json();
+      if (!r.ok) {
+        toast(data.error === 'invalid_token' ? 'Token administrativo inválido' : 'Não foi possível autenticar', 'error');
+        return;
+      }
+      unlockManager();
+      await loadClients();
+    } catch (e) {
+      toast(`Erro: ${e.message}`, 'error');
+    } finally {
+      btn.innerHTML = 'Entrar';
+      btn.disabled = false;
+    }
+  }
+
+  async function logoutManager() {
+    await fetch('/manager/logout', { method: 'POST' });
+    requireLogin();
+  }
 
   function showTab(tab) {
     document.getElementById('tabClients').classList.toggle('active', tab === 'clients');
@@ -419,6 +571,38 @@
     document.getElementById('navInstances').classList.toggle('active', tab === 'instances');
     if (tab === 'clients') loadClients();
     if (tab === 'instances') loadInstances();
+  }
+
+  async function checkHealth() {
+    document.getElementById('healthModal').classList.remove('hidden');
+    const content = document.getElementById('healthContent');
+    content.innerHTML = `<div class="loading-wrap"><span class="spinner"></span> Verificando...</div>`;
+    try {
+      const r = await apiFetch(`${API}/health`);
+      const data = await r.json();
+      content.innerHTML = `
+        <div style="background:var(--surface2); border-radius: 8px; padding: 16px;">
+          <div style="margin-bottom:12px; display:flex; justify-content:space-between; align-items:center;">
+            <strong>Evolution API</strong>
+            ${data.evolution === 'ok' ? '<span class="badge badge-open">✓ OK</span>' : `<span class="badge badge-close">✗ Erro (${data.evolution_status})</span>`}
+          </div>
+          <div style="margin-bottom:12px; display:flex; justify-content:space-between; align-items:center;">
+            <strong>Chatwoot API</strong>
+            ${data.chatwoot === 'ok' ? '<span class="badge badge-open">✓ OK</span>' : `<span class="badge badge-close">✗ Erro (${data.chatwoot_status})</span>`}
+          </div>
+          <div style="margin-bottom:12px; display:flex; justify-content:space-between; align-items:center;">
+            <strong>Token Configurado?</strong>
+            ${data.has_token ? '<span class="badge badge-open">✓ Sim</span>' : '<span class="badge badge-close">✗ Não</span>'}
+          </div>
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <strong>Platform Token?</strong>
+            ${data.has_platform_token ? '<span class="badge badge-open">✓ Sim</span>' : '<span class="badge badge-close">✗ Não — Crie em /super_admin</span>'}
+          </div>
+        </div>
+      `;
+    } catch (e) {
+      content.innerHTML = `<div style="color:var(--red)">Erro ao verificar status: ${e.message}</div>`;
+    }
   }
 
   function toast(msg, type = 'success') {
@@ -451,7 +635,7 @@
     const wrap = document.getElementById('clientsTable');
     wrap.innerHTML = `<div class="loading-wrap"><span class="spinner"></span> Carregando...</div>`;
     try {
-      const r = await fetch(`${API}/clients`);
+      const r = await apiFetch(`${API}/clients`);
       const clients = await r.json();
       if (!clients.length) {
         wrap.innerHTML = `<div class="empty-state"><div class="icon">👥</div><h3>Nenhum cliente cadastrado</h3><p>Clique em "+ Novo Cliente" para começar</p></div>`;
@@ -485,6 +669,8 @@
                 </td>
                 <td style="color:var(--muted)">${date}</td>
                 <td>
+                  <button class="btn btn-ghost" onclick="openAgentsModal(${c.id}, '${c.name.replace(/'/g, "\\'")}')">Agentes</button>
+                  <button class="btn btn-ghost" onclick="importHistory(${c.id}, '${c.name.replace(/'/g, "\\'")}', this)">Histórico</button>
                   <button class="btn btn-danger" onclick="deleteClient(${c.id}, '${c.name}')">🗑</button>
                 </td>
               </tr>`;
@@ -504,42 +690,170 @@
     toast('Link copiado!');
   }
 
+  let _agentsClientId = null;
+  let _lastAgentCredentials = [];
+
+  function openAgentsModal(clientId, clientName) {
+    _agentsClientId = clientId;
+    document.getElementById('agentsClientName').textContent = `Cole uma linha por agente para "${clientName}" no formato: Nome, email.`;
+    document.getElementById('agentsInput').value = '';
+    document.getElementById('agentsModal').classList.remove('hidden');
+    document.getElementById('agentsInput').focus();
+  }
+
+  function closeAgentsModal() {
+    document.getElementById('agentsModal').classList.add('hidden');
+    document.getElementById('agentsInput').value = '';
+    _agentsClientId = null;
+  }
+
+  function parseAgentsInput() {
+    return document.getElementById('agentsInput').value
+      .split('\n')
+      .map(line => line.trim())
+      .filter(Boolean)
+      .map(line => {
+        const parts = line.split(',');
+        const email = (parts.pop() || '').trim();
+        const name = parts.join(',').trim();
+        return { name, email };
+      })
+      .filter(agent => agent.name && agent.email);
+  }
+
+  async function createAgents() {
+    if (!_agentsClientId) return;
+    const agents = parseAgentsInput();
+    if (!agents.length) { toast('Informe ao menos um agente no formato Nome, email', 'error'); return; }
+
+    const btn = document.getElementById('btnCreateAgents');
+    btn.innerHTML = `<span class="spinner"></span> Criando...`;
+    btn.disabled = true;
+
+    try {
+      const r = await apiFetch(`${API}/clients/${_agentsClientId}/agents`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ agents }),
+      });
+      const data = await r.json();
+      if (!r.ok) {
+        toast(readableError(data), 'error');
+        return;
+      }
+      closeAgentsModal();
+      showAgentCredentials(data.agents || []);
+    } catch (e) {
+      toast(`Erro: ${e.message}`, 'error');
+    } finally {
+      btn.innerHTML = 'Criar Agentes';
+      btn.disabled = false;
+    }
+  }
+
+  function showAgentCredentials(agents) {
+    _lastAgentCredentials = agents;
+    document.getElementById('agentCredentialsContent').innerHTML = agents.map(agent => `
+      <div style="border-bottom:1px solid var(--border);padding:8px 0">
+        <div><strong>${agent.name}</strong></div>
+        <div>Login: ${agent.email}</div>
+        <div>Senha: <code style="background:var(--surface);padding:2px 6px;border-radius:4px">${agent.chatwoot_temp_password}</code></div>
+      </div>
+    `).join('');
+    document.getElementById('agentCredentialsModal').classList.remove('hidden');
+  }
+
+  function copyAgentCredentials() {
+    if (!_lastAgentCredentials.length) return;
+    const text = _lastAgentCredentials
+      .map(agent => `${agent.name}\nLogin: ${agent.email}\nSenha: ${agent.chatwoot_temp_password}`)
+      .join('\n\n');
+    navigator.clipboard.writeText(text);
+    toast('Credenciais dos agentes copiadas!');
+  }
+
   async function createClient() {
     const name = document.getElementById('clientNameInput').value.trim();
     const email = document.getElementById('clientEmailInput').value.trim();
-    if (!name) { toast('Informe o nome do cliente', 'error'); return; }
+    if (!name) { toast('Informe o nome da empresa', 'error'); return; }
+    if (!email) { toast('Informe o e-mail do administrador', 'error'); return; }
 
     const btn = document.getElementById('btnCreateClient');
     btn.innerHTML = `<span class="spinner"></span> Provisionando...`;
     btn.disabled = true;
 
     try {
-      const r = await fetch(`${API}/clients`, {
+      const r = await apiFetch(`${API}/clients`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, email }),
       });
       const data = await r.json();
       if (!r.ok) {
-        toast(`Erro: ${JSON.stringify(data.error || data)}`, 'error');
+        toast(readableError(data), 'error');
       } else {
-        toast(`Cliente "${name}" criado! Link de onboarding gerado.`);
         closeClientModal();
+        showCredentials(data);
         await loadClients();
       }
     } catch (e) {
       toast(`Erro: ${e.message}`, 'error');
     } finally {
-      btn.innerHTML = 'Criar Cliente';
+      btn.innerHTML = 'Criar Empresa';
       btn.disabled = false;
     }
   }
 
   async function deleteClient(id, name) {
-    if (!confirm(`Excluir o cliente "${name}"? A instância WhatsApp também será removida.`)) return;
-    await fetch(`${API}/clients/${id}`, { method: 'DELETE' });
+    if (!confirm(`Excluir a empresa "${name}"? A instância WhatsApp e a conta Chatwoot também serão removidas.`)) return;
+    await apiFetch(`${API}/clients/${id}`, { method: 'DELETE' });
     toast(`${name} excluído`, 'error');
     loadClients();
+  }
+
+  async function importHistory(id, name, btn) {
+    if (!confirm(`Importar mensagens da Evolution para "${name}"? O processo é idempotente e não deve duplicar mensagens já vinculadas.`)) return;
+    const original = btn.innerHTML;
+    btn.innerHTML = `<span class="spinner"></span>`;
+    btn.disabled = true;
+    try {
+      const r = await apiFetch(`${API}/clients/${id}/import-history`, { method: 'POST' });
+      const data = await r.json();
+      if (!r.ok) {
+        toast(readableError(data), 'error');
+        return;
+      }
+      toast(
+        `Histórico: ${data.contacts_created} contatos, ${data.conversations_created} conversas, ${data.messages_imported} mensagens importadas, ${data.messages_relinked} vinculadas.`,
+      );
+    } catch (e) {
+      toast(`Erro: ${e.message}`, 'error');
+    } finally {
+      btn.innerHTML = original;
+      btn.disabled = false;
+    }
+  }
+
+  let _lastCreatedData = null;
+  function showCredentials(data) {
+    _lastCreatedData = data;
+    const link = `${CHAT_BASE}/onboard/${data.token}`;
+    document.getElementById('credentialsContent').innerHTML = `
+      <div><strong>🏢 Empresa:</strong> ${data.name}</div>
+      <div><strong>🔗 Link de Onboarding:</strong> <a href="${link}" target="_blank" style="color:var(--accent)">${link}</a></div>
+      <div><strong>🌐 Painel de Atendimento:</strong> <a href="${data.chatwoot_url}" target="_blank" style="color:var(--accent)">${data.chatwoot_url}</a></div>
+      <div><strong>📧 Login:</strong> ${data.chatwoot_user_email}</div>
+      <div><strong>🔑 Senha Temporária:</strong> <code style="background:var(--surface);padding:2px 6px;border-radius:4px">${data.chatwoot_temp_password}</code></div>
+    `;
+    document.getElementById('credentialsModal').classList.remove('hidden');
+  }
+
+  function copyCredentials() {
+    if (!_lastCreatedData) return;
+    const link = `${CHAT_BASE}/onboard/${_lastCreatedData.token}`;
+    const text = `Empresa: ${_lastCreatedData.name}\nLink de Conexão WhatsApp: ${link}\nPainel de Atendimento: ${_lastCreatedData.chatwoot_url}\nLogin: ${_lastCreatedData.chatwoot_user_email}\nSenha: ${_lastCreatedData.chatwoot_temp_password}`;
+    navigator.clipboard.writeText(text);
+    toast('Informações copiadas!');
   }
 
   function statusBadge(status) {
@@ -583,7 +897,7 @@
     const qrEl = cardEl.querySelector('.qr-section');
     qrEl.innerHTML = `<p>Carregando QR Code...</p><div class="spinner" style="margin:16px auto"></div>`;
     try {
-      const r = await fetch(`${API}/instances/${encodeURIComponent(name)}/qr`);
+      const r = await apiFetch(`${API}/instances/${encodeURIComponent(name)}/qr`);
       const data = await r.json();
       const base64 = data?.base64 || data?.qrcode?.base64 || '';
       if (base64) {
@@ -605,14 +919,14 @@
 
   async function logout(name) {
     if (!confirm(`Desconectar o WhatsApp da instância "${name}"?`)) return;
-    await fetch(`${API}/instances/${encodeURIComponent(name)}/logout`, { method: 'POST' });
+    await apiFetch(`${API}/instances/${encodeURIComponent(name)}/logout`, { method: 'POST' });
     toast(`${name} desconectado`);
     setTimeout(loadInstances, 1000);
   }
 
   async function deleteInstance(name) {
     if (!confirm(`Excluir permanentemente a instância "${name}"?`)) return;
-    await fetch(`${API}/instances/${encodeURIComponent(name)}`, { method: 'DELETE' });
+    await apiFetch(`${API}/instances/${encodeURIComponent(name)}`, { method: 'DELETE' });
     toast(`${name} excluído`, 'error');
     setTimeout(loadInstances, 500);
   }
@@ -649,7 +963,7 @@
     const grid = document.getElementById('grid');
     grid.innerHTML = `<div class="loading-wrap"><span class="spinner"></span> Carregando...</div>`;
     try {
-      const r = await fetch(`${API}/instances`);
+      const r = await apiFetch(`${API}/instances`);
       const data = await r.json();
       const list = Array.isArray(data) ? data : (data?.instances || []);
       grid.innerHTML = '';
@@ -670,20 +984,32 @@
     btn.innerHTML = `<span class="spinner"></span> Criando...`;
     btn.disabled = true;
     try {
-      const r = await fetch(`${API}/instances`, {
+      const r = await apiFetch(`${API}/instances`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name }),
       });
       const data = await r.json();
-      if (!r.ok) toast(`Erro: ${JSON.stringify(data.error || data)}`, 'error');
+      if (!r.ok) toast(readableError(data), 'error');
       else { toast(`Instância "${name}" criada!`); closeModal(); loadInstances(); }
     } catch (e) { toast(`Erro: ${e.message}`, 'error'); }
     finally { btn.innerHTML = 'Criar Conexão'; btn.disabled = false; }
   }
 
+  async function checkSession() {
+    try {
+      const r = await apiFetch(`${API}/session`);
+      if (r.ok) {
+        unlockManager();
+        await loadClients();
+      }
+    } catch (_e) {
+      requireLogin();
+    }
+  }
+
   // Init
-  loadClients();
+  checkSession();
 </script>
 </body>
 </html>

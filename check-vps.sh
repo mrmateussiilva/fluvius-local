@@ -1,6 +1,9 @@
 #!/bin/bash
-VPS_PASS="1234"
-export SSHPASS="$VPS_PASS"
+# Requer: export SSHPASS=sua-senha
+if [ -z "$SSHPASS" ]; then
+  echo "Defina: export SSHPASS=sua-senha"
+  exit 1
+fi
 SSH="sshpass -e ssh -o StrictHostKeyChecking=no"
 
 echo "=== STATUS DA VPS ==="

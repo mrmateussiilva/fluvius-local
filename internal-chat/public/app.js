@@ -3,7 +3,9 @@ const params = new URLSearchParams(window.location.search);
 
 const state = {
   agents: [],
+  bootstrapUsers: [],
   currentUserId: Number(localStorage.getItem('fluviusInternalUserId') || 0),
+  accountId: Number(localStorage.getItem('fluviusInternalAccountId') || 0),
   currentRoomId: null,
   currentRoom: null,
   rooms: [],
@@ -142,10 +144,11 @@ function renderEmbeddedUser() {
 }
 
 function renderAgents() {
-  agentSelect.innerHTML = state.agents
-    .map(agent => `<option value="${agent.id}">${escapeHtml(agent.name || agent.email)}</option>`)
+  const selectableUsers = state.embedded ? state.agents : state.bootstrapUsers;
+  agentSelect.innerHTML = selectableUsers
+    .map(agent => `<option value="${agent.id}">${escapeHtml(agent.name || agent.email)}${agent.account_id ? ` · Conta ${agent.account_id}` : ''}</option>`)
     .join('');
-  if (!state.currentUserId && state.agents[0]) state.currentUserId = Number(state.agents[0].id);
+  if (!state.currentUserId && selectableUsers[0]) state.currentUserId = Number(selectableUsers[0].id);
   agentSelect.value = String(state.currentUserId);
 
   const filteredAgents = state.agents
@@ -260,7 +263,7 @@ function appendMessage(message) {
 async function loadRooms() {
   if (!state.currentUserId) return;
   try {
-    state.rooms = await request(`/api/rooms?userId=${state.currentUserId}`);
+    state.rooms = await request(`/api/rooms?userId=${state.currentUserId}&accountId=${state.accountId}`);
     renderRooms();
   } catch (error) {
     showNotice('Nao foi possivel carregar as conversas internas.');
@@ -273,11 +276,11 @@ async function openRoom(roomId) {
   renderTyping();
   messages.innerHTML = '<div class="loadingState"><span></span><span></span><span></span></div>';
   setComposerState();
-  socket.emit('join', { userId: state.currentUserId, roomId: state.currentRoomId });
+  socket.emit('join', { userId: state.currentUserId, accountId: state.accountId, roomId: state.currentRoomId });
   try {
     const [room, items] = await Promise.all([
-      request(`/api/rooms/${state.currentRoomId}?userId=${state.currentUserId}`),
-      request(`/api/rooms/${state.currentRoomId}/messages?userId=${state.currentUserId}`),
+      request(`/api/rooms/${state.currentRoomId}?userId=${state.currentUserId}&accountId=${state.accountId}`),
+      request(`/api/rooms/${state.currentRoomId}/messages?userId=${state.currentUserId}&accountId=${state.accountId}`),
     ]);
     state.currentRoom = room;
     renderCurrentHeader();
@@ -296,14 +299,14 @@ async function openRoom(roomId) {
 async function markRoomRead(roomId) {
   await request(`/api/rooms/${roomId}/read`, {
     method: 'POST',
-    body: JSON.stringify({ userId: state.currentUserId }),
+    body: JSON.stringify({ userId: state.currentUserId, accountId: state.accountId }),
   });
 }
 
 async function startDm(otherUserId) {
   const room = await request('/api/rooms/dm', {
     method: 'POST',
-    body: JSON.stringify({ userId: state.currentUserId, otherUserId }),
+    body: JSON.stringify({ userId: state.currentUserId, accountId: state.accountId, otherUserId }),
   });
   state.activeTab = 'rooms';
   renderTabs();
@@ -332,23 +335,27 @@ function resizeComposer() {
 
 function emitTyping() {
   if (!state.currentRoomId) return;
-  socket.emit('typing:start', { userId: state.currentUserId, roomId: state.currentRoomId });
+  socket.emit('typing:start', { userId: state.currentUserId, accountId: state.accountId, roomId: state.currentRoomId });
   clearTimeout(typingTimer);
   typingTimer = setTimeout(() => {
-    socket.emit('typing:stop', { userId: state.currentUserId, roomId: state.currentRoomId });
+    socket.emit('typing:stop', { userId: state.currentUserId, accountId: state.accountId, roomId: state.currentRoomId });
   }, 1200);
 }
 
 agentSelect.addEventListener('change', async event => {
   state.currentUserId = Number(event.target.value);
+  const selected = state.bootstrapUsers.find(user => Number(user.id) === state.currentUserId);
+  if (selected?.account_id) state.accountId = Number(selected.account_id);
   localStorage.setItem('fluviusInternalUserId', String(state.currentUserId));
+  localStorage.setItem('fluviusInternalAccountId', String(state.accountId));
   state.currentRoomId = null;
   state.currentRoom = null;
   messages.innerHTML = '';
+  await loadAccountAgents();
   renderCurrentHeader();
   renderAgents();
   renderGroupParticipants();
-  socket.emit('user:join', { userId: state.currentUserId });
+  socket.emit('user:join', { userId: state.currentUserId, accountId: state.accountId });
   await loadRooms();
 });
 
@@ -384,7 +391,7 @@ messageForm.addEventListener('submit', event => {
   if (!content || !state.currentRoomId || sending) return;
   sending = true;
   setComposerState();
-  socket.emit('typing:stop', { userId: state.currentUserId, roomId: state.currentRoomId });
+  socket.emit('typing:stop', { userId: state.currentUserId, accountId: state.accountId, roomId: state.currentRoomId });
   const sendTimeout = window.setTimeout(() => {
     if (!sending) return;
     sending = false;
@@ -393,6 +400,7 @@ messageForm.addEventListener('submit', event => {
   }, 7000);
   socket.emit('message:create', {
     userId: state.currentUserId,
+    accountId: state.accountId,
     roomId: state.currentRoomId,
     content,
   }, response => {
@@ -434,7 +442,7 @@ document.querySelector('#createGroupButton').addEventListener('click', async () 
   try {
     const room = await request('/api/rooms/group', {
       method: 'POST',
-      body: JSON.stringify({ userId: state.currentUserId, title: groupTitle.value, participantIds }),
+      body: JSON.stringify({ userId: state.currentUserId, accountId: state.accountId, title: groupTitle.value, participantIds }),
     });
     groupDialog.close();
     state.activeTab = 'rooms';
@@ -477,9 +485,24 @@ socket.on('typing:update', payload => {
   renderTyping();
 });
 
+async function loadAccountAgents() {
+  const agentPayload = await request(`/api/agents?userId=${state.currentUserId}&accountId=${state.accountId}`);
+  state.accountId = Number(agentPayload.accountId || state.accountId || 0);
+  state.agents = agentPayload.agents || [];
+}
+
 async function boot() {
   if (state.embedded) document.body.classList.add('embedded');
-  state.agents = await request('/api/agents');
+  state.bootstrapUsers = await request('/api/bootstrap-users');
+
+  const forcedById = state.bootstrapUsers.find(user => Number(user.id) === state.forcedUserId);
+  const forcedByEmail = state.bootstrapUsers.find(user => user.email && user.email.toLowerCase() === state.forcedUserEmail.toLowerCase());
+  const savedUser = state.bootstrapUsers.find(user => Number(user.id) === state.currentUserId);
+  const selectedUser = forcedById || forcedByEmail || savedUser || state.bootstrapUsers[0];
+
+  state.currentUserId = Number(selectedUser?.id || 0);
+  state.accountId = Number(selectedUser?.account_id || state.accountId || 0);
+  await loadAccountAgents();
   const agentById = state.agents.find(agent => Number(agent.id) === state.forcedUserId);
   const agentByEmail = state.agents.find(agent => agent.email && agent.email.toLowerCase() === state.forcedUserEmail.toLowerCase());
 
@@ -491,7 +514,8 @@ async function boot() {
     state.currentUserId = Number(state.agents[0]?.id || 0);
   }
   localStorage.setItem('fluviusInternalUserId', String(state.currentUserId));
-  socket.emit('user:join', { userId: state.currentUserId });
+  localStorage.setItem('fluviusInternalAccountId', String(state.accountId));
+  socket.emit('user:join', { userId: state.currentUserId, accountId: state.accountId });
 
   renderTabs();
   renderAgents();

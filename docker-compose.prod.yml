@@ -240,8 +240,10 @@ services:
       EVOLUTION_SERVER_URL: http://evolution:8080
       EVOLUTION_API_KEY: ${EVOLUTION_API_KEY}
       CHATWOOT_FRONTEND_URL: http://chatwoot:3000
+      CHATWOOT_PUBLIC_URL: ${CHATWOOT_FRONTEND_URL}
       CHATWOOT_ACCOUNT_ID: ${CHATWOOT_ACCOUNT_ID:-1}
       CHATWOOT_USER_ACCESS_TOKEN: ${CHATWOOT_USER_ACCESS_TOKEN:-}
+      CHATWOOT_PLATFORM_TOKEN: ${CHATWOOT_PLATFORM_TOKEN:-}
     volumes:
       - internal_chat_uploads:/app/public/uploads
     healthcheck:

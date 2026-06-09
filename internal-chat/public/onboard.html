@@ -375,6 +375,7 @@
       const r = await fetch(`${BASE}/info`);
       const data = await r.json();
       if (!r.ok) return showInvalid(data.error || 'Link inválido');
+      if (data.chatwootUrl) window.CHATWOOT_URL = data.chatwootUrl;
       document.getElementById('clientNameBadge').textContent = data.name;
       if (data.status === 'connected') return showSuccess(data.phone, data.name);
       showConnect(data.name);

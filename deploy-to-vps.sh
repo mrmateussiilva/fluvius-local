@@ -2,17 +2,26 @@
 # =============================================================================
 # Script de deploy Fluvius → VPS
 # Execute na sua maquina local: bash deploy-to-vps.sh
+#
+# Variaveis de ambiente:
+#   VPS_HOST  — IP ou hostname da VPS (default: 191.252.212.61)
+#   VPS_USER  — usuario SSH (default: deploy)
+#   SSHPASS   — senha SSH (lida do ambiente, nao coloque aqui!)
 # =============================================================================
 set -eo pipefail
 
-VPS_USER="deploy"
-VPS_HOST="191.252.212.61"
-VPS_PASS="1234"
-VPS_DIR="/home/deploy/fluvius"
+VPS_USER="${VPS_USER:-deploy}"
+VPS_HOST="${VPS_HOST:-191.252.212.61}"
+VPS_DIR="/opt/fluvius"
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 TAR_FILE="/tmp/fluvius-deploy.tar.gz"
 
-export SSHPASS="$VPS_PASS"
+if [ -z "$SSHPASS" ]; then
+  echo "ERRO: defina a variavel SSHPASS com a senha SSH antes de rodar."
+  echo "  export SSHPASS=sua-senha && bash deploy-to-vps.sh"
+  exit 1
+fi
+
 SSH="sshpass -e ssh -o StrictHostKeyChecking=no -o BatchMode=no"
 SCP="sshpass -e scp -o StrictHostKeyChecking=no -o BatchMode=no"
 
@@ -54,10 +63,23 @@ echo ""
 echo ">>> [4/5] Extraindo arquivos e configurando .env na VPS..."
 $SSH $VPS_USER@$VPS_HOST "
   set -e
+  mkdir -p $VPS_DIR
   cd $VPS_DIR
   tar xzf /tmp/fluvius-deploy.tar.gz
   rm /tmp/fluvius-deploy.tar.gz
-  cp .env.production .env
+
+  # Copia o .env de producao se ainda nao existe
+  if [ ! -f .env ]; then
+    if [ -f .env.production ]; then
+      cp .env.production .env
+      echo 'AVISO: .env criado a partir de .env.production. Revise as variaveis!'
+    else
+      echo 'AVISO: .env nao encontrado. Crie manualmente em $VPS_DIR/.env'
+    fi
+  else
+    echo 'INFO: .env existente mantido (nao sobrescrito).'
+  fi
+
   echo 'Arquivos extraidos:'
   ls -la $VPS_DIR/
 "
@@ -84,11 +106,17 @@ echo "  Deploy concluido!"
 echo ""
 echo "  Chatwoot:   https://fluvius.finderbit.com.br"
 echo "  Evolution:  https://evolution.fluvius.finderbit.com.br"
-echo "  Chat:       https://chat.fluvius.finderbit.com.br"
+echo "  Manager:    https://chat.fluvius.finderbit.com.br/manager"
+echo ""
+echo "  Proximos passos:"
+echo "  1. Acesse https://fluvius.finderbit.com.br e crie a conta admin do Chatwoot"
+echo "  2. Va em Configuracoes -> Perfil -> Token de Acesso e copie o token"
+echo "  3. Acesse /super_admin -> Platform Apps -> crie um app e copie o token"
+echo "  4. Atualize CHATWOOT_USER_ACCESS_TOKEN e CHATWOOT_PLATFORM_TOKEN no .env da VPS"
+echo "  5. Rode: ssh $VPS_USER@$VPS_HOST 'cd $VPS_DIR && docker compose -f docker-compose.prod.yml up -d'"
 echo ""
 echo "  Para acompanhar os logs na VPS:"
-echo "  cd $VPS_DIR"
-echo "  docker compose -f docker-compose.prod.yml logs -f"
+echo "  ssh $VPS_USER@$VPS_HOST 'cd $VPS_DIR && docker compose -f docker-compose.prod.yml logs -f'"
 echo "========================================"
 
 # Limpar arquivo temporario local
