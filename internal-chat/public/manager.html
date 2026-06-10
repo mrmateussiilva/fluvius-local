@@ -306,6 +306,8 @@
       margin-bottom: 24px;
     }
     .config-hint strong { display: block; margin-bottom: 4px; }
+    .section-title { font-size: 16px; font-weight: 600; }
+    .section-subtitle { font-size: 13px; color: var(--muted); margin-top: 4px; }
   </style>
 </head>
 <body>
@@ -334,6 +336,18 @@
   .company-kpi span { display: block; color: var(--muted); font-size: 11px; margin-bottom: 4px; }
   .company-kpi strong { display: block; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .company-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+  .ops-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .ops-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; min-width: 0; }
+  .ops-card span { display: block; color: var(--muted); font-size: 12px; margin-bottom: 8px; }
+  .ops-card strong { display: block; font-size: 24px; line-height: 1; }
+  .ops-card small { display: block; color: var(--muted); font-size: 12px; margin-top: 8px; line-height: 1.4; }
+  .panel-map { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 18px; }
+  .panel-box { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; }
+  .panel-box strong { display: block; font-size: 14px; margin-bottom: 6px; }
+  .panel-box p { color: var(--muted); font-size: 13px; line-height: 1.5; margin: 0; }
+  .next-actions { display: grid; gap: 8px; margin: 14px 0 18px; }
+  .next-action { display: flex; align-items: center; justify-content: space-between; gap: 12px; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 12px; font-size: 13px; }
+  .next-action span { color: var(--muted); }
   .detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 18px 0; }
   .detail-box { background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 14px; min-width: 0; }
   .detail-box span { display: block; color: var(--muted); font-size: 12px; margin-bottom: 6px; }
@@ -350,7 +364,7 @@
   body.auth-required .auth-screen { display: flex; }
   @media (max-width: 760px) {
     body { padding: 14px; }
-    .company-grid, .detail-grid { grid-template-columns: 1fr; }
+    .company-grid, .detail-grid, .ops-summary, .panel-map { grid-template-columns: 1fr; }
     .company-kpis { grid-template-columns: 1fr; }
     .agent-row { grid-template-columns: 1fr; }
     .modal { padding: 20px; }
@@ -369,16 +383,16 @@
 </div>
 <header>
   <div class="logo">
-    <div class="logo-icon">📱</div>
+    <div class="logo-icon">F</div>
     <div>
       <h1>Gerenciador Fluvius</h1>
-      <span>Painel de Administração</span>
+      <span>Operação de empresas e canais</span>
     </div>
   </div>
   <nav style="display:flex;gap:4px;background:var(--surface2);border-radius:8px;padding:4px">
-    <button class="tab-nav active" id="navClients" onclick="showTab('clients')">👥 Clientes</button>
-    <button class="tab-nav" id="navInstances" onclick="showTab('instances')">⚙️ Instâncias Raw</button>
-    <button class="tab-nav" onclick="checkHealth()">🩺 Status</button>
+    <button class="tab-nav active" id="navClients" onclick="showTab('clients')">Empresas</button>
+    <button class="tab-nav" id="navInstances" onclick="showTab('instances')">Técnico</button>
+    <button class="tab-nav" onclick="checkHealth()">Status</button>
     <button class="tab-nav" onclick="logoutManager()">Sair</button>
   </nav>
 </header>
@@ -387,14 +401,15 @@
 <div class="main-tab active" id="tabClients">
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px">
     <div>
-      <h2 style="font-size:16px;font-weight:600">Empresas</h2>
-      <p style="font-size:13px;color:var(--muted)">Acompanhe acesso ao Chatwoot, agentes e conexão WhatsApp por empresa</p>
+      <h2 class="section-title">Empresas</h2>
+      <p class="section-subtitle">Visão central para acompanhar acesso, atendimento e WhatsApp de cada empresa.</p>
     </div>
     <div style="display:flex;gap:10px">
-      <button class="btn btn-ghost" onclick="loadClients()">⟳ Atualizar</button>
-      <button class="btn btn-primary" onclick="openClientModal()">+ Novo Cliente</button>
+      <button class="btn btn-ghost" onclick="loadClients()">Atualizar</button>
+      <button class="btn btn-primary" onclick="openClientModal()">Nova empresa</button>
     </div>
   </div>
+  <div id="opsSummary"></div>
   <div class="table-wrap" id="clientsTable">
     <div class="loading-wrap"><span class="spinner"></span> Carregando clientes...</div>
   </div>
@@ -404,11 +419,11 @@
 <div class="main-tab" id="tabInstances">
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px">
     <div>
-      <h2 style="font-size:16px;font-weight:600">Instâncias Evolution</h2>
-      <p style="font-size:13px;color:var(--muted)">Visualização técnica das instâncias na Evolution API</p>
+      <h2 class="section-title">Área técnica</h2>
+      <p class="section-subtitle">Instâncias Evolution usadas pela integração WhatsApp.</p>
     </div>
     <div style="display:flex;gap:10px">
-      <button class="btn btn-ghost" onclick="loadInstances()">⟳ Atualizar</button>
+      <button class="btn btn-ghost" onclick="loadInstances()">Atualizar</button>
     </div>
   </div>
   <div class="grid" id="grid">
@@ -504,7 +519,7 @@
     <div id="credentialsContent" style="background:var(--surface2);border-radius:8px;padding:16px;margin-bottom:20px;font-size:13px;line-height:2;"></div>
     <div class="modal-actions">
       <button class="btn btn-ghost" onclick="document.getElementById('credentialsModal').classList.add('hidden')">Fechar</button>
-      <button class="btn btn-primary" onclick="copyCredentials()">📋 Copiar Informações</button>
+      <button class="btn btn-primary" onclick="copyCredentials()">Copiar informações</button>
     </div>
   </div>
 </div>
@@ -675,14 +690,17 @@
 
   async function loadClients() {
     const wrap = document.getElementById('clientsTable');
+    const summary = document.getElementById('opsSummary');
+    summary.innerHTML = '';
     wrap.innerHTML = `<div class="loading-wrap"><span class="spinner"></span> Carregando...</div>`;
     try {
       const r = await apiFetch(`${API}/clients`);
       const clients = await r.json();
       if (!clients.length) {
-        wrap.innerHTML = `<div class="empty-state"><div class="icon">👥</div><h3>Nenhuma empresa cadastrada</h3><p>Clique em "+ Novo Cliente" para provisionar uma empresa</p></div>`;
+        wrap.innerHTML = `<div class="empty-state"><h3>Nenhuma empresa cadastrada</h3><p>Crie a primeira empresa para liberar o painel de atendimento e a conexão WhatsApp.</p></div>`;
         return;
       }
+      summary.innerHTML = renderOpsSummary(clients);
       wrap.innerHTML = `
         <div class="company-grid">
           ${clients.map(companyCard).join('')}
@@ -691,6 +709,31 @@
     } catch (e) {
       wrap.innerHTML = `<div class="empty-state"><div class="icon">⚠️</div><h3>Erro ao carregar</h3><p>${e.message}</p></div>`;
     }
+  }
+
+  function renderOpsSummary(clients) {
+    const total = clients.length;
+    const connected = clients.filter(c => c.status === 'connected').length;
+    const pending = clients.filter(c => c.status !== 'connected').length;
+    const withChatwoot = clients.filter(c => c.chatwoot_account_id).length;
+    return `
+      <div class="ops-summary">
+        <div class="ops-card"><span>Empresas</span><strong>${total}</strong><small>Total provisionado no Fluvius</small></div>
+        <div class="ops-card"><span>WhatsApp conectado</span><strong>${connected}</strong><small>Prontas para atendimento</small></div>
+        <div class="ops-card"><span>Pendências</span><strong>${pending}</strong><small>Exigem conexão ou revisão</small></div>
+        <div class="ops-card"><span>Contas Chatwoot</span><strong>${withChatwoot}</strong><small>Painéis de atendimento criados</small></div>
+      </div>
+      <div class="panel-map">
+        <div class="panel-box">
+          <strong>Chatwoot: operação da empresa</strong>
+          <p>Conversas, contatos, agentes, atribuições e acompanhamento do atendimento.</p>
+        </div>
+        <div class="panel-box">
+          <strong>Manager: administração Fluvius</strong>
+          <p>Empresas, conexão WhatsApp, provisionamento, agentes e manutenção técnica.</p>
+        </div>
+      </div>
+    `;
   }
 
   function escapeAttr(value = '') {
@@ -702,6 +745,9 @@
     const date = new Date(c.created_at).toLocaleDateString('pt-BR');
     const chatwootBase = c.chatwoot_url || 'https://fluvius.finderbit.com.br';
     const chatwootUrl = c.chatwoot_account_id ? `${chatwootBase}/app/accounts/${c.chatwoot_account_id}/dashboard` : chatwootBase;
+    const primaryAction = c.status === 'connected'
+      ? `<a class="btn btn-primary btn-sm" href="${chatwootUrl}" target="_blank" style="text-decoration:none">Abrir atendimento</a>`
+      : `<a class="btn btn-primary btn-sm" href="${link}" target="_blank" style="text-decoration:none">Conectar WhatsApp</a>`;
     return `
       <div class="company-card">
         <div class="company-top">
@@ -718,9 +764,10 @@
           <div class="company-kpi"><span>Instância</span><strong>${c.instance_name || '—'}</strong></div>
         </div>
         <div class="company-actions">
-          <button class="btn btn-primary btn-sm" onclick="openCompany(${c.id})">Ver empresa</button>
-          <a class="btn btn-ghost btn-sm" href="${chatwootUrl}" target="_blank" style="text-decoration:none">Abrir Chatwoot</a>
-          <a class="btn btn-ghost btn-sm" href="${link}" target="_blank" style="text-decoration:none">Conectar WhatsApp</a>
+          ${primaryAction}
+          <button class="btn btn-ghost btn-sm" onclick="openCompany(${c.id})">Ver empresa</button>
+          <a class="btn btn-ghost btn-sm" href="${chatwootUrl}" target="_blank" style="text-decoration:none">Chatwoot</a>
+          <a class="btn btn-ghost btn-sm" href="${link}" target="_blank" style="text-decoration:none">Onboarding</a>
           <button class="btn btn-ghost btn-sm" onclick="copyLink('${link}', this)">Copiar onboarding</button>
         </div>
       </div>
@@ -752,9 +799,23 @@
   function renderCompany(c) {
     const onboardLink = `${CHAT_BASE}/onboard/${c.token}`;
     const chatwootAccountUrl = `${c.chatwoot_url}/app/accounts/${c.chatwoot_account_id}/dashboard`;
+    const pendingActions = companyPendingActions(c, chatwootAccountUrl, onboardLink);
     document.getElementById('companyTitle').textContent = c.name;
-    document.getElementById('companySubtitle').textContent = 'Empresa provisionada para atendimento no Chatwoot.';
+    document.getElementById('companySubtitle').textContent = c.status === 'connected'
+      ? 'Operação pronta para atendimento no Chatwoot.'
+      : 'Empresa provisionada, aguardando conclusão da conexão WhatsApp.';
     document.getElementById('companyContent').innerHTML = `
+      <div class="panel-map">
+        <div class="panel-box">
+          <strong>Admin da empresa entra no Chatwoot</strong>
+          <p>É ali que ele acompanha conversas, agentes, contatos, filas e atendimento diário.</p>
+        </div>
+        <div class="panel-box">
+          <strong>Sua equipe usa o Manager</strong>
+          <p>Use esta tela para conexão WhatsApp, criação de agentes, diagnóstico e manutenção.</p>
+        </div>
+      </div>
+      ${pendingActions}
       <div class="detail-grid">
         <div class="detail-box"><span>Painel da empresa</span><strong><a href="${chatwootAccountUrl}" target="_blank" style="color:var(--accent)">${chatwootAccountUrl}</a></strong></div>
         <div class="detail-box"><span>Admin da empresa</span><strong>${c.chatwoot_user_email || c.email || '—'}</strong></div>
@@ -774,6 +835,32 @@
       ${renderAgents(c.agents || [])}
       <div style="margin-top:18px;color:var(--muted);font-size:12px;line-height:1.6">
         A empresa deve usar o Chatwoot para atender clientes. O Manager fica reservado para provisionamento, conexao WhatsApp e manutencao operacional.
+      </div>
+    `;
+  }
+
+  function companyPendingActions(c, chatwootAccountUrl, onboardLink) {
+    const actions = [];
+    if (!c.chatwoot_account_id) {
+      actions.push(['Conta Chatwoot pendente', 'Revise o provisionamento da empresa.', null]);
+    }
+    if (c.status !== 'connected') {
+      actions.push(['WhatsApp pendente', 'Enviar link de conexão para o admin da empresa.', onboardLink]);
+    }
+    if (!c.phone) {
+      actions.push(['Número não identificado', 'Conecte o WhatsApp para registrar o número da empresa.', onboardLink]);
+    }
+    if (!actions.length) {
+      actions.push(['Atendimento liberado', 'Abrir o Chatwoot para acompanhar conversas e agentes.', chatwootAccountUrl]);
+    }
+    return `
+      <div class="next-actions">
+        ${actions.map(([title, description, href]) => `
+          <div class="next-action">
+            <div><strong>${title}</strong><br><span>${description}</span></div>
+            ${href ? `<a class="btn btn-ghost btn-sm" href="${href}" target="_blank" style="text-decoration:none">Abrir</a>` : ''}
+          </div>
+        `).join('')}
       </div>
     `;
   }
@@ -806,8 +893,9 @@
 
   function copyLink(url, btn) {
     navigator.clipboard.writeText(url);
-    btn.textContent = '✓';
-    setTimeout(() => btn.textContent = '📋', 2000);
+    const original = btn.textContent;
+    btn.textContent = 'Copiado';
+    setTimeout(() => btn.textContent = original, 2000);
     toast('Link copiado!');
   }
 
@@ -960,11 +1048,11 @@
     _lastCreatedData = data;
     const link = `${CHAT_BASE}/onboard/${data.token}`;
     document.getElementById('credentialsContent').innerHTML = `
-      <div><strong>🏢 Empresa:</strong> ${data.name}</div>
-      <div><strong>🔗 Link de Onboarding:</strong> <a href="${link}" target="_blank" style="color:var(--accent)">${link}</a></div>
-      <div><strong>🌐 Painel de Atendimento:</strong> <a href="${data.chatwoot_url}" target="_blank" style="color:var(--accent)">${data.chatwoot_url}</a></div>
-      <div><strong>📧 Login:</strong> ${data.chatwoot_user_email}</div>
-      <div><strong>🔑 Senha Temporária:</strong> <code style="background:var(--surface);padding:2px 6px;border-radius:4px">${data.chatwoot_temp_password}</code></div>
+      <div><strong>Empresa:</strong> ${data.name}</div>
+      <div><strong>Link de conexão WhatsApp:</strong> <a href="${link}" target="_blank" style="color:var(--accent)">${link}</a></div>
+      <div><strong>Painel de atendimento:</strong> <a href="${data.chatwoot_url}" target="_blank" style="color:var(--accent)">${data.chatwoot_url}</a></div>
+      <div><strong>Login:</strong> ${data.chatwoot_user_email}</div>
+      <div><strong>Senha temporária:</strong> <code style="background:var(--surface);padding:2px 6px;border-radius:4px">${data.chatwoot_temp_password}</code></div>
     `;
     document.getElementById('credentialsModal').classList.remove('hidden');
   }
@@ -1089,7 +1177,7 @@
       const list = Array.isArray(data) ? data : (data?.instances || []);
       grid.innerHTML = '';
       if (!list.length) {
-        grid.innerHTML = `<div class="empty-state"><div class="icon">📱</div><h3>Nenhuma instância</h3></div>`;
+        grid.innerHTML = `<div class="empty-state"><h3>Nenhuma instância</h3></div>`;
         return;
       }
       for (const inst of list) grid.appendChild(renderCard(inst.instance || inst));
