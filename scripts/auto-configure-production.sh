@@ -18,6 +18,12 @@ get_env_var() {
   local fallback="${2:-}"
   local value
   value="$(grep -E "^${key}=" "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2- || true)"
+  value="${value%$'\r'}"
+  if [[ "$value" == \"*\" && "$value" == *\" ]]; then
+    value="${value:1:${#value}-2}"
+  elif [[ "$value" == \'*\' && "$value" == *\' ]]; then
+    value="${value:1:${#value}-2}"
+  fi
   printf '%s' "${value:-$fallback}"
 }
 
@@ -47,6 +53,13 @@ echo "========================================="
 echo "  Fluvius — Configuracao automatica"
 echo "========================================="
 echo ""
+
+if [ "$(get_env_var ALLOW_PRIVATE_WEBHOOK_URLS false)" != "true" ]; then
+  echo ">>> [0/4] Habilitando webhooks internos do Docker..."
+  set_env_var "ALLOW_PRIVATE_WEBHOOK_URLS" "true"
+  $COMPOSE up -d --force-recreate chatwoot sidekiq
+  echo ""
+fi
 
 echo ">>> [1/4] Aguardando Chatwoot ficar pronto..."
 for attempt in $(seq 1 60); do

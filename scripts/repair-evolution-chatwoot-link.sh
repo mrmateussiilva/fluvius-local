@@ -28,6 +28,16 @@ get_env_var() {
   printf '%s' "${value:-$fallback}"
 }
 
+set_env_var() {
+  local key="$1"
+  local value="$2"
+  if grep -q "^${key}=" "$ENV_FILE" 2>/dev/null; then
+    sed -i "s|^${key}=.*|${key}=${value}|" "$ENV_FILE"
+  else
+    printf '\n%s=%s\n' "$key" "$value" >> "$ENV_FILE"
+  fi
+}
+
 validate_instance_name() {
   local instance_name="$1"
   if [[ ! "$instance_name" =~ ^[A-Za-z0-9_.-]+$ ]]; then
@@ -35,6 +45,39 @@ validate_instance_name() {
     echo "Use apenas letras, numeros, ponto, underscore ou hifen." >&2
     exit 1
   fi
+}
+
+wait_for_chatwoot() {
+  echo "Aguardando Chatwoot ficar pronto..."
+  for attempt in $(seq 1 60); do
+    if compose exec -T chatwoot bundle exec rails runner 'puts "ready"' >/dev/null 2>&1; then
+      echo "Chatwoot pronto."
+      return 0
+    fi
+    if [ "$attempt" = "60" ]; then
+      echo "ERRO: Chatwoot nao ficou pronto a tempo." >&2
+      exit 1
+    fi
+    sleep 5
+  done
+}
+
+ensure_private_webhooks_enabled() {
+  local env_value
+  local container_value
+
+  env_value="$(get_env_var ALLOW_PRIVATE_WEBHOOK_URLS false)"
+  container_value="$(compose exec -T chatwoot printenv ALLOW_PRIVATE_WEBHOOK_URLS 2>/dev/null | tr -d '\r' || true)"
+
+  if [ "$env_value" = "true" ] && [ "$container_value" = "true" ]; then
+    return 0
+  fi
+
+  echo "Habilitando ALLOW_PRIVATE_WEBHOOK_URLS=true e recriando Chatwoot/Sidekiq..."
+  set_env_var "ALLOW_PRIVATE_WEBHOOK_URLS" "true"
+  compose up -d --force-recreate chatwoot sidekiq
+  wait_for_chatwoot
+  echo ""
 }
 
 if [ ! -f "$ENV_FILE" ]; then
@@ -72,6 +115,8 @@ echo "Compose: $COMPOSE_FILE"
 echo "Chatwoot interno: $CHATWOOT_INTERNAL_URL"
 echo "Evolution interno: $EVOLUTION_INTERNAL_URL"
 echo ""
+
+ensure_private_webhooks_enabled
 
 where_clause="WHERE instance_name IS NOT NULL AND instance_name <> ''"
 if [ -n "$INSTANCE_FILTER" ]; then

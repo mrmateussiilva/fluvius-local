@@ -21,6 +21,22 @@ const CHATWOOT_PLATFORM_TOKEN = String(process.env.CHATWOOT_PLATFORM_TOKEN || ''
 const CHATWOOT_ACCOUNT_ID = String(process.env.CHATWOOT_ACCOUNT_ID || '1');
 const MANAGER_ADMIN_TOKEN = String(process.env.MANAGER_ADMIN_TOKEN || '');
 
+function assertValidInternalUrl(name, value) {
+  let parsed;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new Error(`${name} must be a valid URL, got: ${value}`);
+  }
+
+  if (parsed.hostname === 'host') {
+    throw new Error(`${name} points to invalid hostname "host"; use the Docker service URL instead`);
+  }
+}
+
+assertValidInternalUrl('EVOLUTION_SERVER_URL', EVOLUTION_URL);
+assertValidInternalUrl('CHATWOOT_FRONTEND_URL', CHATWOOT_URL);
+
 const allowedOrigins = String(process.env.INTERNAL_CHAT_ALLOWED_ORIGINS || '*')
   .split(',')
   .map(origin => origin.trim())

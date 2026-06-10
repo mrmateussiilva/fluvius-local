@@ -174,7 +174,7 @@ Se necessario, crie manualmente o banco `evolution` usando os valores do `.env`.
 
 Esse erro indica que a configuracao Chatwoot gravada na Evolution esta apontando para um host invalido.
 
-Repare todas as instancias cadastradas:
+Repare todas as instancias cadastradas. O script tambem garante `ALLOW_PRIVATE_WEBHOOK_URLS=true`, recria Chatwoot/Sidekiq se necessario e espera o Chatwoot ficar pronto:
 
 ```bash
 cd /opt/apps/fluvius-local
@@ -189,6 +189,13 @@ Ou repare apenas uma instancia:
 
 ```bash
 bash scripts/repair-evolution-chatwoot-link.sh NomeDaInstancia
+```
+
+Depois envie uma nova mensagem e confira:
+
+```bash
+docker compose -f docker-compose.prod.yml logs --tail=120 chatwoot
+docker compose -f docker-compose.prod.yml logs --tail=120 evolution
 ```
 
 ## Proximo teste obrigatorio

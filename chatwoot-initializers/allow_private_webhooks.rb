@@ -1,5 +1,5 @@
-# Local Docker-only setting for integrations that call sibling containers.
-# Do not enable this in a public production deployment.
+# Required when Chatwoot sends webhooks to sibling services on the private
+# Docker network, for example http://evolution:8080.
 if ENV['ALLOW_PRIVATE_WEBHOOK_URLS'] == 'true'
   require 'ssrf_filter'
 
