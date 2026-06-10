@@ -3,8 +3,9 @@ set -euo pipefail
 
 BRAND_NAME="${BRAND_NAME:-Fluvius}"
 BRAND_URL="${BRAND_URL:-http://localhost:3000}"
+COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.yml}"
 
-docker compose exec -T chatwoot bundle exec rails runner "
+docker compose -f "$COMPOSE_FILE" exec -T chatwoot bundle exec rails runner "
   brand_name = ENV.fetch('BRAND_NAME', '${BRAND_NAME}')
   brand_url = ENV.fetch('BRAND_URL', '${BRAND_URL}')
 

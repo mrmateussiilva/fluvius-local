@@ -32,9 +32,12 @@ if id deploy &>/dev/null; then
   echo "  INFO: Usuário 'deploy' já existe"
 else
   useradd -m -s /bin/bash deploy
-  echo "deploy ALL=(ALL) NOPASSWD: /usr/bin/docker, /usr/local/bin/docker" >> /etc/sudoers.d/deploy-docker
   echo "  ✓ Usuário 'deploy' criado"
 fi
+cat > /etc/sudoers.d/deploy-fluvius <<'SUDOERS'
+deploy ALL=(ALL) NOPASSWD: /usr/bin/docker, /usr/local/bin/docker, /usr/bin/cp /opt/fluvius/Caddyfile /etc/caddy/Caddyfile, /usr/bin/systemctl reload caddy, /usr/bin/systemctl restart caddy
+SUDOERS
+chmod 440 /etc/sudoers.d/deploy-fluvius
 usermod -aG docker deploy 2>/dev/null || true
 
 # --- Instalar Docker ---

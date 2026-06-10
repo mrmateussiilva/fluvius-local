@@ -8,9 +8,11 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${CHATWOOT_POSTGRES_DB}
+      EVOLUTION_POSTGRES_DB: ${EVOLUTION_POSTGRES_DB}
     # Sem "ports" — banco nao fica exposto na internet
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./postgres-init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${CHATWOOT_POSTGRES_DB}"]
       interval: 10s
@@ -236,14 +238,16 @@ services:
       POSTGRES_DATABASE: ${CHATWOOT_POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      EVOLUTION_POSTGRES_DATABASE: ${EVOLUTION_POSTGRES_DB}
       # Manager de conexões WhatsApp
       EVOLUTION_SERVER_URL: http://evolution:8080
       EVOLUTION_API_KEY: ${EVOLUTION_API_KEY}
       CHATWOOT_FRONTEND_URL: http://chatwoot:3000
-      CHATWOOT_PUBLIC_URL: ${CHATWOOT_FRONTEND_URL}
+      CHATWOOT_PUBLIC_URL: ${CHATWOOT_PUBLIC_URL:-${CHATWOOT_FRONTEND_URL}}
       CHATWOOT_ACCOUNT_ID: ${CHATWOOT_ACCOUNT_ID:-1}
       CHATWOOT_USER_ACCESS_TOKEN: ${CHATWOOT_USER_ACCESS_TOKEN:-}
       CHATWOOT_PLATFORM_TOKEN: ${CHATWOOT_PLATFORM_TOKEN:-}
+      MANAGER_ADMIN_TOKEN: ${MANAGER_ADMIN_TOKEN}
     volumes:
       - internal_chat_uploads:/app/public/uploads
     healthcheck:
