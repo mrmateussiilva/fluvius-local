@@ -1613,6 +1613,63 @@ app.post('/manager/api/clients/:id/agents', async (req, res) => {
   }
 });
 
+// Reset a company agent password and return the new temporary password once.
+app.post('/manager/api/clients/:id/agents/:userId/reset-password', async (req, res) => {
+  const id = Number(req.params.id);
+  const userId = Number(req.params.userId);
+  if (!userId) return res.status(400).json({ error: 'userId is required' });
+  if (!CHATWOOT_PLATFORM_TOKEN) return res.status(400).json({ error: 'CHATWOOT_PLATFORM_TOKEN is not configured' });
+
+  const { rows } = await pool.query('SELECT * FROM fluvius_clients WHERE id = $1', [id]);
+  if (!rows.length) return res.status(404).json({ error: 'client not found' });
+
+  const client = rows[0];
+  if (!client.chatwoot_account_id) return res.status(400).json({ error: 'client is missing chatwoot account' });
+
+  const membership = await pool.query(
+    `SELECT users.id, users.name, users.email, account_users.role
+     FROM account_users
+     INNER JOIN users ON users.id = account_users.user_id
+     WHERE account_users.account_id = $1
+       AND users.id = $2
+     LIMIT 1`,
+    [client.chatwoot_account_id, userId],
+  );
+  if (!membership.rowCount) return res.status(404).json({ error: 'agent not found for this client' });
+
+  const password = generateTempPassword();
+  const payload = {
+    password,
+    confirmed: true,
+  };
+
+  let reset = await platformFetch(`/platform/api/v1/users/${userId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+
+  if (reset.status === 404 || reset.status === 405) {
+    reset = await platformFetch(`/platform/api/v1/users/${userId}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  if (reset.status >= 300) {
+    return res.status(reset.status).json({
+      step: 'reset_agent_password',
+      error: reset.data,
+    });
+  }
+
+  return res.json({
+    id: userId,
+    name: membership.rows[0].name,
+    email: membership.rows[0].email,
+    chatwoot_temp_password: password,
+  });
+});
+
 app.post('/manager/api/clients/:id/import-history', async (req, res) => {
   const id = Number(req.params.id);
   const { rows } = await pool.query('SELECT * FROM fluvius_clients WHERE id = $1', [id]);

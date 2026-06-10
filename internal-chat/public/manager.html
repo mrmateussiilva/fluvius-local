@@ -562,6 +562,7 @@
     associate_agent: 'Não foi possível vincular um agente à empresa.',
     add_agents_to_inbox: 'Não foi possível adicionar os agentes ao canal WhatsApp.',
     create_agents: 'Não foi possível criar os agentes.',
+    reset_agent_password: 'Não foi possível redefinir a senha do agente.',
   };
 
   function requireLogin() {
@@ -832,7 +833,7 @@
         <button class="btn btn-ghost btn-sm" onclick="importHistory(${c.id}, '${escapeAttr(c.name)}', this)">Importar histórico</button>
       </div>
       <h3 style="font-size:14px;margin:18px 0 8px">Agentes da empresa</h3>
-      ${renderAgents(c.agents || [])}
+      ${renderAgents(c.id, c.agents || [])}
       <div style="margin-top:18px;color:var(--muted);font-size:12px;line-height:1.6">
         A empresa deve usar o Chatwoot para atender clientes. O Manager fica reservado para provisionamento, conexao WhatsApp e manutencao operacional.
       </div>
@@ -865,7 +866,7 @@
     `;
   }
 
-  function renderAgents(agents) {
+  function renderAgents(clientId, agents) {
     if (!agents.length) return `<div class="detail-box"><span>Nenhum agente encontrado</span><strong>Adicione agentes para essa empresa.</strong></div>`;
     return `
       <div class="agent-list">
@@ -873,11 +874,36 @@
           <div class="agent-row">
             <strong>${agent.name || 'Sem nome'}</strong>
             <span style="color:var(--muted)">${agent.email}</span>
-            <span class="badge badge-unknown">${agent.role_label}</span>
+            <div style="display:flex;align-items:center;gap:8px;justify-content:flex-end;flex-wrap:wrap">
+              <span class="badge badge-unknown">${agent.role_label}</span>
+              <button class="btn btn-ghost btn-sm" onclick="resetAgentPassword(${clientId}, ${agent.id}, '${escapeAttr(agent.email)}', this)">Redefinir senha</button>
+            </div>
           </div>
         `).join('')}
       </div>
     `;
+  }
+
+  async function resetAgentPassword(clientId, userId, email, btn) {
+    if (!confirm(`Gerar uma nova senha temporária para ${email}? A senha anterior deixará de funcionar.`)) return;
+    const original = btn.innerHTML;
+    btn.innerHTML = `<span class="spinner"></span>`;
+    btn.disabled = true;
+    try {
+      const r = await apiFetch(`${API}/clients/${clientId}/agents/${userId}/reset-password`, { method: 'POST' });
+      const data = await r.json();
+      if (!r.ok) {
+        toast(readableError(data), 'error');
+        return;
+      }
+      showAgentCredentials([data]);
+      toast('Senha temporária gerada.');
+    } catch (e) {
+      toast(`Erro: ${e.message}`, 'error');
+    } finally {
+      btn.innerHTML = original;
+      btn.disabled = false;
+    }
   }
 
   async function copyCompanyAccess(id) {
