@@ -114,8 +114,8 @@ user = User.find_by(id: ENV["REPAIR_USER_ID"]) if ENV["REPAIR_USER_ID"].to_s != 
 user ||= User.find_by(email: ENV["REPAIR_USER_EMAIL"]) if ENV["REPAIR_USER_EMAIL"].to_s != ""
 abort "user not found" unless user
 token = user.access_token || AccessToken.create!(owner: user)
-puts token.token
-'
+puts "TOKEN=#{token.token}"
+' | awk -F= '/^TOKEN=/{print $2}' | tail -1
 }
 
 set_webhook_timeout() {
@@ -162,6 +162,8 @@ repair_instance() {
   local user_token="$CHATWOOT_USER_ACCESS_TOKEN"
   local webhook_url="$EVOLUTION_INTERNAL_URL/chatwoot/webhook/$instance_name"
   local payload
+  local response_file
+  local status
 
   validate_instance_name "$instance_name"
   account_id="${account_id:-$CHATWOOT_ACCOUNT_ID}"
@@ -180,11 +182,22 @@ repair_instance() {
   payload="$(printf '{"enabled":true,"accountId":"%s","token":"%s","url":"%s","signMsg":false,"reopenConversation":true,"conversationPending":false,"importContacts":true,"importMessages":true,"daysLimitImportMessages":365}' \
     "$account_id" "$user_token" "$CHATWOOT_INTERNAL_URL")"
 
-  curl -fsS \
+  response_file="$(mktemp)"
+  status="$(curl -sS \
+    -o "$response_file" \
+    -w '%{http_code}' \
     -X POST "$EVOLUTION_HOST_URL/chatwoot/set/$instance_name" \
     -H "apikey: $EVOLUTION_API_KEY" \
     -H "Content-Type: application/json" \
-    --data "$payload" >/dev/null
+    --data "$payload")"
+
+  if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
+    echo "  ERRO: Evolution retornou HTTP $status em /chatwoot/set/$instance_name" >&2
+    sed 's/^/  /' "$response_file" >&2 || true
+    rm -f "$response_file"
+    return 1
+  fi
+  rm -f "$response_file"
 
   echo "  Evolution Chatwoot URL: $CHATWOOT_INTERNAL_URL"
   update_inbox_webhook "$inbox_id" "$webhook_url"
