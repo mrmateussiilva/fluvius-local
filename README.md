@@ -8,6 +8,12 @@ Stack local com Fluvius, uma imagem customizada do Chatwoot, Evolution API, Post
 docker compose up -d
 ```
 
+Para o passo a passo depois de conseguir login em producao, veja:
+
+```text
+docs/pos-login-producao.md
+```
+
 Servicos:
 
 - Chatwoot: http://localhost:3000
