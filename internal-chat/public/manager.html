@@ -233,6 +233,7 @@
       max-width: 420px;
       animation: fadeIn 0.2s ease;
     }
+    .modal-wide { max-width: 840px; }
 
     .modal h2 { font-size: 18px; margin-bottom: 8px; }
     .modal p { font-size: 14px; color: var(--muted); margin-bottom: 24px; }
@@ -322,6 +323,24 @@
   .copy-link { background: none; border: none; cursor: pointer; color: var(--muted); font-size: 14px; padding: 2px 4px; border-radius: 4px; transition: color 0.2s; }
   .copy-link:hover { color: var(--green); }
   .table-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+  .company-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 16px; }
+  .company-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; }
+  .company-card:hover { border-color: #4b5563; }
+  .company-top { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; margin-bottom: 14px; }
+  .company-title { font-size: 16px; font-weight: 700; margin-bottom: 4px; }
+  .company-meta { color: var(--muted); font-size: 12px; line-height: 1.6; word-break: break-word; }
+  .company-kpis { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 14px 0; }
+  .company-kpi { background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 10px; min-width: 0; }
+  .company-kpi span { display: block; color: var(--muted); font-size: 11px; margin-bottom: 4px; }
+  .company-kpi strong { display: block; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .company-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+  .detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 18px 0; }
+  .detail-box { background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 14px; min-width: 0; }
+  .detail-box span { display: block; color: var(--muted); font-size: 12px; margin-bottom: 6px; }
+  .detail-box strong, .detail-box code { color: var(--text); font-size: 13px; word-break: break-word; }
+  .agent-list { border: 1px solid var(--border); border-radius: 8px; overflow: hidden; margin-top: 12px; }
+  .agent-row { display: grid; grid-template-columns: 1fr 1fr auto; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--border); font-size: 13px; align-items: center; }
+  .agent-row:last-child { border-bottom: none; }
   .auth-screen { min-height: 100vh; display: none; align-items: center; justify-content: center; padding: 24px; }
   .auth-card { width: min(420px, 100%); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; box-shadow: 0 18px 60px #0005; }
   .auth-card h1 { font-size: 20px; margin-bottom: 6px; }
@@ -329,6 +348,13 @@
   body.auth-required header,
   body.auth-required .main-tab { display: none; }
   body.auth-required .auth-screen { display: flex; }
+  @media (max-width: 760px) {
+    body { padding: 14px; }
+    .company-grid, .detail-grid { grid-template-columns: 1fr; }
+    .company-kpis { grid-template-columns: 1fr; }
+    .agent-row { grid-template-columns: 1fr; }
+    .modal { padding: 20px; }
+  }
 </style>
 <div class="auth-screen" id="authScreen">
   <form class="auth-card" onsubmit="loginManager(event)">
@@ -361,8 +387,8 @@
 <div class="main-tab active" id="tabClients">
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px">
     <div>
-      <h2 style="font-size:16px;font-weight:600">Clientes</h2>
-      <p style="font-size:13px;color:var(--muted)">Gerencie os clientes e seus links de onboarding</p>
+      <h2 style="font-size:16px;font-weight:600">Empresas</h2>
+      <p style="font-size:13px;color:var(--muted)">Acompanhe acesso ao Chatwoot, agentes e conexão WhatsApp por empresa</p>
     </div>
     <div style="display:flex;gap:10px">
       <button class="btn btn-ghost" onclick="loadClients()">⟳ Atualizar</button>
@@ -479,6 +505,22 @@
     <div class="modal-actions">
       <button class="btn btn-ghost" onclick="document.getElementById('credentialsModal').classList.add('hidden')">Fechar</button>
       <button class="btn btn-primary" onclick="copyCredentials()">📋 Copiar Informações</button>
+    </div>
+  </div>
+</div>
+
+<!-- Company Details Modal -->
+<div class="modal-overlay hidden" id="companyModal">
+  <div class="modal modal-wide">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:8px">
+      <div>
+        <h2 id="companyTitle">Empresa</h2>
+        <p id="companySubtitle">Resumo operacional da empresa.</p>
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="closeCompanyModal()">Fechar</button>
+    </div>
+    <div id="companyContent">
+      <div class="loading-wrap"><span class="spinner"></span> Carregando...</div>
     </div>
   </div>
 </div>
@@ -638,49 +680,128 @@
       const r = await apiFetch(`${API}/clients`);
       const clients = await r.json();
       if (!clients.length) {
-        wrap.innerHTML = `<div class="empty-state"><div class="icon">👥</div><h3>Nenhum cliente cadastrado</h3><p>Clique em "+ Novo Cliente" para começar</p></div>`;
+        wrap.innerHTML = `<div class="empty-state"><div class="icon">👥</div><h3>Nenhuma empresa cadastrada</h3><p>Clique em "+ Novo Cliente" para provisionar uma empresa</p></div>`;
         return;
       }
       wrap.innerHTML = `
-        <table class="client-table">
-          <thead>
-            <tr>
-              <th>Cliente</th>
-              <th>Status</th>
-              <th>Número Conectado</th>
-              <th>Link de Onboarding</th>
-              <th>Criado em</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            ${clients.map(c => {
-              const link = `${CHAT_BASE}/onboard/${c.token}`;
-              const date = new Date(c.created_at).toLocaleDateString('pt-BR');
-              return `<tr>
-                <td><strong>${c.name}</strong>${c.email ? `<br><span style="color:var(--muted);font-size:12px">${c.email}</span>` : ''}</td>
-                <td>${statusBadge(c.status)}</td>
-                <td style="color:var(--muted)">${c.phone || '—'}</td>
-                <td>
-                  <div class="link-cell">
-                    <a href="${link}" target="_blank" style="color:var(--accent);font-size:12px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block">${link}</a>
-                    <button class="copy-link" title="Copiar link" onclick="copyLink('${link}', this)">📋</button>
-                  </div>
-                </td>
-                <td style="color:var(--muted)">${date}</td>
-                <td>
-                  <button class="btn btn-ghost" onclick="openAgentsModal(${c.id}, '${c.name.replace(/'/g, "\\'")}')">Agentes</button>
-                  <button class="btn btn-ghost" onclick="importHistory(${c.id}, '${c.name.replace(/'/g, "\\'")}', this)">Histórico</button>
-                  <button class="btn btn-danger" onclick="deleteClient(${c.id}, '${c.name}')">🗑</button>
-                </td>
-              </tr>`;
-            }).join('')}
-          </tbody>
-        </table>
+        <div class="company-grid">
+          ${clients.map(companyCard).join('')}
+        </div>
       `;
     } catch (e) {
       wrap.innerHTML = `<div class="empty-state"><div class="icon">⚠️</div><h3>Erro ao carregar</h3><p>${e.message}</p></div>`;
     }
+  }
+
+  function escapeAttr(value = '') {
+    return String(value).replace(/'/g, "\\'").replace(/"/g, '&quot;');
+  }
+
+  function companyCard(c) {
+    const link = `${CHAT_BASE}/onboard/${c.token}`;
+    const date = new Date(c.created_at).toLocaleDateString('pt-BR');
+    const chatwootBase = c.chatwoot_url || 'https://fluvius.finderbit.com.br';
+    const chatwootUrl = c.chatwoot_account_id ? `${chatwootBase}/app/accounts/${c.chatwoot_account_id}/dashboard` : chatwootBase;
+    return `
+      <div class="company-card">
+        <div class="company-top">
+          <div>
+            <div class="company-title">${c.name}</div>
+            <div class="company-meta">${c.chatwoot_user_email || c.email || 'Admin nao definido'}</div>
+            <div class="company-meta">Criada em ${date}</div>
+          </div>
+          ${statusBadge(c.status)}
+        </div>
+        <div class="company-kpis">
+          <div class="company-kpi"><span>WhatsApp</span><strong>${c.phone || 'Aguardando conexão'}</strong></div>
+          <div class="company-kpi"><span>Conta Chatwoot</span><strong>${c.chatwoot_account_id || '—'}</strong></div>
+          <div class="company-kpi"><span>Instância</span><strong>${c.instance_name || '—'}</strong></div>
+        </div>
+        <div class="company-actions">
+          <button class="btn btn-primary btn-sm" onclick="openCompany(${c.id})">Ver empresa</button>
+          <a class="btn btn-ghost btn-sm" href="${chatwootUrl}" target="_blank" style="text-decoration:none">Abrir Chatwoot</a>
+          <a class="btn btn-ghost btn-sm" href="${link}" target="_blank" style="text-decoration:none">Conectar WhatsApp</a>
+          <button class="btn btn-ghost btn-sm" onclick="copyLink('${link}', this)">Copiar onboarding</button>
+        </div>
+      </div>
+    `;
+  }
+
+  async function openCompany(id) {
+    document.getElementById('companyModal').classList.remove('hidden');
+    document.getElementById('companyTitle').textContent = 'Empresa';
+    document.getElementById('companySubtitle').textContent = 'Carregando detalhes operacionais.';
+    document.getElementById('companyContent').innerHTML = `<div class="loading-wrap"><span class="spinner"></span> Carregando...</div>`;
+    try {
+      const r = await apiFetch(`${API}/clients/${id}`);
+      const c = await r.json();
+      if (!r.ok) {
+        document.getElementById('companyContent').innerHTML = `<div style="color:var(--red)">${readableError(c)}</div>`;
+        return;
+      }
+      renderCompany(c);
+    } catch (e) {
+      document.getElementById('companyContent').innerHTML = `<div style="color:var(--red)">Erro: ${e.message}</div>`;
+    }
+  }
+
+  function closeCompanyModal() {
+    document.getElementById('companyModal').classList.add('hidden');
+  }
+
+  function renderCompany(c) {
+    const onboardLink = `${CHAT_BASE}/onboard/${c.token}`;
+    const chatwootAccountUrl = `${c.chatwoot_url}/app/accounts/${c.chatwoot_account_id}/dashboard`;
+    document.getElementById('companyTitle').textContent = c.name;
+    document.getElementById('companySubtitle').textContent = 'Empresa provisionada para atendimento no Chatwoot.';
+    document.getElementById('companyContent').innerHTML = `
+      <div class="detail-grid">
+        <div class="detail-box"><span>Painel da empresa</span><strong><a href="${chatwootAccountUrl}" target="_blank" style="color:var(--accent)">${chatwootAccountUrl}</a></strong></div>
+        <div class="detail-box"><span>Admin da empresa</span><strong>${c.chatwoot_user_email || c.email || '—'}</strong></div>
+        <div class="detail-box"><span>Status WhatsApp</span><strong>${statusBadge(c.status)}</strong></div>
+        <div class="detail-box"><span>Número conectado</span><strong>${c.phone || 'Aguardando conexão'}</strong></div>
+        <div class="detail-box"><span>Link de conexão WhatsApp</span><strong><a href="${onboardLink}" target="_blank" style="color:var(--accent)">${onboardLink}</a></strong></div>
+        <div class="detail-box"><span>Instância técnica</span><code>${c.instance_name || '—'}</code></div>
+      </div>
+      <div class="company-actions" style="margin-bottom:18px">
+        <a class="btn btn-primary btn-sm" href="${chatwootAccountUrl}" target="_blank" style="text-decoration:none">Abrir Chatwoot da empresa</a>
+        <a class="btn btn-ghost btn-sm" href="${onboardLink}" target="_blank" style="text-decoration:none">Abrir onboarding WhatsApp</a>
+        <button class="btn btn-ghost btn-sm" onclick="copyCompanyAccess(${c.id})">Copiar acesso</button>
+        <button class="btn btn-ghost btn-sm" onclick="openAgentsModal(${c.id}, '${escapeAttr(c.name)}')">Adicionar agentes</button>
+        <button class="btn btn-ghost btn-sm" onclick="importHistory(${c.id}, '${escapeAttr(c.name)}', this)">Importar histórico</button>
+      </div>
+      <h3 style="font-size:14px;margin:18px 0 8px">Agentes da empresa</h3>
+      ${renderAgents(c.agents || [])}
+      <div style="margin-top:18px;color:var(--muted);font-size:12px;line-height:1.6">
+        A empresa deve usar o Chatwoot para atender clientes. O Manager fica reservado para provisionamento, conexao WhatsApp e manutencao operacional.
+      </div>
+    `;
+  }
+
+  function renderAgents(agents) {
+    if (!agents.length) return `<div class="detail-box"><span>Nenhum agente encontrado</span><strong>Adicione agentes para essa empresa.</strong></div>`;
+    return `
+      <div class="agent-list">
+        ${agents.map(agent => `
+          <div class="agent-row">
+            <strong>${agent.name || 'Sem nome'}</strong>
+            <span style="color:var(--muted)">${agent.email}</span>
+            <span class="badge badge-unknown">${agent.role_label}</span>
+          </div>
+        `).join('')}
+      </div>
+    `;
+  }
+
+  async function copyCompanyAccess(id) {
+    const r = await apiFetch(`${API}/clients/${id}`);
+    const c = await r.json();
+    if (!r.ok) return toast(readableError(c), 'error');
+    const onboardLink = `${CHAT_BASE}/onboard/${c.token}`;
+    const chatwootAccountUrl = `${c.chatwoot_url}/app/accounts/${c.chatwoot_account_id}/dashboard`;
+    const text = `Empresa: ${c.name}\nPainel de atendimento: ${chatwootAccountUrl}\nAdmin: ${c.chatwoot_user_email || c.email || '-'}\nConexao WhatsApp: ${onboardLink}`;
+    navigator.clipboard.writeText(text);
+    toast('Acesso da empresa copiado!');
   }
 
   function copyLink(url, btn) {

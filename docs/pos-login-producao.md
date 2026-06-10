@@ -108,6 +108,32 @@ Se o Manager pedir token administrativo, consulte:
 grep '^MANAGER_ADMIN_TOKEN=' .env
 ```
 
+## Separacao dos paineis
+
+Use o Manager Fluvius apenas para operacao da plataforma:
+
+- criar empresas
+- abrir o detalhe operacional de cada empresa
+- copiar acesso da empresa
+- conectar ou reconectar WhatsApp
+- adicionar agentes
+- importar historico
+- verificar integracoes tecnicas
+
+A empresa deve usar o Chatwoot para atendimento diario:
+
+```text
+https://fluvius.finderbit.com.br
+```
+
+No Manager, cada empresa tem um botao para abrir diretamente o Chatwoot na conta correta:
+
+```text
+Abrir Chatwoot da empresa
+```
+
+O admin da empresa ve conversas, contatos, agentes e atribuicoes dentro do Chatwoot. O Manager nao e a tela de atendimento.
+
 ## Criar primeira conexao WhatsApp
 
 No Manager:

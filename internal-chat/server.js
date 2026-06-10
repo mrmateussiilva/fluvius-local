@@ -1304,7 +1304,45 @@ app.get('/manager', (_req, res) => {
 // List clients
 app.get('/manager/api/clients', async (_req, res) => {
   const { rows } = await pool.query(`SELECT ${CLIENT_PUBLIC_FIELDS} FROM fluvius_clients ORDER BY created_at DESC`);
-  res.json(rows);
+  res.json(rows.map(row => ({ ...row, chatwoot_url: CHATWOOT_PUBLIC_URL })));
+});
+
+// Client operational details for the manager UI.
+app.get('/manager/api/clients/:id', async (req, res) => {
+  const id = Number(req.params.id);
+  const { rows } = await pool.query(`SELECT ${CLIENT_PUBLIC_FIELDS} FROM fluvius_clients WHERE id = $1`, [id]);
+  if (!rows.length) return res.status(404).json({ error: 'client not found' });
+
+  const client = rows[0];
+  let agents = [];
+
+  if (client.chatwoot_account_id) {
+    const agentRows = await pool.query(
+      `SELECT
+         users.id,
+         users.name,
+         users.email,
+         account_users.role
+       FROM account_users
+       INNER JOIN users ON users.id = account_users.user_id
+       WHERE account_users.account_id = $1
+       ORDER BY account_users.role DESC, users.name ASC`,
+      [client.chatwoot_account_id],
+    );
+    agents = agentRows.rows.map(agent => {
+      const role = String(agent.role);
+      return {
+        ...agent,
+        role_label: role === '1' || role === 'administrator' ? 'Administrador' : 'Agente',
+      };
+    });
+  }
+
+  res.json({
+    ...client,
+    chatwoot_url: CHATWOOT_PUBLIC_URL,
+    agents,
+  });
 });
 
 // Create and fully provision a client (multi-tenant: creates Chatwoot account + user)
