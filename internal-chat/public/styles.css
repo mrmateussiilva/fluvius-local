@@ -3,9 +3,15 @@
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --bg: #f7f8fa;
   --panel: #ffffff;
+  --wa-top: #075e54;
+  --wa-dark: #0b4f48;
+  --wa-green: #128c7e;
+  --wa-send: #00a884;
+  --wa-bubble: #d9fdd3;
+  --wa-chat: #efeae2;
   --subtle: #f8fafc;
   --hover: #f3f4f6;
-  --active: #eff6f3;
+  --active: #e7f7f2;
   --line: #eaecf0;
   --line-strong: #d0d5dd;
   --text: #1f2937;
@@ -25,7 +31,7 @@
 body {
   margin: 0;
   min-height: 100vh;
-  background: var(--bg);
+  background: #d8dbd6;
   color: var(--text);
   font-size: 14px;
 }
@@ -57,18 +63,20 @@ textarea:disabled {
 .sidebar {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
   min-height: 0;
-  border-right: 1px solid var(--line);
+  border-right: 1px solid #d1d7db;
   background: var(--panel);
-  padding: 12px;
+  padding: 0;
 }
 
 .brand {
   display: flex;
   align-items: center;
   gap: 10px;
-  min-height: 38px;
+  min-height: 60px;
+  background: #f0f2f5;
+  padding: 10px 14px;
 }
 
 .brand img {
@@ -129,6 +137,7 @@ time,
 .field {
   display: grid;
   gap: 6px;
+  padding: 0 12px;
 }
 
 select,
@@ -136,20 +145,20 @@ input,
 textarea {
   width: 100%;
   min-height: 38px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--subtle);
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: #f0f2f5;
   color: var(--text);
-  padding: 8px 10px;
+  padding: 8px 13px;
   outline: none;
 }
 
 select:focus,
 input:focus,
 textarea:focus {
-  border-color: var(--green);
+  border-color: rgba(0, 168, 132, 0.35);
   background: #fff;
-  box-shadow: 0 0 0 2px rgba(22, 163, 74, 0.12);
+  box-shadow: 0 0 0 2px rgba(0, 168, 132, 0.12);
 }
 
 textarea {
@@ -168,6 +177,7 @@ textarea {
 
 .searchBox {
   display: grid;
+  padding: 4px 12px;
 }
 
 .tabs {
@@ -175,15 +185,16 @@ textarea {
   grid-template-columns: 1fr 1fr;
   gap: 4px;
   border: 0;
-  border-radius: var(--radius);
-  background: #f2f4f7;
+  border-radius: 999px;
+  background: #f0f2f5;
+  margin: 0 12px;
   padding: 4px;
 }
 
 .tabs button {
   min-height: 32px;
   border: 0;
-  border-radius: 6px;
+  border-radius: 999px;
   background: transparent;
   color: var(--muted);
   font-size: 13px;
@@ -191,9 +202,9 @@ textarea {
 }
 
 .tabs button.active {
-  background: #fff;
-  color: var(--text);
-  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.08);
+  background: #d9fdd3;
+  color: #0b4f48;
+  box-shadow: none;
 }
 
 .panelHeader {
@@ -202,6 +213,7 @@ textarea {
   justify-content: space-between;
   gap: 10px;
   min-height: 28px;
+  padding: 0 12px;
 }
 
 h1,
@@ -227,9 +239,9 @@ h2 {
 .composer button,
 .dialogActions button {
   min-height: 34px;
-  border: 1px solid var(--green-dark);
+  border: 1px solid var(--wa-send);
   border-radius: var(--radius);
-  background: var(--green-dark);
+  background: var(--wa-send);
   color: #fff;
   padding: 7px 11px;
 }
@@ -253,35 +265,45 @@ h2 {
 
 .list {
   display: grid;
-  gap: 1px;
+  gap: 0;
   max-height: calc(100vh - 245px);
   overflow: auto;
 }
 
 .row {
   display: grid;
-  grid-template-columns: 36px minmax(0, 1fr) auto;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
   gap: 10px;
   align-items: center;
   width: 100%;
-  min-height: 58px;
+  min-height: 66px;
   border: 1px solid transparent;
   border-radius: 0;
   background: transparent;
-  padding: 8px;
+  padding: 9px 12px;
   color: inherit;
   text-align: left;
   position: relative;
 }
 
+.row::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 66px;
+  height: 1px;
+  background: #eef0f2;
+}
+
 .row:hover {
-  background: var(--hover);
+  background: #f5f6f6;
 }
 
 .row.active {
-  border-color: var(--green-line);
-  border-radius: var(--radius);
-  background: var(--active);
+  border-color: transparent;
+  border-radius: 0;
+  background: #e9edef;
 }
 
 .row strong,
@@ -309,7 +331,7 @@ h2 {
   min-width: 18px;
   height: 18px;
   border-radius: 999px;
-  background: var(--green-dark);
+  background: #25d366;
   color: #fff;
   display: grid;
   place-items: center;
@@ -323,11 +345,11 @@ h2 {
   position: relative;
   display: grid;
   place-items: center;
-  width: 36px;
-  height: 36px;
+  width: 44px;
+  height: 44px;
   border: 1px solid #d0d5dd;
   border-radius: 50%;
-  background: #f9fafb;
+  background: linear-gradient(135deg, #dfe5e7, #f7f8f8);
   color: #475467;
   font-size: 12px;
   font-weight: 700;
@@ -346,17 +368,17 @@ h2 {
 }
 
 .avatar.group {
-  border-color: var(--green-line);
-  background: var(--green-soft);
-  color: var(--green-dark);
+  border-color: #bde8df;
+  background: #e0f7f2;
+  color: var(--wa-dark);
 }
 
 .chat {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
   min-width: 0;
   min-height: 100vh;
-  background: var(--panel);
+  background: var(--wa-chat);
 }
 
 .chatHeader {
@@ -364,18 +386,27 @@ h2 {
   align-items: center;
   justify-content: space-between;
   min-height: 60px;
-  border-bottom: 1px solid var(--line);
-  background: var(--panel);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  background: var(--wa-top);
+  color: #fff;
   padding: 10px 20px;
+}
+
+.chatHeader p {
+  color: rgba(255, 255, 255, 0.78);
 }
 
 .messages {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 3px;
   overflow: auto;
-  background: #f7f8fa;
-  padding: 20px 24px;
+  background:
+    radial-gradient(circle at 18px 18px, rgba(120, 108, 90, 0.07) 1px, transparent 1.5px),
+    radial-gradient(circle at 54px 52px, rgba(120, 108, 90, 0.05) 1px, transparent 1.5px),
+    var(--wa-chat);
+  background-size: 72px 72px;
+  padding: 18px 7%;
 }
 
 .conversationEmpty,
@@ -400,7 +431,11 @@ h2 {
   justify-items: center;
   gap: 8px;
   width: min(360px, 90%);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.72);
+  padding: 18px;
   color: var(--muted);
+  box-shadow: 0 1px 2px rgba(17, 27, 33, 0.08);
 }
 
 .emptyCard strong {
@@ -467,64 +502,89 @@ h2 {
 }
 
 .bubble {
-  max-width: min(680px, 78%);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
+  position: relative;
+  max-width: min(620px, 76%);
+  border: 0;
+  border-radius: 7.5px;
   background: #fff;
-  padding: 9px 11px;
-  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+  padding: 6px 8px 5px;
+  box-shadow: 0 1px 1px rgba(17, 27, 33, 0.13);
 }
 
 .bubble.mine {
   align-self: flex-end;
-  border-color: var(--green-line);
-  background: var(--green-soft);
+  background: var(--wa-bubble);
 }
 
 .bubble header {
   display: flex;
   gap: 8px;
-  margin-bottom: 4px;
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 600;
+  margin-bottom: 2px;
+  color: #008069;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .bubble p {
   white-space: pre-wrap;
-  line-height: 1.4;
+  line-height: 1.38;
+  padding-right: 56px;
+}
+
+.bubble footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 3px;
+  min-height: 14px;
+  margin-top: -2px;
+  color: #667781;
+  font-size: 11px;
+  line-height: 1;
+}
+
+.messageStatus {
+  color: #53bdeb;
+  font-size: 11px;
+  letter-spacing: 0;
 }
 
 .composer {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 10px;
-  border-top: 1px solid var(--line);
-  background: var(--panel);
-  padding: 12px 16px;
+  grid-template-columns: minmax(0, 1fr) 46px;
+  gap: 8px;
+  border-top: 0;
+  background: #f0f2f5;
+  padding: 10px 14px;
 }
 
 .composer textarea {
-  min-height: 42px;
-  border-color: var(--line-strong);
+  min-height: 44px;
+  border-color: transparent;
+  border-radius: 22px;
   background: #fff;
-  padding: 10px 12px;
+  padding: 11px 16px;
 }
 
 .composer button {
   align-self: end;
-  min-height: 42px;
-  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  min-height: 44px;
+  border-radius: 50%;
+  padding: 0 0 0 2px;
+  font-size: 18px;
   font-weight: 650;
 }
 
 .typingIndicator {
-  min-height: 24px;
+  min-height: 22px;
   border-top: 0;
-  background: #f7f8fa;
-  color: var(--muted);
+  background: var(--wa-chat);
+  color: #008069;
   font-size: 12px;
-  padding: 4px 24px 0;
+  padding: 4px 7% 0;
 }
 
 dialog {
@@ -629,7 +689,7 @@ body.embedded .shell {
 }
 
 body.embedded .sidebar {
-  gap: 10px;
+  gap: 8px;
   padding: 0;
   background: #fff;
 }
@@ -651,7 +711,7 @@ body:not(.embedded) .internalHeader {
 }
 
 body.embedded .searchBox {
-  padding: 12px 12px 0;
+  padding: 4px 12px;
 }
 
 body.embedded .tabs {
@@ -674,19 +734,19 @@ body.embedded .list {
 body.embedded .chatHeader {
   min-height: 60px;
   padding: 10px 20px;
-  background: #fff;
+  background: var(--wa-top);
 }
 
 body.embedded .messages {
-  padding: 20px 24px;
+  padding: 18px 7%;
 }
 
 body.embedded .composer {
-  padding: 12px 16px;
+  padding: 10px 14px;
 }
 
 body.embedded .typingIndicator {
-  padding: 4px 24px 0;
+  padding: 4px 7% 0;
 }
 
 body.embedded .bubble {

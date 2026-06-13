@@ -111,7 +111,8 @@ function setComposerState() {
   const hasRoom = Boolean(state.currentRoomId);
   messageInput.disabled = !hasRoom || sending;
   sendButton.disabled = !hasRoom || sending || !messageInput.value.trim();
-  sendButton.textContent = sending ? 'Enviando' : 'Enviar';
+  sendButton.textContent = sending ? '...' : '➤';
+  sendButton.setAttribute('aria-label', sending ? 'Enviando mensagem' : 'Enviar mensagem');
   messageInput.placeholder = hasRoom
     ? 'Escreva uma mensagem interna'
     : 'Selecione uma conversa para responder';
@@ -238,8 +239,9 @@ function renderMessages(items) {
       const mine = Number(message.sender_id) === state.currentUserId;
       return `
         <article class="bubble ${mine ? 'mine' : ''}">
-          <header>${mine ? 'Você' : escapeHtml(message.sender_name)} <time>${formatTime(message.created_at)}</time></header>
+          <header>${mine ? 'Você' : escapeHtml(message.sender_name)}</header>
           <p>${escapeHtml(message.content).replace(/\n/g, '<br>')}</p>
+          <footer><time>${formatTime(message.created_at)}</time>${mine ? '<span class="messageStatus">✓✓</span>' : ''}</footer>
         </article>
       `;
     })
@@ -253,8 +255,9 @@ function appendMessage(message) {
   const element = document.createElement('article');
   element.className = `bubble ${mine ? 'mine' : ''}`;
   element.innerHTML = `
-    <header>${mine ? 'Você' : escapeHtml(message.sender_name)} <time>${formatTime(message.created_at)}</time></header>
+    <header>${mine ? 'Você' : escapeHtml(message.sender_name)}</header>
     <p>${escapeHtml(message.content).replace(/\n/g, '<br>')}</p>
+    <footer><time>${formatTime(message.created_at)}</time>${mine ? '<span class="messageStatus">✓✓</span>' : ''}</footer>
   `;
   messages.appendChild(element);
   messages.scrollTop = messages.scrollHeight;
