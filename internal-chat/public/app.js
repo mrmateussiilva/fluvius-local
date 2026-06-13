@@ -111,7 +111,7 @@ function setComposerState() {
   const hasRoom = Boolean(state.currentRoomId);
   messageInput.disabled = !hasRoom || sending;
   sendButton.disabled = !hasRoom || sending || !messageInput.value.trim();
-  sendButton.textContent = sending ? '...' : '➤';
+  sendButton.textContent = sending ? 'Enviando' : 'Enviar';
   sendButton.setAttribute('aria-label', sending ? 'Enviando mensagem' : 'Enviar mensagem');
   messageInput.placeholder = hasRoom
     ? 'Escreva uma mensagem interna'

@@ -104,7 +104,7 @@ onMounted(loadCrm);
 
 <template>
   <main class="flex flex-col w-full min-h-full overflow-auto bg-n-background text-n-slate-12">
-    <header class="px-6 py-5 border-b border-n-weak bg-n-background">
+    <header class="px-4 py-4 border-b border-n-weak bg-n-background">
       <div class="flex flex-wrap items-start justify-between gap-4">
         <div class="min-w-0">
           <h1 class="m-0 text-xl font-semibold text-n-slate-12">
@@ -124,13 +124,13 @@ onMounted(loadCrm);
       </div>
     </header>
 
-    <section class="px-6 py-4 border-b border-n-weak bg-n-solid-1">
-      <div class="flex flex-wrap items-end gap-3">
+    <section class="px-4 py-3 border-b border-n-weak bg-n-solid-1">
+      <div class="flex flex-wrap items-end gap-2">
         <label class="grid gap-1">
           <span class="text-xs font-medium text-n-slate-11">Etapa</span>
           <select
             v-model="stageFilter"
-            class="h-9 min-w-[180px] rounded-lg border border-n-weak bg-n-background px-3 text-sm text-n-slate-12 outline-none"
+            class="h-9 min-w-[180px] rounded-md border border-n-weak bg-n-background px-3 text-sm text-n-slate-12 outline-none"
             @change="loadCrm"
           >
             <option value="">Todas as etapas</option>
@@ -140,7 +140,7 @@ onMounted(loadCrm);
           </select>
         </label>
 
-        <label class="flex items-center h-9 gap-2 px-3 rounded-lg border border-n-weak bg-n-background text-sm text-n-slate-12">
+        <label class="flex items-center h-9 gap-2 px-3 rounded-md border border-n-weak bg-n-background text-sm text-n-slate-12">
           <input
             v-model="followupOnly"
             type="checkbox"
@@ -152,28 +152,28 @@ onMounted(loadCrm);
       </div>
     </section>
 
-    <section class="flex-1 p-6">
+    <section class="flex-1 p-4">
       <div
         v-if="error"
-        class="mb-4 rounded-lg border border-n-ruby-5 bg-n-ruby-2 px-4 py-3 text-sm text-n-ruby-11"
+        class="mb-4 rounded-md border border-n-ruby-5 bg-n-ruby-2 px-3 py-2.5 text-sm text-n-ruby-11"
       >
         {{ error }}
       </div>
 
-      <div v-if="summary" class="grid grid-cols-1 gap-3 mb-5 md:grid-cols-3 xl:grid-cols-5">
-        <article class="rounded-lg border border-n-weak bg-n-solid-1 p-4">
+      <div v-if="summary" class="grid grid-cols-1 gap-2 mb-4 md:grid-cols-3 xl:grid-cols-5">
+        <article class="rounded-md border border-n-weak bg-n-solid-1 px-3 py-3">
           <span class="text-sm text-n-slate-11">Leads novos</span>
           <strong class="block mt-2 text-2xl font-semibold text-n-slate-12">
             {{ summary.new_leads }}
           </strong>
         </article>
-        <article class="rounded-lg border border-n-weak bg-n-solid-1 p-4">
+        <article class="rounded-md border border-n-weak bg-n-solid-1 px-3 py-3">
           <span class="text-sm text-n-slate-11">Conversas abertas</span>
           <strong class="block mt-2 text-2xl font-semibold text-n-slate-12">
             {{ summary.open_conversations }}
           </strong>
         </article>
-        <article class="rounded-lg border border-n-amber-5 bg-n-amber-2 p-4">
+        <article class="rounded-md border border-n-amber-5 bg-n-amber-2 px-3 py-3">
           <span class="text-sm text-n-amber-11">Follow-up pendente</span>
           <strong class="block mt-2 text-2xl font-semibold text-n-amber-12">
             {{ summary.followups }}
@@ -182,7 +182,7 @@ onMounted(loadCrm);
         <article
           v-for="stage in stageCards"
           :key="stage.key"
-          class="rounded-lg border border-n-weak bg-n-solid-1 p-4"
+          class="rounded-md border border-n-weak bg-n-solid-1 px-3 py-3"
         >
           <span class="block truncate text-sm text-n-slate-11">{{ stage.title }}</span>
           <strong class="block mt-2 text-2xl font-semibold text-n-slate-12">
@@ -191,7 +191,7 @@ onMounted(loadCrm);
         </article>
       </div>
 
-      <div class="overflow-hidden rounded-lg border border-n-weak bg-n-solid-1">
+      <div class="overflow-hidden rounded-md border border-n-weak bg-n-solid-1">
         <div
           v-if="loading"
           class="flex min-h-48 items-center justify-center text-sm text-n-slate-11"
@@ -255,7 +255,7 @@ onMounted(loadCrm);
                 <select
                   :value="lead.stage_key"
                   :disabled="savingConversationId === lead.id"
-                  class="h-8 max-w-44 rounded-lg border border-n-weak bg-n-background px-2 text-sm text-n-slate-12 outline-none"
+                  class="h-8 max-w-44 rounded-md border border-n-weak bg-n-background px-2 text-sm text-n-slate-12 outline-none"
                   @change="updateStage(lead, $event)"
                 >
                   <option v-for="stage in stages" :key="stage.key" :value="stage.key">
@@ -273,7 +273,7 @@ onMounted(loadCrm);
               </td>
               <td class="px-4 py-3 align-middle">
                 <span
-                  class="inline-flex min-h-6 items-center rounded-full px-2.5 text-xs font-medium"
+                  class="inline-flex min-h-6 items-center rounded-md px-2 text-xs font-medium"
                   :class="
                     lead.needs_followup
                       ? 'bg-n-amber-3 text-n-amber-11'

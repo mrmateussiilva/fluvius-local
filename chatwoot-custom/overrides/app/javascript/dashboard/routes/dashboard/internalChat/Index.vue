@@ -887,7 +887,7 @@ watch(userId, async nextUserId => {
 
 .internal-chat-search {
   position: relative;
-  margin: 0.75rem 0.75rem 0;
+  margin: 0.5rem 0.5rem 0;
 }
 
 .internal-chat-search i {
@@ -905,7 +905,7 @@ watch(userId, async nextUserId => {
   width: 100%;
   min-height: 2.375rem;
   border: 1px solid rgb(var(--slate-4));
-  border-radius: 0.5rem;
+  border-radius: 0.375rem;
   background: rgb(var(--slate-2));
   color: rgb(var(--slate-12));
   outline: none;
@@ -927,9 +927,9 @@ watch(userId, async nextUserId => {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 0.25rem;
-  margin: 0.75rem;
+  margin: 0.5rem;
   padding: 0.25rem;
-  border-radius: 0.5rem;
+  border-radius: 0.375rem;
   background: rgb(var(--slate-3));
 }
 
@@ -963,10 +963,10 @@ watch(userId, async nextUserId => {
   width: 100%;
   min-height: 3.625rem;
   border: 1px solid transparent;
-  border-radius: 0.5rem;
+  border-radius: 0.375rem;
   background: transparent;
   color: inherit;
-  padding: 0.5rem;
+  padding: 0.5rem 0.625rem;
   text-align: left;
 }
 
@@ -975,8 +975,8 @@ watch(userId, async nextUserId => {
 }
 
 .internal-chat-row.active {
-  border-color: rgba(var(--green-7), 0.45);
-  background: rgba(var(--green-3), 0.72);
+  border-color: rgb(var(--slate-4));
+  background: rgb(var(--slate-3));
 }
 
 .avatar {
@@ -1006,9 +1006,9 @@ watch(userId, async nextUserId => {
 }
 
 .avatar.group {
-  border-color: rgba(var(--green-7), 0.55);
-  background: rgba(var(--green-3), 0.9);
-  color: rgb(var(--green-11));
+  border-color: rgb(var(--slate-5));
+  background: rgb(var(--slate-3));
+  color: rgb(var(--slate-11));
 }
 
 .internal-chat-row__body {
@@ -1076,14 +1076,14 @@ watch(userId, async nextUserId => {
   gap: 0.625rem;
   min-height: 0;
   overflow: auto;
-  background: rgb(var(--slate-2));
+  background: rgb(var(--slate-1));
   padding: 1.25rem 1.5rem;
 }
 
 .internal-chat-bubble {
   max-width: min(42rem, 78%);
   border: 1px solid rgb(var(--slate-4));
-  border-radius: 0.5rem;
+  border-radius: 0.375rem;
   background: rgb(var(--white));
   padding: 0.5625rem 0.6875rem;
   box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
@@ -1091,8 +1091,8 @@ watch(userId, async nextUserId => {
 
 .internal-chat-bubble.mine {
   align-self: flex-end;
-  border-color: rgba(var(--green-7), 0.45);
-  background: rgba(var(--green-3), 0.82);
+  border-color: rgb(var(--slate-5));
+  background: rgb(var(--slate-2));
 }
 
 .internal-chat-bubble header {
@@ -1245,7 +1245,7 @@ watch(userId, async nextUserId => {
 
 .internal-chat-typing {
   min-height: 1.5rem;
-  background: rgb(var(--slate-2));
+  background: rgb(var(--slate-1));
   color: rgb(var(--slate-10));
   font-size: 0.75rem;
   padding: 0.25rem 1.5rem 0;
@@ -1320,7 +1320,7 @@ watch(userId, async nextUserId => {
   align-items: center;
   width: min(26rem, 100%);
   border: 1px solid rgb(var(--slate-4));
-  border-radius: 0.5rem;
+  border-radius: 0.375rem;
   background: rgb(var(--slate-2));
   padding: 0.5rem;
 }
@@ -1364,7 +1364,7 @@ watch(userId, async nextUserId => {
   min-height: 2.625rem;
   max-height: 7.5rem;
   border: 1px solid rgb(var(--slate-5));
-  border-radius: 0.5rem;
+  border-radius: 0.375rem;
   background: rgb(var(--white));
   color: rgb(var(--slate-12));
   line-height: 1.4;
