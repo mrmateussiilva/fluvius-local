@@ -10,6 +10,7 @@ import helpcenterRoutes from './helpcenter/helpcenter.routes';
 import campaignsRoutes from './campaigns/campaigns.routes';
 import { routes as captainRoutes } from './captain/captain.routes';
 import InternalChat from './internalChat/Index.vue';
+import Crm from './crm/Index.vue';
 import AppContainer from './Dashboard.vue';
 import Suspended from './suspended/Index.vue';
 import NoAccounts from './noAccounts/Index.vue';
@@ -38,6 +39,14 @@ export default {
             permissions: ['administrator', 'agent', 'custom_role'],
           },
           component: InternalChat,
+        },
+        {
+          path: 'crm',
+          name: 'crm',
+          meta: {
+            permissions: ['administrator', 'agent', 'custom_role'],
+          },
+          component: Crm,
         },
       ],
     },

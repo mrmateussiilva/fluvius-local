@@ -87,6 +87,65 @@ O chat le os agentes do banco do Chatwoot e grava as mensagens em tabelas propri
 - `internal_chat_participants`
 - `internal_chat_messages`
 
+## CRM WhatsApp para o cliente
+
+O CRM vendavel do Fluvius fica dentro do Chatwoot da empresa, usando labels e atributos personalizados nativos.
+
+O cliente usa o Fluvius/Chatwoot para:
+
+- atender conversas do WhatsApp
+- abrir a tela nativa `CRM`
+- marcar etapa comercial com labels
+- filtrar leads por etapa
+- preencher campos comerciais do contato/conversa
+- acompanhar follow-ups combinados
+
+Rota da tela CRM no Chatwoot:
+
+```text
+http://localhost:3000/app/accounts/1/crm
+```
+
+Em cada conta, o item aparece na sidebar como:
+
+```text
+CRM
+```
+
+Labels padrao do funil:
+
+```text
+novo-lead
+em-atendimento
+orcamento-enviado
+follow-up
+fechado
+perdido
+pos-venda
+```
+
+Campos comerciais padrao:
+
+- `origem_lead`
+- `produto_interesse`
+- `valor_estimado`
+- `proximo_follow_up`
+- `observacao_comercial`
+
+Empresas novas ja recebem as labels e os campos comerciais no Chatwoot. Para aplicar em empresas antigas:
+
+```bash
+./scripts/apply-crm-defaults.sh
+```
+
+Em producao:
+
+```bash
+COMPOSE_FILE=docker-compose.prod.yml ./scripts/apply-crm-defaults.sh
+```
+
+O Manager tambem mostra um diagnostico comercial interno no detalhe da empresa, mas ele e reservado para operacao da revenda. O cliente final nao deve acessar `/manager`.
+
 ## Customizacao do Chatwoot
 
 O Fluvius usa uma imagem local customizada:
@@ -106,12 +165,28 @@ Hoje a customizacao adiciona:
 - rota nativa `/app/accounts/:accountId/internal-chat`
 - item `Chat interno` na sidebar do Chatwoot
 - tela Vue que embute o servico `internal-chat`
+- tema visual Fluvius aplicado no dashboard, login, botoes, sidebar e estados principais
+- substituicao de referencias visuais/textuais de Chatwoot por Fluvius quando possivel
 
 Para reconstruir:
 
 ```bash
 docker compose build chatwoot
 docker compose up -d chatwoot sidekiq
+```
+
+Para reaplicar a identidade visual no banco do Chatwoot:
+
+```bash
+./scripts/apply-fluvius-branding.sh
+```
+
+Em producao, rode com o compose correto:
+
+```bash
+COMPOSE_FILE=docker-compose.prod.yml \
+BRAND_URL=https://fluvius.finderbit.com.br \
+./scripts/apply-fluvius-branding.sh
 ```
 
 ## n8n

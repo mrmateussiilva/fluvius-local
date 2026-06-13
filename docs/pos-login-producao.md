@@ -110,17 +110,18 @@ grep '^MANAGER_ADMIN_TOKEN=' .env
 
 ## Separacao dos paineis
 
-Use o Manager Fluvius apenas para operacao da plataforma:
+Use o Manager Fluvius apenas para sua operacao privada de revenda/plataforma:
 
 - criar empresas
 - abrir o detalhe operacional de cada empresa
 - copiar acesso da empresa
 - conectar ou reconectar WhatsApp
 - adicionar agentes
+- redefinir senhas
 - importar historico
 - verificar integracoes tecnicas
 
-A empresa deve usar o Chatwoot para atendimento diario:
+A empresa deve usar o Fluvius/Chatwoot para atendimento diario e CRM:
 
 ```text
 https://fluvius.finderbit.com.br
@@ -132,7 +133,43 @@ No Manager, cada empresa tem um botao para abrir diretamente o Chatwoot na conta
 Abrir Chatwoot da empresa
 ```
 
-O admin da empresa ve conversas, contatos, agentes e atribuicoes dentro do Chatwoot. O Manager nao e a tela de atendimento.
+O admin da empresa ve conversas, contatos, agentes, atribuicoes, labels do funil e campos comerciais dentro do Chatwoot. O Manager nao e tela de atendimento nem painel do cliente final.
+
+Tela CRM dentro do Chatwoot da empresa:
+
+```text
+https://fluvius.finderbit.com.br/app/accounts/<ID_DA_CONTA>/crm
+```
+
+O item tambem aparece na sidebar como `CRM`.
+
+O CRM inicial do cliente usa labels e atributos personalizados nativos do Chatwoot:
+
+```text
+novo-lead
+em-atendimento
+orcamento-enviado
+follow-up
+fechado
+perdido
+pos-venda
+```
+
+Campos comerciais:
+
+```text
+origem_lead
+produto_interesse
+valor_estimado
+proximo_follow_up
+observacao_comercial
+```
+
+Para aplicar esses padroes em empresas ja existentes:
+
+```bash
+COMPOSE_FILE=docker-compose.prod.yml ./scripts/apply-crm-defaults.sh
+```
 
 ## Criar primeira conexao WhatsApp
 

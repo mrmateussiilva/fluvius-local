@@ -59,6 +59,65 @@ const CLIENT_PUBLIC_FIELDS = `
   updated_at
 `;
 
+const CRM_STAGES = [
+  { key: 'novo-lead', title: 'Novo lead', color: '#3b82f6' },
+  { key: 'em-atendimento', title: 'Em atendimento', color: '#22c55e' },
+  { key: 'orcamento-enviado', title: 'Orçamento enviado', color: '#f59e0b' },
+  { key: 'follow-up', title: 'Follow-up', color: '#8b5cf6' },
+  { key: 'fechado', title: 'Fechado', color: '#10b981' },
+  { key: 'perdido', title: 'Perdido', color: '#ef4444' },
+  { key: 'pos-venda', title: 'Pós-venda', color: '#06b6d4' },
+];
+const CRM_STAGE_KEYS = CRM_STAGES.map(stage => stage.key);
+const CRM_DEFAULT_STAGE_KEY = CRM_STAGES[0].key;
+const CRM_CLOSED_STAGE_KEYS = new Set(['fechado', 'perdido']);
+const CHATWOOT_ATTRIBUTE_MODELS = {
+  conversation_attribute: 0,
+  contact_attribute: 1,
+};
+const CHATWOOT_ATTRIBUTE_TYPES = {
+  text: 0,
+  currency: 2,
+  date: 5,
+};
+const CRM_CUSTOM_ATTRIBUTES = [
+  {
+    key: 'origem_lead',
+    name: 'Origem do lead',
+    description: 'Canal, campanha ou indicação que originou o contato.',
+    model: 'contact_attribute',
+    type: 'text',
+  },
+  {
+    key: 'produto_interesse',
+    name: 'Produto/interesse',
+    description: 'Produto, serviço ou necessidade principal do lead.',
+    model: 'contact_attribute',
+    type: 'text',
+  },
+  {
+    key: 'valor_estimado',
+    name: 'Valor estimado',
+    description: 'Valor comercial estimado para a oportunidade.',
+    model: 'contact_attribute',
+    type: 'currency',
+  },
+  {
+    key: 'proximo_follow_up',
+    name: 'Próximo follow-up',
+    description: 'Data combinada para retomar o atendimento comercial.',
+    model: 'conversation_attribute',
+    type: 'date',
+  },
+  {
+    key: 'observacao_comercial',
+    name: 'Observação comercial',
+    description: 'Notas comerciais internas sobre a oportunidade.',
+    model: 'conversation_attribute',
+    type: 'text',
+  },
+];
+
 const pool = new Pool({
   host: process.env.POSTGRES_HOST || 'postgres',
   port: Number(process.env.POSTGRES_PORT || 5432),
@@ -391,6 +450,266 @@ app.get('/api/agents', async (req, res) => {
     ORDER BY users.name ASC
   `, [accountId]);
   res.json({ accountId, agents: rows });
+});
+
+async function requireAccountAccess(req, res) {
+  const accountId = Number(req.params.accountId || req.query.accountId || req.body?.accountId || 0);
+  const userId = Number(req.query.userId || req.body?.userId || 0);
+  if (!accountId) {
+    res.status(400).json({ error: 'accountId is required' });
+    return null;
+  }
+  if (!userId) {
+    res.status(400).json({ error: 'userId is required' });
+    return null;
+  }
+  if (!(await usersBelongToAccount([userId], accountId))) {
+    res.status(403).json({ error: 'user does not belong to this account' });
+    return null;
+  }
+  return { accountId, userId };
+}
+
+async function crmSummaryForAccount(accountId) {
+  await ensureCrmDefaults(accountId);
+
+  const counts = Object.fromEntries(CRM_STAGE_KEYS.map(stage => [stage, 0]));
+  const countRows = await pool.query(
+    `WITH conversation_stages AS (
+       SELECT
+         conversations.id,
+         COALESCE(MAX(tags.name) FILTER (WHERE tags.name = ANY($2::text[])), $3) AS stage
+       FROM conversations
+       LEFT JOIN taggings
+         ON taggings.taggable_type = 'Conversation'
+        AND taggings.context = 'labels'
+        AND taggings.taggable_id = conversations.id
+       LEFT JOIN tags ON tags.id = taggings.tag_id
+       WHERE conversations.account_id = $1
+       GROUP BY conversations.id
+     )
+     SELECT stage, COUNT(*)::int AS total
+     FROM conversation_stages
+     GROUP BY stage`,
+    [accountId, CRM_STAGE_KEYS, CRM_DEFAULT_STAGE_KEY],
+  );
+  for (const row of countRows.rows) {
+    if (counts[row.stage] !== undefined) counts[row.stage] = Number(row.total || 0);
+  }
+
+  const followupRows = await pool.query(
+    `WITH conversation_stages AS (
+       SELECT
+         conversations.id,
+         conversations.status,
+         conversations.last_activity_at,
+         COALESCE(MAX(tags.name) FILTER (WHERE tags.name = ANY($2::text[])), $3) AS stage
+       FROM conversations
+       LEFT JOIN taggings
+         ON taggings.taggable_type = 'Conversation'
+        AND taggings.context = 'labels'
+        AND taggings.taggable_id = conversations.id
+       LEFT JOIN tags ON tags.id = taggings.tag_id
+       WHERE conversations.account_id = $1
+       GROUP BY conversations.id
+     )
+     SELECT
+       COUNT(*) FILTER (WHERE status <> 1 AND COALESCE(last_activity_at, NOW()) < NOW() - INTERVAL '24 hours' AND stage <> ALL($4::text[]))::int AS followups,
+       COUNT(*) FILTER (WHERE status <> 1)::int AS open_conversations,
+       COUNT(*) FILTER (WHERE status <> 1 AND stage = $3)::int AS new_leads
+     FROM conversation_stages`,
+    [accountId, CRM_STAGE_KEYS, CRM_DEFAULT_STAGE_KEY, [...CRM_CLOSED_STAGE_KEYS]],
+  );
+
+  return {
+    account_id: accountId,
+    stages: CRM_STAGES.map(stage => ({ ...stage, total: counts[stage.key] || 0 })),
+    followups: Number(followupRows.rows[0]?.followups || 0),
+    open_conversations: Number(followupRows.rows[0]?.open_conversations || 0),
+    new_leads: Number(followupRows.rows[0]?.new_leads || 0),
+  };
+}
+
+async function crmLeadsForAccount(accountId, options = {}) {
+  const limit = Math.min(Math.max(Number(options.limit || 80), 1), 200);
+  const stageFilter = normalizeCrmStage(options.stage)?.key || '';
+  const followupOnly = String(options.followup || '') === 'true';
+
+  await ensureCrmDefaults(accountId);
+
+  const leads = await pool.query(
+    `WITH conversation_stages AS (
+       SELECT
+         conversations.id,
+         COALESCE(MAX(tags.name) FILTER (WHERE tags.name = ANY($2::text[])), $3) AS stage
+       FROM conversations
+       LEFT JOIN taggings
+         ON taggings.taggable_type = 'Conversation'
+        AND taggings.context = 'labels'
+        AND taggings.taggable_id = conversations.id
+       LEFT JOIN tags ON tags.id = taggings.tag_id
+       WHERE conversations.account_id = $1
+       GROUP BY conversations.id
+     )
+     SELECT
+       conversations.id,
+       conversations.display_id,
+       conversations.status,
+       conversations.assignee_id,
+       conversations.last_activity_at,
+       conversations.created_at,
+       conversations.custom_attributes AS conversation_custom_attributes,
+       contacts.name AS contact_name,
+       contacts.email AS contact_email,
+       contacts.phone_number,
+       contacts.custom_attributes AS contact_custom_attributes,
+       users.name AS assignee_name,
+       users.email AS assignee_email,
+       conversation_stages.stage,
+       last_message.content AS last_message,
+       last_message.created_at AS last_message_at
+     FROM conversations
+     INNER JOIN conversation_stages ON conversation_stages.id = conversations.id
+     LEFT JOIN contacts ON contacts.id = conversations.contact_id
+     LEFT JOIN users ON users.id = conversations.assignee_id
+     LEFT JOIN LATERAL (
+       SELECT content, created_at
+       FROM messages
+       WHERE messages.conversation_id = conversations.id
+         AND messages.private = false
+       ORDER BY messages.created_at DESC
+       LIMIT 1
+     ) last_message ON true
+     WHERE conversations.account_id = $1
+       AND ($5::text = '' OR conversation_stages.stage = $5)
+       AND (
+         $6::boolean = false
+         OR (
+           conversations.status <> 1
+           AND COALESCE(conversations.last_activity_at, conversations.created_at) < NOW() - INTERVAL '24 hours'
+           AND conversation_stages.stage <> ALL($4::text[])
+         )
+       )
+     ORDER BY COALESCE(conversations.last_activity_at, conversations.created_at) DESC
+     LIMIT $7`,
+    [accountId, CRM_STAGE_KEYS, CRM_DEFAULT_STAGE_KEY, [...CRM_CLOSED_STAGE_KEYS], stageFilter, followupOnly, limit],
+  );
+
+  return {
+    account_id: accountId,
+    stages: CRM_STAGES,
+    leads: leads.rows.map(lead => {
+      const lastActivityAt = lead.last_activity_at || lead.created_at;
+      const needsFollowup = Number(lead.status) !== 1
+        && lastActivityAt
+        && new Date(lastActivityAt).getTime() < Date.now() - (24 * 60 * 60 * 1000)
+        && !CRM_CLOSED_STAGE_KEYS.has(lead.stage);
+      const stageDefinition = CRM_STAGES.find(stage => stage.key === lead.stage) || CRM_STAGES[0];
+      return {
+        ...lead,
+        stage_key: stageDefinition.key,
+        stage: stageDefinition.title,
+        status_label: ['Aberta', 'Resolvida', 'Pendente', 'Adiada'][Number(lead.status)] || String(lead.status),
+        needs_followup: needsFollowup,
+        chatwoot_url: conversationUrl(accountId, lead.display_id),
+      };
+    }),
+  };
+}
+
+async function updateCrmStageForAccount(accountId, conversationId, stage) {
+  const conversation = await pool.query(
+    'SELECT id, display_id FROM conversations WHERE id = $1 AND account_id = $2 LIMIT 1',
+    [conversationId, accountId],
+  );
+  if (!conversation.rowCount) return null;
+
+  await ensureCrmDefaults(accountId);
+
+  const dbClient = await pool.connect();
+  try {
+    await dbClient.query('BEGIN');
+    const stageTags = await dbClient.query('SELECT id FROM tags WHERE name = ANY($1::text[])', [CRM_STAGE_KEYS]);
+    const removedTagIds = stageTags.rows.map(row => Number(row.id));
+
+    if (removedTagIds.length) {
+      await dbClient.query(
+        `DELETE FROM taggings
+         WHERE taggable_type = 'Conversation'
+           AND context = 'labels'
+           AND taggable_id = $1
+           AND tag_id = ANY($2::int[])`,
+        [conversationId, removedTagIds],
+      );
+    }
+
+    let tag = await dbClient.query('SELECT id FROM tags WHERE name = $1 LIMIT 1', [stage.key]);
+    if (!tag.rowCount) {
+      tag = await dbClient.query('INSERT INTO tags (name, taggings_count) VALUES ($1, 0) RETURNING id', [stage.key]);
+    }
+    const tagId = Number(tag.rows[0].id);
+
+    await dbClient.query(
+      `INSERT INTO taggings (tag_id, taggable_type, taggable_id, context, created_at)
+       SELECT $1, 'Conversation', $2, 'labels', NOW()
+       WHERE NOT EXISTS (
+         SELECT 1 FROM taggings
+         WHERE tag_id = $1
+           AND taggable_type = 'Conversation'
+           AND taggable_id = $2
+           AND context = 'labels'
+       )`,
+      [tagId, conversationId],
+    );
+
+    const labels = await updateConversationCachedLabels(dbClient, conversationId);
+    await refreshTaggingCounts(dbClient, [...removedTagIds, tagId]);
+    await dbClient.query('COMMIT');
+
+    return {
+      conversation_id: conversationId,
+      display_id: conversation.rows[0].display_id,
+      stage_key: stage.key,
+      stage: stage.title,
+      labels,
+      chatwoot_url: conversationUrl(accountId, conversation.rows[0].display_id),
+    };
+  } catch (err) {
+    await dbClient.query('ROLLBACK');
+    throw err;
+  } finally {
+    dbClient.release();
+  }
+}
+
+app.get('/api/accounts/:accountId/crm/summary', async (req, res) => {
+  const access = await requireAccountAccess(req, res);
+  if (!access) return;
+  res.json(await crmSummaryForAccount(access.accountId));
+});
+
+app.get('/api/accounts/:accountId/crm/leads', async (req, res) => {
+  const access = await requireAccountAccess(req, res);
+  if (!access) return;
+  res.json(await crmLeadsForAccount(access.accountId, req.query));
+});
+
+app.post('/api/accounts/:accountId/crm/leads/:conversationId/stage', async (req, res) => {
+  const access = await requireAccountAccess(req, res);
+  if (!access) return;
+
+  const conversationId = Number(req.params.conversationId);
+  const stage = normalizeCrmStage(req.body?.stage);
+  if (!conversationId) return res.status(400).json({ error: 'conversationId is required' });
+  if (!stage) return res.status(400).json({ error: 'invalid CRM stage' });
+
+  try {
+    const result = await updateCrmStageForAccount(access.accountId, conversationId, stage);
+    if (!result) return res.status(404).json({ error: 'conversation not found for this account' });
+    return res.json(result);
+  } catch (err) {
+    return res.status(500).json({ step: 'update_crm_stage', error: err.message });
+  }
 });
 
 // Standalone selector bootstrap. Chatwoot embeds should call /api/agents with userId/accountId.
@@ -825,6 +1144,92 @@ async function getChatwootUserIdByEmail(email) {
   return rows[0]?.id || null;
 }
 
+async function ensureCrmDefaults(accountId) {
+  if (!accountId) return [];
+  const created = { labels: [], attributes: [] };
+
+  for (const stage of CRM_STAGES) {
+    const existing = await pool.query(
+      'SELECT id FROM labels WHERE account_id = $1 AND lower(title) = lower($2) LIMIT 1',
+      [accountId, stage.key],
+    );
+    if (existing.rowCount) continue;
+
+    const { rows } = await pool.query(
+      `INSERT INTO labels (title, description, color, show_on_sidebar, account_id, created_at, updated_at)
+       VALUES ($1, $2, $3, true, $4, NOW(), NOW())
+       RETURNING id, title`,
+      [stage.key, `Etapa do funil comercial Fluvius: ${stage.title}`, stage.color, accountId],
+    );
+    created.labels.push(rows[0]);
+  }
+
+  for (const attribute of CRM_CUSTOM_ATTRIBUTES) {
+    const attributeModel = CHATWOOT_ATTRIBUTE_MODELS[attribute.model];
+    const displayType = CHATWOOT_ATTRIBUTE_TYPES[attribute.type];
+
+    const existing = await pool.query(
+      `SELECT id
+       FROM custom_attribute_definitions
+       WHERE account_id = $1
+         AND attribute_model = $2
+         AND lower(attribute_key) = lower($3)
+       LIMIT 1`,
+      [accountId, attributeModel, attribute.key],
+    );
+    if (existing.rowCount) continue;
+
+    const { rows } = await pool.query(
+      `INSERT INTO custom_attribute_definitions
+        (attribute_display_name, attribute_key, attribute_display_type, default_value, attribute_model, account_id, attribute_description, created_at, updated_at)
+       VALUES ($1, $2, $3, '', $4, $5, $6, NOW(), NOW())
+       RETURNING id, attribute_key, attribute_display_name`,
+      [attribute.name, attribute.key, displayType, attributeModel, accountId, attribute.description],
+    );
+    created.attributes.push(rows[0]);
+  }
+
+  return created;
+}
+
+function normalizeCrmStage(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  return CRM_STAGES.find(stage => stage.key === normalized || stage.title.toLowerCase() === normalized) || null;
+}
+
+function conversationUrl(accountId, displayId) {
+  return `${CHATWOOT_PUBLIC_URL}/app/accounts/${accountId}/conversations/${displayId}`;
+}
+
+async function updateConversationCachedLabels(dbClient, conversationId) {
+  const { rows } = await dbClient.query(
+    `SELECT tags.name
+     FROM taggings
+     INNER JOIN tags ON tags.id = taggings.tag_id
+     WHERE taggings.taggable_type = 'Conversation'
+       AND taggings.context = 'labels'
+       AND taggings.taggable_id = $1
+     ORDER BY tags.name ASC`,
+    [conversationId],
+  );
+  const labels = rows.map(row => row.name);
+  await dbClient.query(
+    'UPDATE conversations SET cached_label_list = $1, updated_at = NOW() WHERE id = $2',
+    [labels.join(', '), conversationId],
+  );
+  return labels;
+}
+
+async function refreshTaggingCounts(dbClient, tagIds) {
+  const uniqueTagIds = [...new Set(tagIds.map(Number).filter(Boolean))];
+  for (const tagId of uniqueTagIds) {
+    await dbClient.query(
+      'UPDATE tags SET taggings_count = (SELECT COUNT(*) FROM taggings WHERE tag_id = $1) WHERE id = $1',
+      [tagId],
+    );
+  }
+}
+
 async function getPlatformUserToken(userId) {
   const token = await platformFetch(`/platform/api/v1/users/${userId}/token`, { method: 'POST' });
   if (token.status >= 300) return null;
@@ -843,6 +1248,27 @@ function parseAgentPayload(value) {
 
 function generateTempPassword() {
   return `${randomBytes(4).toString('hex')}Ab1!`;
+}
+
+async function resetChatwootUserPassword(userId, password) {
+  const payload = {
+    password,
+    confirmed: true,
+  };
+
+  let reset = await platformFetch(`/platform/api/v1/users/${userId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+
+  if (reset.status === 404 || reset.status === 405) {
+    reset = await platformFetch(`/platform/api/v1/users/${userId}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  return reset;
 }
 
 function safeJsonParse(value, fallback = {}) {
@@ -1345,6 +1771,247 @@ app.get('/manager/api/clients/:id', async (req, res) => {
   });
 });
 
+app.get('/manager/api/clients/:id/crm/summary', async (req, res) => {
+  const id = Number(req.params.id);
+  const { rows } = await pool.query(`SELECT ${CLIENT_PUBLIC_FIELDS} FROM fluvius_clients WHERE id = $1`, [id]);
+  if (!rows.length) return res.status(404).json({ error: 'client not found' });
+
+  const client = rows[0];
+  if (!client.chatwoot_account_id) return res.status(400).json({ error: 'client is missing chatwoot account' });
+
+  await ensureCrmDefaults(client.chatwoot_account_id);
+
+  const counts = Object.fromEntries(CRM_STAGE_KEYS.map(stage => [stage, 0]));
+  const countRows = await pool.query(
+    `WITH conversation_stages AS (
+       SELECT
+         conversations.id,
+         COALESCE(MAX(tags.name) FILTER (WHERE tags.name = ANY($2::text[])), $3) AS stage
+       FROM conversations
+       LEFT JOIN taggings
+         ON taggings.taggable_type = 'Conversation'
+        AND taggings.context = 'labels'
+        AND taggings.taggable_id = conversations.id
+       LEFT JOIN tags ON tags.id = taggings.tag_id
+       WHERE conversations.account_id = $1
+       GROUP BY conversations.id
+     )
+     SELECT stage, COUNT(*)::int AS total
+     FROM conversation_stages
+     GROUP BY stage`,
+    [client.chatwoot_account_id, CRM_STAGE_KEYS, CRM_DEFAULT_STAGE_KEY],
+  );
+  for (const row of countRows.rows) {
+    if (counts[row.stage] !== undefined) counts[row.stage] = Number(row.total || 0);
+  }
+
+  const followupRows = await pool.query(
+    `WITH conversation_stages AS (
+       SELECT
+         conversations.id,
+         conversations.status,
+         conversations.last_activity_at,
+         COALESCE(MAX(tags.name) FILTER (WHERE tags.name = ANY($2::text[])), $3) AS stage
+       FROM conversations
+       LEFT JOIN taggings
+         ON taggings.taggable_type = 'Conversation'
+        AND taggings.context = 'labels'
+        AND taggings.taggable_id = conversations.id
+       LEFT JOIN tags ON tags.id = taggings.tag_id
+       WHERE conversations.account_id = $1
+       GROUP BY conversations.id
+     )
+     SELECT
+       COUNT(*) FILTER (WHERE status <> 1 AND COALESCE(last_activity_at, NOW()) < NOW() - INTERVAL '24 hours' AND stage <> ALL($4::text[]))::int AS followups,
+       COUNT(*) FILTER (WHERE status <> 1)::int AS open_conversations,
+       COUNT(*) FILTER (WHERE status <> 1 AND stage = $3)::int AS new_leads
+     FROM conversation_stages`,
+    [client.chatwoot_account_id, CRM_STAGE_KEYS, CRM_DEFAULT_STAGE_KEY, [...CRM_CLOSED_STAGE_KEYS]],
+  );
+
+  res.json({
+    client_id: id,
+    account_id: client.chatwoot_account_id,
+    stages: CRM_STAGES.map(stage => ({ ...stage, total: counts[stage.key] || 0 })),
+    followups: Number(followupRows.rows[0]?.followups || 0),
+    open_conversations: Number(followupRows.rows[0]?.open_conversations || 0),
+    new_leads: Number(followupRows.rows[0]?.new_leads || 0),
+  });
+});
+
+app.get('/manager/api/clients/:id/crm/leads', async (req, res) => {
+  const id = Number(req.params.id);
+  const limit = Math.min(Math.max(Number(req.query.limit || 80), 1), 200);
+  const stageFilter = normalizeCrmStage(req.query.stage)?.key || '';
+  const followupOnly = String(req.query.followup || '') === 'true';
+  const { rows } = await pool.query(`SELECT ${CLIENT_PUBLIC_FIELDS} FROM fluvius_clients WHERE id = $1`, [id]);
+  if (!rows.length) return res.status(404).json({ error: 'client not found' });
+
+  const client = rows[0];
+  if (!client.chatwoot_account_id) return res.status(400).json({ error: 'client is missing chatwoot account' });
+
+  await ensureCrmDefaults(client.chatwoot_account_id);
+
+  const leads = await pool.query(
+    `WITH conversation_stages AS (
+       SELECT
+         conversations.id,
+         COALESCE(MAX(tags.name) FILTER (WHERE tags.name = ANY($2::text[])), $3) AS stage
+       FROM conversations
+       LEFT JOIN taggings
+         ON taggings.taggable_type = 'Conversation'
+        AND taggings.context = 'labels'
+        AND taggings.taggable_id = conversations.id
+       LEFT JOIN tags ON tags.id = taggings.tag_id
+       WHERE conversations.account_id = $1
+       GROUP BY conversations.id
+     )
+     SELECT
+       conversations.id,
+       conversations.display_id,
+       conversations.status,
+       conversations.assignee_id,
+       conversations.last_activity_at,
+       conversations.created_at,
+       contacts.name AS contact_name,
+       contacts.email AS contact_email,
+       contacts.phone_number,
+       users.name AS assignee_name,
+       users.email AS assignee_email,
+       conversation_stages.stage,
+       last_message.content AS last_message,
+       last_message.created_at AS last_message_at
+     FROM conversations
+     INNER JOIN conversation_stages ON conversation_stages.id = conversations.id
+     LEFT JOIN contacts ON contacts.id = conversations.contact_id
+     LEFT JOIN users ON users.id = conversations.assignee_id
+     LEFT JOIN LATERAL (
+       SELECT content, created_at
+       FROM messages
+       WHERE messages.conversation_id = conversations.id
+         AND messages.private = false
+       ORDER BY messages.created_at DESC
+       LIMIT 1
+     ) last_message ON true
+     WHERE conversations.account_id = $1
+       AND ($5::text = '' OR conversation_stages.stage = $5)
+       AND (
+         $6::boolean = false
+         OR (
+           conversations.status <> 1
+           AND COALESCE(conversations.last_activity_at, conversations.created_at) < NOW() - INTERVAL '24 hours'
+           AND conversation_stages.stage <> ALL($4::text[])
+         )
+       )
+     ORDER BY COALESCE(conversations.last_activity_at, conversations.created_at) DESC
+     LIMIT $7`,
+    [client.chatwoot_account_id, CRM_STAGE_KEYS, CRM_DEFAULT_STAGE_KEY, [...CRM_CLOSED_STAGE_KEYS], stageFilter, followupOnly, limit],
+  );
+
+  res.json({
+    client_id: id,
+    account_id: client.chatwoot_account_id,
+    stages: CRM_STAGES,
+    leads: leads.rows.map(lead => {
+      const lastActivityAt = lead.last_activity_at || lead.created_at;
+      const needsFollowup = Number(lead.status) !== 1
+        && lastActivityAt
+        && new Date(lastActivityAt).getTime() < Date.now() - (24 * 60 * 60 * 1000)
+        && !CRM_CLOSED_STAGE_KEYS.has(lead.stage);
+      const stageDefinition = CRM_STAGES.find(stage => stage.key === lead.stage) || CRM_STAGES[0];
+      return {
+        ...lead,
+        stage_key: stageDefinition.key,
+        stage: stageDefinition.title,
+        status_label: ['Aberta', 'Resolvida', 'Pendente', 'Adiada'][Number(lead.status)] || String(lead.status),
+        needs_followup: needsFollowup,
+        chatwoot_url: conversationUrl(client.chatwoot_account_id, lead.display_id),
+      };
+    }),
+  });
+});
+
+app.post('/manager/api/clients/:id/crm/leads/:conversationId/stage', async (req, res) => {
+  const id = Number(req.params.id);
+  const conversationId = Number(req.params.conversationId);
+  const stage = normalizeCrmStage(req.body?.stage);
+  if (!conversationId) return res.status(400).json({ error: 'conversationId is required' });
+  if (!stage) return res.status(400).json({ error: 'invalid CRM stage' });
+
+  const { rows } = await pool.query(`SELECT ${CLIENT_PUBLIC_FIELDS} FROM fluvius_clients WHERE id = $1`, [id]);
+  if (!rows.length) return res.status(404).json({ error: 'client not found' });
+
+  const client = rows[0];
+  if (!client.chatwoot_account_id) return res.status(400).json({ error: 'client is missing chatwoot account' });
+
+  const conversation = await pool.query(
+    'SELECT id, display_id FROM conversations WHERE id = $1 AND account_id = $2 LIMIT 1',
+    [conversationId, client.chatwoot_account_id],
+  );
+  if (!conversation.rowCount) return res.status(404).json({ error: 'conversation not found for this client' });
+
+  await ensureCrmDefaults(client.chatwoot_account_id);
+
+  const dbClient = await pool.connect();
+  try {
+    await dbClient.query('BEGIN');
+
+    const stageTags = await dbClient.query(
+      'SELECT id FROM tags WHERE name = ANY($1::text[])',
+      [CRM_STAGE_KEYS],
+    );
+    const removedTagIds = stageTags.rows.map(row => Number(row.id));
+
+    if (removedTagIds.length) {
+      await dbClient.query(
+        `DELETE FROM taggings
+         WHERE taggable_type = 'Conversation'
+           AND context = 'labels'
+           AND taggable_id = $1
+           AND tag_id = ANY($2::int[])`,
+        [conversationId, removedTagIds],
+      );
+    }
+
+    let tag = await dbClient.query('SELECT id FROM tags WHERE name = $1 LIMIT 1', [stage.key]);
+    if (!tag.rowCount) {
+      tag = await dbClient.query('INSERT INTO tags (name, taggings_count) VALUES ($1, 0) RETURNING id', [stage.key]);
+    }
+    const tagId = Number(tag.rows[0].id);
+
+    await dbClient.query(
+      `INSERT INTO taggings (tag_id, taggable_type, taggable_id, context, created_at)
+       SELECT $1, 'Conversation', $2, 'labels', NOW()
+       WHERE NOT EXISTS (
+         SELECT 1 FROM taggings
+         WHERE tag_id = $1
+           AND taggable_type = 'Conversation'
+           AND taggable_id = $2
+           AND context = 'labels'
+       )`,
+      [tagId, conversationId],
+    );
+
+    const labels = await updateConversationCachedLabels(dbClient, conversationId);
+    await refreshTaggingCounts(dbClient, [...removedTagIds, tagId]);
+    await dbClient.query('COMMIT');
+
+    res.json({
+      conversation_id: conversationId,
+      display_id: conversation.rows[0].display_id,
+      stage_key: stage.key,
+      stage: stage.title,
+      labels,
+      chatwoot_url: conversationUrl(client.chatwoot_account_id, conversation.rows[0].display_id),
+    });
+  } catch (err) {
+    await dbClient.query('ROLLBACK');
+    res.status(500).json({ step: 'update_crm_stage', error: err.message });
+  } finally {
+    dbClient.release();
+  }
+});
+
 // Create and fully provision a client (multi-tenant: creates Chatwoot account + user)
 app.post('/manager/api/clients', async (req, res) => {
   const name = String(req.body.name || '').trim();
@@ -1380,6 +2047,7 @@ app.post('/manager/api/clients', async (req, res) => {
     const accountId = acct.data?.id;
     if (!accountId) throw new Error('Chatwoot account response did not include id');
     created.accountId = accountId;
+    await ensureCrmDefaults(accountId);
 
     // STEP 2: Create Chatwoot user (admin of the company)
     const usr = await platformFetch('/platform/api/v1/users', {
@@ -1613,6 +2281,55 @@ app.post('/manager/api/clients/:id/agents', async (req, res) => {
   }
 });
 
+// Reset the company administrator password and return the new temporary password once.
+app.post('/manager/api/clients/:id/admin/reset-password', async (req, res) => {
+  const id = Number(req.params.id);
+  if (!CHATWOOT_PLATFORM_TOKEN) return res.status(400).json({ error: 'CHATWOOT_PLATFORM_TOKEN is not configured' });
+
+  const { rows } = await pool.query('SELECT * FROM fluvius_clients WHERE id = $1', [id]);
+  if (!rows.length) return res.status(404).json({ error: 'client not found' });
+
+  const client = rows[0];
+  if (!client.chatwoot_account_id) return res.status(400).json({ error: 'client is missing chatwoot account' });
+
+  let userId = client.chatwoot_user_id || null;
+  if (!userId && client.chatwoot_user_email) {
+    userId = await getChatwootUserIdByEmail(client.chatwoot_user_email);
+    if (userId) await pool.query('UPDATE fluvius_clients SET chatwoot_user_id = $1 WHERE id = $2', [userId, id]);
+  }
+
+  if (!userId) return res.status(404).json({ error: 'client admin user not found' });
+
+  const membership = await pool.query(
+    `SELECT users.id, users.name, users.email, account_users.role
+     FROM account_users
+     INNER JOIN users ON users.id = account_users.user_id
+     WHERE account_users.account_id = $1
+       AND users.id = $2
+     LIMIT 1`,
+    [client.chatwoot_account_id, userId],
+  );
+  if (!membership.rowCount) return res.status(404).json({ error: 'client admin user is not linked to this account' });
+
+  const password = generateTempPassword();
+  const reset = await resetChatwootUserPassword(userId, password);
+
+  if (reset.status >= 300) {
+    return res.status(reset.status).json({
+      step: 'reset_client_admin_password',
+      error: reset.data,
+    });
+  }
+
+  return res.json({
+    id: userId,
+    name: membership.rows[0].name || client.name,
+    email: membership.rows[0].email || client.chatwoot_user_email || client.email,
+    role_label: 'Administrador',
+    chatwoot_temp_password: password,
+  });
+});
+
 // Reset a company agent password and return the new temporary password once.
 app.post('/manager/api/clients/:id/agents/:userId/reset-password', async (req, res) => {
   const id = Number(req.params.id);
@@ -1638,22 +2355,7 @@ app.post('/manager/api/clients/:id/agents/:userId/reset-password', async (req, r
   if (!membership.rowCount) return res.status(404).json({ error: 'agent not found for this client' });
 
   const password = generateTempPassword();
-  const payload = {
-    password,
-    confirmed: true,
-  };
-
-  let reset = await platformFetch(`/platform/api/v1/users/${userId}`, {
-    method: 'PATCH',
-    body: JSON.stringify(payload),
-  });
-
-  if (reset.status === 404 || reset.status === 405) {
-    reset = await platformFetch(`/platform/api/v1/users/${userId}`, {
-      method: 'PUT',
-      body: JSON.stringify(payload),
-    });
-  }
+  const reset = await resetChatwootUserPassword(userId, password);
 
   if (reset.status >= 300) {
     return res.status(reset.status).json({

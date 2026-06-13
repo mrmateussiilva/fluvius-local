@@ -223,6 +223,7 @@
       backdrop-filter: blur(4px);
     }
     .modal-overlay.hidden { display: none; }
+    .modal-overlay.priority { z-index: 220; }
 
     .modal {
       background: var(--surface);
@@ -355,6 +356,21 @@
   .agent-list { border: 1px solid var(--border); border-radius: 8px; overflow: hidden; margin-top: 12px; }
   .agent-row { display: grid; grid-template-columns: 1fr 1fr auto; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--border); font-size: 13px; align-items: center; }
   .agent-row:last-child { border-bottom: none; }
+  .crm-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 12px 0; }
+  .crm-stage-card { background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 10px; min-width: 0; }
+  .crm-stage-card span { display: block; color: var(--muted); font-size: 11px; margin-bottom: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .crm-stage-card strong { font-size: 20px; line-height: 1; }
+  .crm-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+  .crm-table th, .crm-table td { padding: 10px 8px; border-bottom: 1px solid var(--border); font-size: 12px; text-align: left; vertical-align: middle; }
+  .crm-table th { color: var(--muted); font-weight: 600; background: var(--surface2); }
+  .crm-table select { background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; color: var(--text); padding: 6px 8px; font: inherit; max-width: 170px; }
+  .crm-lead-main { min-width: 180px; }
+  .crm-lead-main strong, .crm-lead-main span { display: block; }
+  .crm-lead-main span, .crm-muted { color: var(--muted); font-size: 12px; margin-top: 3px; }
+  .crm-panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; margin-top: 18px; }
+  .crm-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+  .crm-panel-head h3 { font-size: 14px; margin: 0; }
+  .crm-panel-head p { color: var(--muted); font-size: 12px; margin: 4px 0 0; }
   .auth-screen { min-height: 100vh; display: none; align-items: center; justify-content: center; padding: 24px; }
   .auth-card { width: min(420px, 100%); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; box-shadow: 0 18px 60px #0005; }
   .auth-card h1 { font-size: 20px; margin-bottom: 6px; }
@@ -365,6 +381,7 @@
   @media (max-width: 760px) {
     body { padding: 14px; }
     .company-grid, .detail-grid, .ops-summary, .panel-map { grid-template-columns: 1fr; }
+    .crm-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .company-kpis { grid-template-columns: 1fr; }
     .agent-row { grid-template-columns: 1fr; }
     .modal { padding: 20px; }
@@ -373,7 +390,7 @@
 <div class="auth-screen" id="authScreen">
   <form class="auth-card" onsubmit="loginManager(event)">
     <h1>Gerenciador Fluvius</h1>
-    <p>Informe o token administrativo para acessar o provisionamento de clientes.</p>
+    <p>Informe o token administrativo para acessar a operação privada da revenda.</p>
     <div class="form-group">
       <label>Token administrativo</label>
       <input type="password" id="managerTokenInput" autocomplete="current-password" />
@@ -386,7 +403,7 @@
     <div class="logo-icon">F</div>
     <div>
       <h1>Gerenciador Fluvius</h1>
-      <span>Operação de empresas e canais</span>
+      <span>Painel privado de revenda e suporte</span>
     </div>
   </div>
   <nav style="display:flex;gap:4px;background:var(--surface2);border-radius:8px;padding:4px">
@@ -402,7 +419,7 @@
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px">
     <div>
       <h2 class="section-title">Empresas</h2>
-      <p class="section-subtitle">Visão central para acompanhar acesso, atendimento e WhatsApp de cada empresa.</p>
+      <p class="section-subtitle">Painel privado para provisionar empresas, canais, agentes e suporte técnico.</p>
     </div>
     <div style="display:flex;gap:10px">
       <button class="btn btn-ghost" onclick="loadClients()">Atualizar</button>
@@ -562,7 +579,9 @@
     associate_agent: 'Não foi possível vincular um agente à empresa.',
     add_agents_to_inbox: 'Não foi possível adicionar os agentes ao canal WhatsApp.',
     create_agents: 'Não foi possível criar os agentes.',
+    reset_client_admin_password: 'Não foi possível redefinir a senha do administrador da empresa.',
     reset_agent_password: 'Não foi possível redefinir a senha do agente.',
+    update_crm_stage: 'Não foi possível atualizar a etapa do lead.',
   };
 
   function requireLogin() {
@@ -726,12 +745,12 @@
       </div>
       <div class="panel-map">
         <div class="panel-box">
-          <strong>Chatwoot: operação da empresa</strong>
-          <p>Conversas, contatos, agentes, atribuições e acompanhamento do atendimento.</p>
+          <strong>Fluvius/Chatwoot: operação do cliente</strong>
+          <p>O cliente usa o painel de atendimento para conversas, contatos, agentes, CRM simples e rotina diária.</p>
         </div>
         <div class="panel-box">
-          <strong>Manager: administração Fluvius</strong>
-          <p>Empresas, conexão WhatsApp, provisionamento, agentes e manutenção técnica.</p>
+          <strong>Manager: painel privado da revenda</strong>
+          <p>Use apenas para provisionamento, WhatsApp, senhas, diagnóstico, suporte e manutenção técnica.</p>
         </div>
       </div>
     `;
@@ -808,12 +827,12 @@
     document.getElementById('companyContent').innerHTML = `
       <div class="panel-map">
         <div class="panel-box">
-          <strong>Admin da empresa entra no Chatwoot</strong>
-          <p>É ali que ele acompanha conversas, agentes, contatos, filas e atendimento diário.</p>
+          <strong>Cliente entra no Fluvius/Chatwoot</strong>
+          <p>É ali que ele acompanha conversas, agentes, contatos, funil por labels e atendimento diário.</p>
         </div>
         <div class="panel-box">
-          <strong>Sua equipe usa o Manager</strong>
-          <p>Use esta tela para conexão WhatsApp, criação de agentes, diagnóstico e manutenção.</p>
+          <strong>Você usa o Manager</strong>
+          <p>Esta tela é privada da revenda: conexão WhatsApp, criação de agentes, senhas, diagnóstico e manutenção.</p>
         </div>
       </div>
       ${pendingActions}
@@ -829,15 +848,29 @@
         <a class="btn btn-primary btn-sm" href="${chatwootAccountUrl}" target="_blank" style="text-decoration:none">Abrir Chatwoot da empresa</a>
         <a class="btn btn-ghost btn-sm" href="${onboardLink}" target="_blank" style="text-decoration:none">Abrir onboarding WhatsApp</a>
         <button class="btn btn-ghost btn-sm" onclick="copyCompanyAccess(${c.id})">Copiar acesso</button>
+        <button class="btn btn-ghost btn-sm" onclick="resetClientAdminPassword(${c.id}, '${escapeAttr(c.chatwoot_user_email || c.email || 'admin')}', this)">Redefinir senha do admin</button>
         <button class="btn btn-ghost btn-sm" onclick="openAgentsModal(${c.id}, '${escapeAttr(c.name)}')">Adicionar agentes</button>
         <button class="btn btn-ghost btn-sm" onclick="importHistory(${c.id}, '${escapeAttr(c.name)}', this)">Importar histórico</button>
       </div>
       <h3 style="font-size:14px;margin:18px 0 8px">Agentes da empresa</h3>
       ${renderAgents(c.id, c.agents || [])}
+      <section class="crm-panel">
+        <div class="crm-panel-head">
+          <div>
+            <h3>Diagnóstico comercial interno</h3>
+            <p>Leitura operacional do funil do cliente para suporte da revenda. O cliente usa o CRM dentro do Fluvius/Chatwoot.</p>
+          </div>
+          <button class="btn btn-ghost btn-sm" onclick="loadCompanyCrm(${c.id})">Atualizar CRM</button>
+        </div>
+        <div id="companyCrmContent">
+          <div class="loading-wrap"><span class="spinner"></span> Carregando CRM...</div>
+        </div>
+      </section>
       <div style="margin-top:18px;color:var(--muted);font-size:12px;line-height:1.6">
-        A empresa deve usar o Chatwoot para atender clientes. O Manager fica reservado para provisionamento, conexao WhatsApp e manutencao operacional.
+        A empresa deve usar o Fluvius/Chatwoot para atendimento e CRM. O Manager fica reservado para sua operacao privada de revenda, provisionamento, conexao WhatsApp e manutencao.
       </div>
     `;
+    loadCompanyCrm(c.id);
   }
 
   function companyPendingActions(c, chatwootAccountUrl, onboardLink) {
@@ -884,6 +917,150 @@
     `;
   }
 
+  function renderCrmStageCard(stage) {
+    return `
+      <div class="crm-stage-card" style="border-color:${stage.color}55">
+        <span>${stage.title}</span>
+        <strong>${stage.total || 0}</strong>
+      </div>
+    `;
+  }
+
+  function crmStageOptions(stages, currentStage) {
+    return stages.map(stage => `
+      <option value="${stage.key}" ${stage.key === currentStage ? 'selected' : ''}>${stage.title}</option>
+    `).join('');
+  }
+
+  function formatCrmDate(value) {
+    if (!value) return 'Sem atividade';
+    return new Date(value).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+  }
+
+  async function loadCompanyCrm(clientId) {
+    const content = document.getElementById('companyCrmContent');
+    if (!content) return;
+    content.innerHTML = `<div class="loading-wrap"><span class="spinner"></span> Carregando CRM...</div>`;
+    try {
+      const [summaryResponse, leadsResponse] = await Promise.all([
+        apiFetch(`${API}/clients/${clientId}/crm/summary`),
+        apiFetch(`${API}/clients/${clientId}/crm/leads?limit=80`),
+      ]);
+      const summary = await summaryResponse.json();
+      const leadsPayload = await leadsResponse.json();
+      if (!summaryResponse.ok) return content.innerHTML = `<div style="color:var(--red)">${readableError(summary)}</div>`;
+      if (!leadsResponse.ok) return content.innerHTML = `<div style="color:var(--red)">${readableError(leadsPayload)}</div>`;
+
+      const leads = leadsPayload.leads || [];
+      content.innerHTML = `
+        <div class="ops-summary" style="margin-bottom:12px">
+          <div class="ops-card"><span>Leads novos</span><strong>${summary.new_leads || 0}</strong><small>Sem etapa comercial avançada</small></div>
+          <div class="ops-card"><span>Conversas abertas</span><strong>${summary.open_conversations || 0}</strong><small>Não resolvidas no Chatwoot</small></div>
+          <div class="ops-card"><span>Follow-up necessário</span><strong>${summary.followups || 0}</strong><small>Mais de 24h sem atividade</small></div>
+          <div class="ops-card"><span>Leads listados</span><strong>${leads.length}</strong><small>Últimas conversas da empresa</small></div>
+        </div>
+        <div class="crm-grid">
+          ${(summary.stages || []).map(renderCrmStageCard).join('')}
+        </div>
+        ${renderCrmLeadsTable(clientId, leadsPayload.stages || [], leads)}
+      `;
+    } catch (e) {
+      content.innerHTML = `<div style="color:var(--red)">Erro ao carregar CRM: ${e.message}</div>`;
+    }
+  }
+
+  function renderCrmLeadsTable(clientId, stages, leads) {
+    if (!leads.length) {
+      return `<div class="detail-box" style="margin-top:12px"><span>Nenhum lead encontrado</span><strong>As conversas do WhatsApp aparecerão aqui quando chegarem no Chatwoot.</strong></div>`;
+    }
+    return `
+      <div style="overflow:auto;border:1px solid var(--border);border-radius:8px;margin-top:12px">
+        <table class="crm-table">
+          <thead>
+            <tr>
+              <th>Lead</th>
+              <th>Etapa</th>
+              <th>Responsável</th>
+              <th>Última atividade</th>
+              <th>Status</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            ${leads.map(lead => `
+              <tr>
+                <td class="crm-lead-main">
+                  <strong>${lead.contact_name || lead.phone_number || 'Contato sem nome'}</strong>
+                  <span>${lead.phone_number || lead.contact_email || 'Sem telefone'}</span>
+                  ${lead.last_message ? `<span>${String(lead.last_message).slice(0, 90)}</span>` : ''}
+                </td>
+                <td>
+                  <select data-previous-value="${lead.stage_key}" onchange="updateCrmStage(${clientId}, ${lead.id}, this)">
+                    ${crmStageOptions(stages, lead.stage_key)}
+                  </select>
+                </td>
+                <td>${lead.assignee_name || '<span class="crm-muted">Sem responsável</span>'}</td>
+                <td>${formatCrmDate(lead.last_activity_at || lead.created_at)}</td>
+                <td>
+                  <span class="badge ${lead.needs_followup ? 'badge-connecting' : 'badge-unknown'}">${lead.needs_followup ? 'Follow-up' : lead.status_label}</span>
+                </td>
+                <td><a class="btn btn-ghost btn-sm" href="${lead.chatwoot_url}" target="_blank" style="text-decoration:none">Abrir</a></td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  async function updateCrmStage(clientId, conversationId, select) {
+    const previousValue = select.dataset.previousValue || select.value;
+    select.disabled = true;
+    try {
+      const r = await apiFetch(`${API}/clients/${clientId}/crm/leads/${conversationId}/stage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stage: select.value }),
+      });
+      const data = await r.json();
+      if (!r.ok) {
+        select.value = previousValue;
+        toast(readableError(data), 'error');
+        return;
+      }
+      select.dataset.previousValue = select.value;
+      toast('Etapa do lead atualizada.');
+      loadCompanyCrm(clientId);
+    } catch (e) {
+      select.value = previousValue;
+      toast(`Erro: ${e.message}`, 'error');
+    } finally {
+      select.disabled = false;
+    }
+  }
+
+  async function resetClientAdminPassword(clientId, email, btn) {
+    if (!confirm(`Gerar uma nova senha temporária para o administrador ${email}? A senha anterior deixará de funcionar.`)) return;
+    const original = btn.innerHTML;
+    btn.innerHTML = `<span class="spinner"></span>`;
+    btn.disabled = true;
+    try {
+      const r = await apiFetch(`${API}/clients/${clientId}/admin/reset-password`, { method: 'POST' });
+      const data = await r.json();
+      if (!r.ok) {
+        toast(readableError(data), 'error');
+        return;
+      }
+      showAgentCredentials([data], 'Senha do administrador');
+      toast('Senha temporária do admin gerada.');
+    } catch (e) {
+      toast(`Erro: ${e.message}`, 'error');
+    } finally {
+      btn.innerHTML = original;
+      btn.disabled = false;
+    }
+  }
+
   async function resetAgentPassword(clientId, userId, email, btn) {
     if (!confirm(`Gerar uma nova senha temporária para ${email}? A senha anterior deixará de funcionar.`)) return;
     const original = btn.innerHTML;
@@ -896,7 +1073,7 @@
         toast(readableError(data), 'error');
         return;
       }
-      showAgentCredentials([data]);
+      showAgentCredentials([data], 'Senha do agente');
       toast('Senha temporária gerada.');
     } catch (e) {
       toast(`Erro: ${e.message}`, 'error');
@@ -977,7 +1154,7 @@
         return;
       }
       closeAgentsModal();
-      showAgentCredentials(data.agents || []);
+      showAgentCredentials(data.agents || [], 'Agentes criados');
     } catch (e) {
       toast(`Erro: ${e.message}`, 'error');
     } finally {
@@ -986,8 +1163,10 @@
     }
   }
 
-  function showAgentCredentials(agents) {
+  function showAgentCredentials(agents, title = 'Credenciais') {
     _lastAgentCredentials = agents;
+    const modal = document.getElementById('agentCredentialsModal');
+    modal.querySelector('h2').textContent = title;
     document.getElementById('agentCredentialsContent').innerHTML = agents.map(agent => `
       <div style="border-bottom:1px solid var(--border);padding:8px 0">
         <div><strong>${agent.name}</strong></div>
@@ -995,7 +1174,8 @@
         <div>Senha: <code style="background:var(--surface);padding:2px 6px;border-radius:4px">${agent.chatwoot_temp_password}</code></div>
       </div>
     `).join('');
-    document.getElementById('agentCredentialsModal').classList.remove('hidden');
+    modal.classList.add('priority');
+    modal.classList.remove('hidden');
   }
 
   function copyAgentCredentials() {
@@ -1004,7 +1184,7 @@
       .map(agent => `${agent.name}\nLogin: ${agent.email}\nSenha: ${agent.chatwoot_temp_password}`)
       .join('\n\n');
     navigator.clipboard.writeText(text);
-    toast('Credenciais dos agentes copiadas!');
+    toast('Credenciais copiadas!');
   }
 
   async function createClient() {

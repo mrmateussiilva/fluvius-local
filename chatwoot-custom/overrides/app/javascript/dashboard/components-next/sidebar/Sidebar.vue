@@ -223,6 +223,12 @@ const menuItems = computed(() => {
       },
     },
     {
+      name: 'CRM',
+      label: 'CRM',
+      icon: 'i-lucide-kanban',
+      to: accountScopedRoute('crm'),
+    },
+    {
       name: 'Internal Chat',
       label: 'Chat interno',
       icon: 'i-lucide-messages-square',
