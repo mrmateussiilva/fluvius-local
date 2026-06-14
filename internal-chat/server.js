@@ -1185,7 +1185,7 @@ async function ensureCrmDefaults(accountId) {
     const { rows } = await pool.query(
       `INSERT INTO custom_attribute_definitions
         (attribute_display_name, attribute_key, attribute_display_type, default_value, attribute_model, account_id, attribute_description, created_at, updated_at)
-       VALUES ($1, $2, $3, '', $4, $5, $6, NOW(), NOW())
+       VALUES ($1, $2, $3, NULL, $4, $5, $6, NOW(), NOW())
        RETURNING id, attribute_key, attribute_display_name`,
       [attribute.name, attribute.key, displayType, attributeModel, accountId, attribute.description],
     );
@@ -2511,10 +2511,14 @@ app.post('/onboard/:token/phone', async (req, res) => {
   if (!client) return res.status(404).json({ error: 'Link inválido' });
   const phone = String(req.body.phone || '').replace(/\D/g, '');
   if (!phone || phone.length < 10) return res.status(400).json({ error: 'Número inválido' });
-  const { status, data } = await evoFetch(`/instance/pairingCode/${client.instance_name}`, {
-    method: 'POST',
-    body: JSON.stringify({ number: phone }),
-  });
+  const { status, data } = await evoFetch(`/instance/connect/${client.instance_name}?number=${encodeURIComponent(phone)}`);
+  const pairingCode = data?.code || data?.pairingCode || data?.qrcode?.pairingCode || '';
+  if (status < 300 && !pairingCode) {
+    return res.status(502).json({
+      error: 'A Evolution não retornou código de pareamento para este número. Confira se o número tem WhatsApp ativo e tente novamente.',
+      evolution: data,
+    });
+  }
   res.status(status).json(data);
 });
 

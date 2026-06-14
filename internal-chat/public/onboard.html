@@ -517,7 +517,7 @@
         body: JSON.stringify({ phone }),
       });
       const data = await r.json();
-      const code = data?.code || data?.pairingCode || '';
+      const code = data?.code || data?.pairingCode || data?.qrcode?.pairingCode || '';
       if (code) {
         document.getElementById('pairingCode').textContent = code;
         document.getElementById('codeBox').classList.add('visible');
