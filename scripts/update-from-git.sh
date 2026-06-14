@@ -6,6 +6,7 @@ COMPOSE_FILE="${COMPOSE_FILE:-$VPS_DIR/docker-compose.prod.yml}"
 REMOTE="${REMOTE:-origin}"
 BRANCH="${BRANCH:-main}"
 SERVICE="${SERVICE:-internal-chat}"
+UPDATE_SCOPE="${UPDATE_SCOPE:-service}"
 RUN_AUTO_CONFIGURE="${RUN_AUTO_CONFIGURE:-false}"
 FORCE="${FORCE:-false}"
 
@@ -62,9 +63,19 @@ git checkout "$BRANCH"
 git pull --ff-only "$REMOTE" "$BRANCH"
 
 echo ""
-echo "Rebuild/restart do servico: $SERVICE"
-compose build "$SERVICE"
-compose up -d "$SERVICE"
+if [ "$UPDATE_SCOPE" = "full" ] || [ "$SERVICE" = "all" ]; then
+  echo "Atualizacao completa da stack"
+  echo "Baixando imagens externas..."
+  compose pull --ignore-buildable || true
+  echo "Rebuild dos servicos buildaveis..."
+  compose build chatwoot sidekiq internal-chat
+  echo "Subindo stack completa..."
+  compose up -d
+else
+  echo "Rebuild/restart do servico: $SERVICE"
+  compose build "$SERVICE"
+  compose up -d "$SERVICE"
+fi
 
 if [ "$RUN_AUTO_CONFIGURE" = "true" ]; then
   echo ""
@@ -87,8 +98,13 @@ else
 fi
 
 echo ""
-echo "Logs recentes do $SERVICE:"
-compose logs --tail=80 "$SERVICE"
+if [ "$UPDATE_SCOPE" = "full" ] || [ "$SERVICE" = "all" ]; then
+  echo "Logs recentes da stack:"
+  compose logs --tail=80 chatwoot sidekiq internal-chat evolution
+else
+  echo "Logs recentes do $SERVICE:"
+  compose logs --tail=80 "$SERVICE"
+fi
 
 echo ""
 echo "Update concluido."

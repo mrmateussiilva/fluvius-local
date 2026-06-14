@@ -646,6 +646,16 @@
     return JSON.stringify(data?.error || data || {});
   }
 
+  async function readJsonResponse(response) {
+    const text = await response.text();
+    if (!text) return {};
+    try {
+      return JSON.parse(text);
+    } catch {
+      throw new Error(`Resposta inválida do servidor (${response.status})`);
+    }
+  }
+
   async function loginManager(event) {
     event.preventDefault();
     const btn = document.getElementById('btnManagerLogin');
@@ -997,8 +1007,8 @@
         apiFetch(`${API}/clients/${clientId}/crm/summary`),
         apiFetch(`${API}/clients/${clientId}/crm/leads?limit=80`),
       ]);
-      const summary = await summaryResponse.json();
-      const leadsPayload = await leadsResponse.json();
+      const summary = await readJsonResponse(summaryResponse);
+      const leadsPayload = await readJsonResponse(leadsResponse);
       if (!summaryResponse.ok) return content.innerHTML = `<div style="color:var(--red)">${readableError(summary)}</div>`;
       if (!leadsResponse.ok) return content.innerHTML = `<div style="color:var(--red)">${readableError(leadsPayload)}</div>`;
 
@@ -1073,7 +1083,7 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ stage: select.value }),
       });
-      const data = await r.json();
+      const data = await readJsonResponse(r);
       if (!r.ok) {
         select.value = previousValue;
         toast(readableError(data), 'error');

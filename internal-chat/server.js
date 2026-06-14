@@ -686,15 +686,23 @@ async function updateCrmStageForAccount(accountId, conversationId, stage) {
 }
 
 app.get('/api/accounts/:accountId/crm/summary', async (req, res) => {
-  const access = await requireAccountAccess(req, res);
-  if (!access) return;
-  res.json(await crmSummaryForAccount(access.accountId));
+  try {
+    const access = await requireAccountAccess(req, res);
+    if (!access) return;
+    res.json(await crmSummaryForAccount(access.accountId));
+  } catch (err) {
+    res.status(500).json({ step: 'crm_summary', error: err.message });
+  }
 });
 
 app.get('/api/accounts/:accountId/crm/leads', async (req, res) => {
-  const access = await requireAccountAccess(req, res);
-  if (!access) return;
-  res.json(await crmLeadsForAccount(access.accountId, req.query));
+  try {
+    const access = await requireAccountAccess(req, res);
+    if (!access) return;
+    res.json(await crmLeadsForAccount(access.accountId, req.query));
+  } catch (err) {
+    res.status(500).json({ step: 'crm_leads', error: err.message });
+  }
 });
 
 app.post('/api/accounts/:accountId/crm/leads/:conversationId/stage', async (req, res) => {
@@ -1841,163 +1849,35 @@ app.patch('/manager/api/clients/:id/channel-name', async (req, res) => {
 });
 
 app.get('/manager/api/clients/:id/crm/summary', async (req, res) => {
-  const id = Number(req.params.id);
-  const { rows } = await pool.query(`SELECT ${CLIENT_PUBLIC_FIELDS} FROM fluvius_clients WHERE id = $1`, [id]);
-  if (!rows.length) return res.status(404).json({ error: 'client not found' });
+  try {
+    const id = Number(req.params.id);
+    const { rows } = await pool.query(`SELECT ${CLIENT_PUBLIC_FIELDS} FROM fluvius_clients WHERE id = $1`, [id]);
+    if (!rows.length) return res.status(404).json({ error: 'client not found' });
 
-  const client = rows[0];
-  if (!client.chatwoot_account_id) return res.status(400).json({ error: 'client is missing chatwoot account' });
+    const client = rows[0];
+    if (!client.chatwoot_account_id) return res.status(400).json({ error: 'client is missing chatwoot account' });
 
-  await ensureCrmDefaults(client.chatwoot_account_id);
-
-  const counts = Object.fromEntries(CRM_STAGE_KEYS.map(stage => [stage, 0]));
-  const countRows = await pool.query(
-    `WITH conversation_stages AS (
-       SELECT
-         conversations.id,
-         COALESCE(MAX(tags.name) FILTER (WHERE tags.name = ANY($2::text[])), $3) AS stage
-       FROM conversations
-       LEFT JOIN taggings
-         ON taggings.taggable_type = 'Conversation'
-        AND taggings.context = 'labels'
-        AND taggings.taggable_id = conversations.id
-       LEFT JOIN tags ON tags.id = taggings.tag_id
-       WHERE conversations.account_id = $1
-       GROUP BY conversations.id
-     )
-     SELECT stage, COUNT(*)::int AS total
-     FROM conversation_stages
-     GROUP BY stage`,
-    [client.chatwoot_account_id, CRM_STAGE_KEYS, CRM_DEFAULT_STAGE_KEY],
-  );
-  for (const row of countRows.rows) {
-    if (counts[row.stage] !== undefined) counts[row.stage] = Number(row.total || 0);
+    const summary = await crmSummaryForAccount(client.chatwoot_account_id);
+    res.json({ client_id: id, ...summary });
+  } catch (err) {
+    res.status(500).json({ step: 'crm_summary', error: err.message });
   }
-
-  const followupRows = await pool.query(
-    `WITH conversation_stages AS (
-       SELECT
-         conversations.id,
-         conversations.status,
-         conversations.last_activity_at,
-         COALESCE(MAX(tags.name) FILTER (WHERE tags.name = ANY($2::text[])), $3) AS stage
-       FROM conversations
-       LEFT JOIN taggings
-         ON taggings.taggable_type = 'Conversation'
-        AND taggings.context = 'labels'
-        AND taggings.taggable_id = conversations.id
-       LEFT JOIN tags ON tags.id = taggings.tag_id
-       WHERE conversations.account_id = $1
-       GROUP BY conversations.id
-     )
-     SELECT
-       COUNT(*) FILTER (WHERE status <> 1 AND COALESCE(last_activity_at, NOW()) < NOW() - INTERVAL '24 hours' AND stage <> ALL($4::text[]))::int AS followups,
-       COUNT(*) FILTER (WHERE status <> 1)::int AS open_conversations,
-       COUNT(*) FILTER (WHERE status <> 1 AND stage = $3)::int AS new_leads
-     FROM conversation_stages`,
-    [client.chatwoot_account_id, CRM_STAGE_KEYS, CRM_DEFAULT_STAGE_KEY, [...CRM_CLOSED_STAGE_KEYS]],
-  );
-
-  res.json({
-    client_id: id,
-    account_id: client.chatwoot_account_id,
-    stages: CRM_STAGES.map(stage => ({ ...stage, total: counts[stage.key] || 0 })),
-    followups: Number(followupRows.rows[0]?.followups || 0),
-    open_conversations: Number(followupRows.rows[0]?.open_conversations || 0),
-    new_leads: Number(followupRows.rows[0]?.new_leads || 0),
-  });
 });
 
 app.get('/manager/api/clients/:id/crm/leads', async (req, res) => {
-  const id = Number(req.params.id);
-  const limit = Math.min(Math.max(Number(req.query.limit || 80), 1), 200);
-  const stageFilter = normalizeCrmStage(req.query.stage)?.key || '';
-  const followupOnly = String(req.query.followup || '') === 'true';
-  const { rows } = await pool.query(`SELECT ${CLIENT_PUBLIC_FIELDS} FROM fluvius_clients WHERE id = $1`, [id]);
-  if (!rows.length) return res.status(404).json({ error: 'client not found' });
+  try {
+    const id = Number(req.params.id);
+    const { rows } = await pool.query(`SELECT ${CLIENT_PUBLIC_FIELDS} FROM fluvius_clients WHERE id = $1`, [id]);
+    if (!rows.length) return res.status(404).json({ error: 'client not found' });
 
-  const client = rows[0];
-  if (!client.chatwoot_account_id) return res.status(400).json({ error: 'client is missing chatwoot account' });
+    const client = rows[0];
+    if (!client.chatwoot_account_id) return res.status(400).json({ error: 'client is missing chatwoot account' });
 
-  await ensureCrmDefaults(client.chatwoot_account_id);
-
-  const leads = await pool.query(
-    `WITH conversation_stages AS (
-       SELECT
-         conversations.id,
-         COALESCE(MAX(tags.name) FILTER (WHERE tags.name = ANY($2::text[])), $3) AS stage
-       FROM conversations
-       LEFT JOIN taggings
-         ON taggings.taggable_type = 'Conversation'
-        AND taggings.context = 'labels'
-        AND taggings.taggable_id = conversations.id
-       LEFT JOIN tags ON tags.id = taggings.tag_id
-       WHERE conversations.account_id = $1
-       GROUP BY conversations.id
-     )
-     SELECT
-       conversations.id,
-       conversations.display_id,
-       conversations.status,
-       conversations.assignee_id,
-       conversations.last_activity_at,
-       conversations.created_at,
-       contacts.name AS contact_name,
-       contacts.email AS contact_email,
-       contacts.phone_number,
-       users.name AS assignee_name,
-       users.email AS assignee_email,
-       conversation_stages.stage,
-       last_message.content AS last_message,
-       last_message.created_at AS last_message_at
-     FROM conversations
-     INNER JOIN conversation_stages ON conversation_stages.id = conversations.id
-     LEFT JOIN contacts ON contacts.id = conversations.contact_id
-     LEFT JOIN users ON users.id = conversations.assignee_id
-     LEFT JOIN LATERAL (
-       SELECT content, created_at
-       FROM messages
-       WHERE messages.conversation_id = conversations.id
-         AND messages.private = false
-       ORDER BY messages.created_at DESC
-       LIMIT 1
-     ) last_message ON true
-     WHERE conversations.account_id = $1
-       AND ($5::text = '' OR conversation_stages.stage = $5)
-       AND (
-         $6::boolean = false
-         OR (
-           conversations.status <> 1
-           AND COALESCE(conversations.last_activity_at, conversations.created_at) < NOW() - INTERVAL '24 hours'
-           AND conversation_stages.stage <> ALL($4::text[])
-         )
-       )
-     ORDER BY COALESCE(conversations.last_activity_at, conversations.created_at) DESC
-     LIMIT $7`,
-    [client.chatwoot_account_id, CRM_STAGE_KEYS, CRM_DEFAULT_STAGE_KEY, [...CRM_CLOSED_STAGE_KEYS], stageFilter, followupOnly, limit],
-  );
-
-  res.json({
-    client_id: id,
-    account_id: client.chatwoot_account_id,
-    stages: CRM_STAGES,
-    leads: leads.rows.map(lead => {
-      const lastActivityAt = lead.last_activity_at || lead.created_at;
-      const needsFollowup = Number(lead.status) !== 1
-        && lastActivityAt
-        && new Date(lastActivityAt).getTime() < Date.now() - (24 * 60 * 60 * 1000)
-        && !CRM_CLOSED_STAGE_KEYS.has(lead.stage);
-      const stageDefinition = CRM_STAGES.find(stage => stage.key === lead.stage) || CRM_STAGES[0];
-      return {
-        ...lead,
-        stage_key: stageDefinition.key,
-        stage: stageDefinition.title,
-        status_label: ['Aberta', 'Resolvida', 'Pendente', 'Adiada'][Number(lead.status)] || String(lead.status),
-        needs_followup: needsFollowup,
-        chatwoot_url: conversationUrl(client.chatwoot_account_id, lead.display_id),
-      };
-    }),
-  });
+    const leads = await crmLeadsForAccount(client.chatwoot_account_id, req.query);
+    res.json({ client_id: id, ...leads });
+  } catch (err) {
+    res.status(500).json({ step: 'crm_leads', error: err.message });
+  }
 });
 
 app.post('/manager/api/clients/:id/crm/leads/:conversationId/stage', async (req, res) => {
