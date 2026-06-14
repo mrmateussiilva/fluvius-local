@@ -232,9 +232,34 @@
       padding: 28px;
       width: 100%;
       max-width: 420px;
+      max-height: calc(100vh - 48px);
       animation: fadeIn 0.2s ease;
     }
     .modal-wide { max-width: 840px; }
+    .company-modal {
+      display: flex;
+      flex-direction: column;
+      width: min(1040px, calc(100vw - 32px));
+      max-width: none;
+      height: min(860px, calc(100vh - 32px));
+      padding: 0;
+      overflow: hidden;
+    }
+    .company-modal-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      flex-shrink: 0;
+      border-bottom: 1px solid var(--border);
+      padding: 18px 20px;
+    }
+    .company-modal-body {
+      min-height: 0;
+      overflow: auto;
+      padding: 18px 20px 22px;
+    }
+    .company-modal-header p { margin-bottom: 0; }
 
     .modal h2 { font-size: 18px; margin-bottom: 8px; }
     .modal p { font-size: 14px; color: var(--muted); margin-bottom: 24px; }
@@ -385,6 +410,17 @@
     .company-kpis { grid-template-columns: 1fr; }
     .agent-row { grid-template-columns: 1fr; }
     .modal { padding: 20px; }
+    .company-modal {
+      width: calc(100vw - 20px);
+      height: calc(100vh - 20px);
+      padding: 0;
+    }
+    .company-modal-header {
+      padding: 14px;
+    }
+    .company-modal-body {
+      padding: 14px;
+    }
   }
 </style>
 <div class="auth-screen" id="authScreen">
@@ -543,15 +579,15 @@
 
 <!-- Company Details Modal -->
 <div class="modal-overlay hidden" id="companyModal">
-  <div class="modal modal-wide">
-    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:8px">
+  <div class="modal company-modal">
+    <div class="company-modal-header">
       <div>
         <h2 id="companyTitle">Empresa</h2>
         <p id="companySubtitle">Resumo operacional da empresa.</p>
       </div>
       <button class="btn btn-ghost btn-sm" onclick="closeCompanyModal()">Fechar</button>
     </div>
-    <div id="companyContent">
+    <div class="company-modal-body" id="companyContent">
       <div class="loading-wrap"><span class="spinner"></span> Carregando...</div>
     </div>
   </div>
