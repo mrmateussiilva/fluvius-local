@@ -1169,10 +1169,11 @@ async function ensureCrmDefaults(accountId) {
     const { rows } = await pool.query(
       `INSERT INTO labels (title, description, color, show_on_sidebar, account_id, created_at, updated_at)
        VALUES ($1, $2, $3, true, $4, NOW(), NOW())
+       ON CONFLICT (title, account_id) DO NOTHING
        RETURNING id, title`,
       [stage.key, `Etapa do funil comercial Fluvius: ${stage.title}`, stage.color, accountId],
     );
-    created.labels.push(rows[0]);
+    if (rows[0]) created.labels.push(rows[0]);
   }
 
   for (const attribute of CRM_CUSTOM_ATTRIBUTES) {
@@ -1194,10 +1195,11 @@ async function ensureCrmDefaults(accountId) {
       `INSERT INTO custom_attribute_definitions
         (attribute_display_name, attribute_key, attribute_display_type, default_value, attribute_model, account_id, attribute_description, created_at, updated_at)
        VALUES ($1, $2, $3, NULL, $4, $5, $6, NOW(), NOW())
+       ON CONFLICT (attribute_key, attribute_model, account_id) DO NOTHING
        RETURNING id, attribute_key, attribute_display_name`,
       [attribute.name, attribute.key, displayType, attributeModel, accountId, attribute.description],
     );
-    created.attributes.push(rows[0]);
+    if (rows[0]) created.attributes.push(rows[0]);
   }
 
   return created;
