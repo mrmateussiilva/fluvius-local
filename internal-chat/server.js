@@ -118,6 +118,7 @@ const CRM_CUSTOM_ATTRIBUTES = [
     type: 'text',
   },
 ];
+const CRM_CUSTOM_ATTRIBUTE_KEYS = new Set(CRM_CUSTOM_ATTRIBUTES.map(attribute => attribute.key));
 
 const pool = new Pool({
   host: process.env.POSTGRES_HOST || 'postgres',
@@ -685,6 +686,32 @@ async function updateCrmStageForAccount(accountId, conversationId, stage) {
   }
 }
 
+function normalizeCrmFieldPayload(value) {
+  if (!value || typeof value !== 'object') return {};
+  const fields = {};
+  for (const [key, rawValue] of Object.entries(value)) {
+    if (!CRM_CUSTOM_ATTRIBUTE_KEYS.has(key)) continue;
+    fields[key] = String(rawValue ?? '').trim().slice(0, 1000);
+  }
+  return fields;
+}
+
+async function updateCrmFieldsForAccount(accountId, conversationId, fields) {
+  const normalizedFields = normalizeCrmFieldPayload(fields);
+  if (!Object.keys(normalizedFields).length) return null;
+
+  const { rows } = await pool.query(
+    `UPDATE conversations
+     SET custom_attributes = COALESCE(custom_attributes, '{}'::jsonb) || $3::jsonb,
+         updated_at = NOW()
+     WHERE id = $1
+       AND account_id = $2
+     RETURNING id, display_id, custom_attributes`,
+    [conversationId, accountId, JSON.stringify(normalizedFields)],
+  );
+  return rows[0] || null;
+}
+
 app.get('/api/accounts/:accountId/crm/summary', async (req, res) => {
   try {
     const access = await requireAccountAccess(req, res);
@@ -720,6 +747,27 @@ app.post('/api/accounts/:accountId/crm/leads/:conversationId/stage', async (req,
     return res.json(result);
   } catch (err) {
     return res.status(500).json({ step: 'update_crm_stage', error: err.message });
+  }
+});
+
+app.patch('/api/accounts/:accountId/crm/leads/:conversationId/fields', async (req, res) => {
+  const access = await requireAccountAccess(req, res);
+  if (!access) return;
+
+  const conversationId = Number(req.params.conversationId);
+  if (!conversationId) return res.status(400).json({ error: 'conversationId is required' });
+
+  try {
+    const result = await updateCrmFieldsForAccount(access.accountId, conversationId, req.body?.fields);
+    if (!result) return res.status(404).json({ error: 'conversation not found for this account' });
+    return res.json({
+      conversation_id: conversationId,
+      display_id: result.display_id,
+      conversation_custom_attributes: result.custom_attributes || {},
+      chatwoot_url: conversationUrl(access.accountId, result.display_id),
+    });
+  } catch (err) {
+    return res.status(500).json({ step: 'update_crm_fields', error: err.message });
   }
 });
 
