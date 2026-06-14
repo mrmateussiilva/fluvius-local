@@ -581,6 +581,7 @@
     create_agents: 'Não foi possível criar os agentes.',
     reset_client_admin_password: 'Não foi possível redefinir a senha do administrador da empresa.',
     reset_agent_password: 'Não foi possível redefinir a senha do agente.',
+    rename_channel: 'Não foi possível renomear a conexão WhatsApp.',
     update_crm_stage: 'Não foi possível atualizar a etapa do lead.',
   };
 
@@ -760,11 +761,22 @@
     return String(value).replace(/'/g, "\\'").replace(/"/g, '&quot;');
   }
 
+  function escapeHtml(value = '') {
+    return String(value).replace(/[&<>"']/g, char => ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#039;',
+    })[char]);
+  }
+
   function companyCard(c) {
     const link = `${CHAT_BASE}/onboard/${c.token}`;
     const date = new Date(c.created_at).toLocaleDateString('pt-BR');
     const chatwootBase = c.chatwoot_url || 'https://fluvius.finderbit.com.br';
     const chatwootUrl = c.chatwoot_account_id ? `${chatwootBase}/app/accounts/${c.chatwoot_account_id}/dashboard` : chatwootBase;
+    const channelName = c.channel_display_name || c.instance_name || 'WhatsApp principal';
     const primaryAction = c.status === 'connected'
       ? `<a class="btn btn-primary btn-sm" href="${chatwootUrl}" target="_blank" style="text-decoration:none">Abrir atendimento</a>`
       : `<a class="btn btn-primary btn-sm" href="${link}" target="_blank" style="text-decoration:none">Conectar WhatsApp</a>`;
@@ -779,9 +791,9 @@
           ${statusBadge(c.status)}
         </div>
         <div class="company-kpis">
+          <div class="company-kpi"><span>Canal</span><strong>${escapeHtml(channelName)}</strong></div>
           <div class="company-kpi"><span>WhatsApp</span><strong>${c.phone || 'Aguardando conexão'}</strong></div>
           <div class="company-kpi"><span>Conta Chatwoot</span><strong>${c.chatwoot_account_id || '—'}</strong></div>
-          <div class="company-kpi"><span>Instância</span><strong>${c.instance_name || '—'}</strong></div>
         </div>
         <div class="company-actions">
           ${primaryAction}
@@ -820,6 +832,7 @@
     const onboardLink = `${CHAT_BASE}/onboard/${c.token}`;
     const chatwootAccountUrl = `${c.chatwoot_url}/app/accounts/${c.chatwoot_account_id}/dashboard`;
     const pendingActions = companyPendingActions(c, chatwootAccountUrl, onboardLink);
+    const channelName = c.channel_display_name || c.instance_name || 'WhatsApp principal';
     document.getElementById('companyTitle').textContent = c.name;
     document.getElementById('companySubtitle').textContent = c.status === 'connected'
       ? 'Operação pronta para atendimento no Chatwoot.'
@@ -839,6 +852,7 @@
       <div class="detail-grid">
         <div class="detail-box"><span>Painel da empresa</span><strong><a href="${chatwootAccountUrl}" target="_blank" style="color:var(--accent)">${chatwootAccountUrl}</a></strong></div>
         <div class="detail-box"><span>Admin da empresa</span><strong>${c.chatwoot_user_email || c.email || '—'}</strong></div>
+        <div class="detail-box"><span>Canal WhatsApp</span><strong>${escapeHtml(channelName)}</strong></div>
         <div class="detail-box"><span>Status WhatsApp</span><strong>${statusBadge(c.status)}</strong></div>
         <div class="detail-box"><span>Número conectado</span><strong>${c.phone || 'Aguardando conexão'}</strong></div>
         <div class="detail-box"><span>Link de conexão WhatsApp</span><strong><a href="${onboardLink}" target="_blank" style="color:var(--accent)">${onboardLink}</a></strong></div>
@@ -848,6 +862,7 @@
         <a class="btn btn-primary btn-sm" href="${chatwootAccountUrl}" target="_blank" style="text-decoration:none">Abrir Chatwoot da empresa</a>
         <a class="btn btn-ghost btn-sm" href="${onboardLink}" target="_blank" style="text-decoration:none">Abrir onboarding WhatsApp</a>
         <button class="btn btn-ghost btn-sm" onclick="copyCompanyAccess(${c.id})">Copiar acesso</button>
+        <button class="btn btn-ghost btn-sm" onclick="renameCompanyChannel(${c.id}, '${escapeAttr(channelName)}', this)">Renomear conexão</button>
         <button class="btn btn-ghost btn-sm" onclick="resetClientAdminPassword(${c.id}, '${escapeAttr(c.chatwoot_user_email || c.email || 'admin')}', this)">Redefinir senha do admin</button>
         <button class="btn btn-ghost btn-sm" onclick="openAgentsModal(${c.id}, '${escapeAttr(c.name)}')">Adicionar agentes</button>
         <button class="btn btn-ghost btn-sm" onclick="importHistory(${c.id}, '${escapeAttr(c.name)}', this)">Importar histórico</button>
@@ -1036,6 +1051,38 @@
       toast(`Erro: ${e.message}`, 'error');
     } finally {
       select.disabled = false;
+    }
+  }
+
+  async function renameCompanyChannel(clientId, currentName, btn) {
+    const nextName = prompt('Nome da conexão WhatsApp', currentName || 'WhatsApp principal');
+    if (nextName === null) return;
+    const channelName = nextName.trim();
+    if (!channelName) return toast('Informe um nome para a conexão.', 'error');
+    if (channelName.length > 80) return toast('Use no máximo 80 caracteres.', 'error');
+
+    const original = btn.innerHTML;
+    btn.innerHTML = `<span class="spinner"></span>`;
+    btn.disabled = true;
+    try {
+      const r = await apiFetch(`${API}/clients/${clientId}/channel-name`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ channel_display_name: channelName }),
+      });
+      const data = await r.json();
+      if (!r.ok) {
+        toast(readableError(data), 'error');
+        return;
+      }
+      toast('Conexão renomeada.');
+      await openCompany(clientId);
+      await loadClients();
+    } catch (e) {
+      toast(`Erro: ${e.message}`, 'error');
+    } finally {
+      btn.innerHTML = original;
+      btn.disabled = false;
     }
   }
 

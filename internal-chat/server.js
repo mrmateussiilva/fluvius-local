@@ -48,6 +48,7 @@ const CLIENT_PUBLIC_FIELDS = `
   email,
   token,
   instance_name,
+  channel_display_name,
   inbox_id,
   inbox_token,
   phone,
@@ -150,7 +151,7 @@ app.use((req, res, next) => {
   if (allowedOrigin) res.setHeader('Access-Control-Allow-Origin', allowedOrigin);
   res.setHeader('Vary', 'Origin');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-File-Name, Authorization');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,DELETE,OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PATCH,DELETE,OPTIONS');
   if (req.method === 'OPTIONS') return res.sendStatus(204);
   return next();
 });
@@ -280,6 +281,7 @@ async function migrate() {
       email       TEXT,
       token       TEXT UNIQUE NOT NULL,
       instance_name TEXT,
+      channel_display_name TEXT,
       inbox_id    INTEGER,
       inbox_token TEXT,
       phone       TEXT,
@@ -296,7 +298,8 @@ async function migrate() {
       ADD COLUMN IF NOT EXISTS chatwoot_account_id INTEGER,
       ADD COLUMN IF NOT EXISTS chatwoot_user_id INTEGER,
       ADD COLUMN IF NOT EXISTS chatwoot_user_email TEXT,
-      ADD COLUMN IF NOT EXISTS chatwoot_temp_password TEXT;
+      ADD COLUMN IF NOT EXISTS chatwoot_temp_password TEXT,
+      ADD COLUMN IF NOT EXISTS channel_display_name TEXT;
   `);
 }
 
@@ -1771,6 +1774,45 @@ app.get('/manager/api/clients/:id', async (req, res) => {
   });
 });
 
+// Rename the visible WhatsApp channel/inbox name for manager operations.
+app.patch('/manager/api/clients/:id/channel-name', async (req, res) => {
+  const id = Number(req.params.id);
+  const channelDisplayName = String(req.body?.channel_display_name || '').trim();
+  if (!channelDisplayName) return res.status(400).json({ error: 'channel_display_name is required' });
+  if (channelDisplayName.length > 80) return res.status(400).json({ error: 'channel_display_name is too long' });
+
+  const { rows } = await pool.query(`SELECT ${CLIENT_PUBLIC_FIELDS} FROM fluvius_clients WHERE id = $1`, [id]);
+  if (!rows.length) return res.status(404).json({ error: 'client not found' });
+
+  const client = rows[0];
+  if (!client.chatwoot_account_id || !client.inbox_id) {
+    return res.status(400).json({ error: 'client is missing Chatwoot account or inbox' });
+  }
+
+  const inbox = await pool.query(
+    `UPDATE inboxes
+     SET name = $1, updated_at = NOW()
+     WHERE id = $2 AND account_id = $3
+     RETURNING id, name`,
+    [channelDisplayName, client.inbox_id, client.chatwoot_account_id],
+  );
+  if (!inbox.rowCount) return res.status(404).json({ error: 'Chatwoot inbox not found for this client' });
+
+  const updated = await pool.query(
+    `UPDATE fluvius_clients
+     SET channel_display_name = $1, updated_at = NOW()
+     WHERE id = $2
+     RETURNING ${CLIENT_PUBLIC_FIELDS}`,
+    [channelDisplayName, id],
+  );
+
+  res.json({
+    ...updated.rows[0],
+    chatwoot_url: CHATWOOT_PUBLIC_URL,
+    inbox_name: inbox.rows[0].name,
+  });
+});
+
 app.get('/manager/api/clients/:id/crm/summary', async (req, res) => {
   const id = Number(req.params.id);
   const { rows } = await pool.query(`SELECT ${CLIENT_PUBLIC_FIELDS} FROM fluvius_clients WHERE id = $1`, [id]);
@@ -2031,6 +2073,7 @@ app.post('/manager/api/clients', async (req, res) => {
   const onboardToken = randomBytes(24).toString('base64url');
   const tempPassword = generateTempPassword();
   const instanceName = `fluvius-${name.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').slice(0, 28)}-${Date.now().toString(36)}`;
+  const channelDisplayName = `WhatsApp - ${name}`.slice(0, 80);
   const created = {};
 
   try {
@@ -2091,7 +2134,7 @@ app.post('/manager/api/clients', async (req, res) => {
     // Uses the user's token to create within the correct account
     const cwt = await cwtAccountFetch(`/api/v1/accounts/${accountId}/inboxes`, userToken, {
       method: 'POST',
-      body: JSON.stringify({ name: instanceName, channel: { type: 'api', webhook_url: '' } }),
+      body: JSON.stringify({ name: channelDisplayName, channel: { type: 'api', webhook_url: '' } }),
     });
     if (cwt.status >= 300) {
       const cleanup = await cleanupProvisioning(created);
@@ -2150,10 +2193,10 @@ app.post('/manager/api/clients', async (req, res) => {
     // STEP 8: Save to DB. Password is intentionally not persisted.
     const { rows } = await pool.query(
       `INSERT INTO fluvius_clients
-        (name, email, token, instance_name, inbox_id, inbox_token, status, chatwoot_account_id, chatwoot_user_id, chatwoot_user_email)
-       VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7, $8, $9)
+        (name, email, token, instance_name, channel_display_name, inbox_id, inbox_token, status, chatwoot_account_id, chatwoot_user_id, chatwoot_user_email)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', $8, $9, $10)
        RETURNING ${CLIENT_PUBLIC_FIELDS}`,
-      [name, email, onboardToken, instanceName, inboxId, inboxToken, accountId, userId, email],
+      [name, email, onboardToken, instanceName, channelDisplayName, inboxId, inboxToken, accountId, userId, email],
     );
 
     return res.json({ ...rows[0], chatwoot_temp_password: tempPassword, chatwoot_url: CHATWOOT_PUBLIC_URL });
