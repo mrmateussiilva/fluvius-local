@@ -1789,6 +1789,33 @@ app.patch('/manager/api/clients/:id/channel-name', async (req, res) => {
     return res.status(400).json({ error: 'client is missing Chatwoot account or inbox' });
   }
 
+  let adminUserId = client.chatwoot_user_id || null;
+  if (!adminUserId && client.chatwoot_user_email) {
+    adminUserId = await getChatwootUserIdByEmail(client.chatwoot_user_email);
+    if (adminUserId) {
+      await pool.query('UPDATE fluvius_clients SET chatwoot_user_id = $1 WHERE id = $2', [adminUserId, id]);
+    }
+  }
+  if (!adminUserId) return res.status(404).json({ error: 'client admin user not found' });
+
+  const userToken = await getPlatformUserToken(adminUserId);
+  if (!userToken) return res.status(400).json({ error: 'could not create Chatwoot admin token' });
+
+  const chatwootUpdate = await cwtAccountFetch(
+    `/api/v1/accounts/${client.chatwoot_account_id}/inboxes/${client.inbox_id}`,
+    userToken,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({ name: channelDisplayName }),
+    },
+  );
+  if (chatwootUpdate.status >= 300) {
+    return res.status(chatwootUpdate.status).json({
+      step: 'rename_channel',
+      error: chatwootUpdate.data,
+    });
+  }
+
   const inbox = await pool.query(
     `UPDATE inboxes
      SET name = $1, updated_at = NOW()
