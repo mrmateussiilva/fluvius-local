@@ -27,6 +27,11 @@ const CRM_AI_CONFIDENCE_THRESHOLD = Math.min(Math.max(Number(process.env.CRM_AI_
 const CRM_AI_MAX_MESSAGES = Math.min(Math.max(Number(process.env.CRM_AI_MAX_MESSAGES || 30), 5), 80);
 const CRM_AI_AUTO_INTERVAL_SECONDS = Math.max(Number(process.env.CRM_AI_AUTO_INTERVAL_SECONDS || 0), 0);
 const CRM_AI_AUTO_LIMIT = Math.min(Math.max(Number(process.env.CRM_AI_AUTO_LIMIT || 5), 1), 30);
+const TRIAGE_BOT_ENABLED = String(process.env.TRIAGE_BOT_ENABLED || 'false') === 'true';
+const TRIAGE_BOT_INTERVAL_SECONDS = Math.max(Number(process.env.TRIAGE_BOT_INTERVAL_SECONDS || 20), 10);
+const TRIAGE_BOT_LIMIT = Math.min(Math.max(Number(process.env.TRIAGE_BOT_LIMIT || 10), 1), 50);
+const TRIAGE_BOT_NEW_CONVERSATION_WINDOW_HOURS = Math.min(Math.max(Number(process.env.TRIAGE_BOT_NEW_CONVERSATION_WINDOW_HOURS || 24), 1), 720);
+const TRIAGE_BOT_OPTIONS_RAW = String(process.env.TRIAGE_BOT_OPTIONS || '');
 
 function assertValidInternalUrl(name, value) {
   let parsed;
@@ -1399,6 +1404,211 @@ async function cwtAccountFetch(path, userToken, options = {}) {
     try { return { status: res.status, data: JSON.parse(text) }; } catch { return { status: res.status, data: text }; }
   } catch (err) {
     return { status: 503, data: { error: 'Network/Fetch Error', details: err.message } };
+  }
+}
+
+const DEFAULT_TRIAGE_OPTIONS = [
+  { key: '1', label: 'Comercial' },
+  { key: '2', label: 'Financeiro' },
+  { key: '3', label: 'Suporte' },
+  { key: '4', label: 'Falar com atendente' },
+];
+
+function parseTriageOptions() {
+  if (!TRIAGE_BOT_OPTIONS_RAW) return DEFAULT_TRIAGE_OPTIONS;
+  try {
+    const parsed = JSON.parse(TRIAGE_BOT_OPTIONS_RAW);
+    if (!Array.isArray(parsed)) return DEFAULT_TRIAGE_OPTIONS;
+
+    const options = parsed
+      .map((item, index) => ({
+        key: String(item?.key || index + 1).trim(),
+        label: String(item?.label || item?.name || '').trim(),
+        team_id: Number(item?.team_id || 0) || null,
+        assignee_id: Number(item?.assignee_id || 0) || null,
+        assignee_email: String(item?.assignee_email || '').trim().toLowerCase() || null,
+      }))
+      .filter(item => item.key && item.label);
+
+    return options.length ? options : DEFAULT_TRIAGE_OPTIONS;
+  } catch {
+    return DEFAULT_TRIAGE_OPTIONS;
+  }
+}
+
+function slugifyLabel(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60);
+}
+
+function triageMenuText(options = parseTriageOptions()) {
+  return options.map(option => `${option.key} - ${option.label}`).join('\n');
+}
+
+function triageGreetingForClient(client) {
+  const companyName = String(client.name || client.channel_display_name || 'nossa empresa').trim();
+  return [
+    `Olá, seja bem-vindo(a) à empresa ${companyName}!`,
+    '',
+    'Para direcionar seu atendimento, escolha uma opção:',
+    '',
+    triageMenuText(),
+    '',
+    'Digite apenas o número da opção desejada.',
+  ].join('\n');
+}
+
+function triageConfirmationText(option) {
+  return `Perfeito, vou direcionar seu atendimento para ${option.label}.`;
+}
+
+function triageInvalidOptionText() {
+  return [
+    'Não consegui identificar a opção.',
+    '',
+    'Digite apenas um dos números abaixo:',
+    '',
+    triageMenuText(),
+  ].join('\n');
+}
+
+async function updateConversationCustomAttributes(accountId, conversationId, attributes) {
+  const { rows } = await pool.query(
+    `UPDATE conversations
+     SET custom_attributes = COALESCE(custom_attributes, '{}'::jsonb) || $3::jsonb,
+         updated_at = NOW()
+     WHERE id = $1
+       AND account_id = $2
+     RETURNING id, display_id, custom_attributes`,
+    [conversationId, accountId, JSON.stringify(attributes)],
+  );
+  return rows[0] || null;
+}
+
+async function ensureAccountLabel(accountId, title, color = '#64748b') {
+  const label = await pool.query(
+    `INSERT INTO labels (title, description, color, show_on_sidebar, account_id, created_at, updated_at)
+     VALUES ($1, $2, $3, true, $4, NOW(), NOW())
+     ON CONFLICT (title, account_id) DO UPDATE
+       SET updated_at = NOW()
+     RETURNING id`,
+    [title, `Label automatica Fluvius: ${title}`, color, accountId],
+  );
+  return label.rows[0]?.id || null;
+}
+
+async function addConversationLabel(accountId, conversationId, labelName, color = '#64748b') {
+  if (!labelName) return [];
+  await ensureAccountLabel(accountId, labelName, color);
+
+  const dbClient = await pool.connect();
+  try {
+    await dbClient.query('BEGIN');
+    let tag = await dbClient.query('SELECT id FROM tags WHERE name = $1 LIMIT 1', [labelName]);
+    if (!tag.rowCount) {
+      tag = await dbClient.query('INSERT INTO tags (name, taggings_count) VALUES ($1, 0) RETURNING id', [labelName]);
+    }
+    const tagId = Number(tag.rows[0].id);
+
+    await dbClient.query(
+      `INSERT INTO taggings (tag_id, taggable_type, taggable_id, context, created_at)
+       SELECT $1, 'Conversation', $2, 'labels', NOW()
+       WHERE NOT EXISTS (
+         SELECT 1 FROM taggings
+         WHERE tag_id = $1
+           AND taggable_type = 'Conversation'
+           AND taggable_id = $2
+           AND context = 'labels'
+       )`,
+      [tagId, conversationId],
+    );
+
+    const labels = await updateConversationCachedLabels(dbClient, conversationId);
+    await refreshTaggingCounts(dbClient, [tagId]);
+    await dbClient.query('COMMIT');
+    return labels;
+  } catch (error) {
+    await dbClient.query('ROLLBACK');
+    throw error;
+  } finally {
+    dbClient.release();
+  }
+}
+
+async function clientAdminToken(client) {
+  let adminUserId = client.chatwoot_user_id || null;
+  if (!adminUserId && client.chatwoot_user_email) {
+    adminUserId = await getCwtUserIdByEmail(client.chatwoot_user_email);
+    if (adminUserId) {
+      await pool.query('UPDATE fluvius_clients SET chatwoot_user_id = $1 WHERE id = $2', [adminUserId, client.id]);
+    }
+  }
+  if (!adminUserId) return null;
+  return getPlatformUserToken(adminUserId);
+}
+
+async function sendTriageMessage(client, conversation, content) {
+  const token = await clientAdminToken(client);
+  if (!token) throw new Error(`client ${client.id} admin token not available`);
+
+  const response = await cwtAccountFetch(
+    `/api/v1/accounts/${client.chatwoot_account_id}/conversations/${conversation.display_id}/messages`,
+    token,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        content,
+        message_type: 'outgoing',
+        private: false,
+      }),
+    },
+  );
+
+  if (response.status >= 300) {
+    throw new Error(`send triage message failed: ${JSON.stringify(response.data)}`);
+  }
+  return response.data;
+}
+
+async function assignTriageConversation(client, conversation, option) {
+  const token = await clientAdminToken(client);
+  if (!token) throw new Error(`client ${client.id} admin token not available`);
+
+  let teamId = option.team_id || null;
+  if (!teamId && option.label) {
+    const team = await pool.query(
+      'SELECT id FROM teams WHERE account_id = $1 AND lower(name) = lower($2) LIMIT 1',
+      [client.chatwoot_account_id, option.label],
+    );
+    teamId = Number(team.rows[0]?.id || 0) || null;
+  }
+
+  let assigneeId = option.assignee_id || null;
+  if (!assigneeId && option.assignee_email) {
+    assigneeId = await getCwtUserIdByEmail(option.assignee_email);
+  }
+
+  if (teamId) {
+    const team = await cwtAccountFetch(
+      `/api/v1/accounts/${client.chatwoot_account_id}/conversations/${conversation.display_id}/assignments`,
+      token,
+      { method: 'POST', body: JSON.stringify({ team_id: teamId }) },
+    );
+    if (team.status >= 300) throw new Error(`assign triage team failed: ${JSON.stringify(team.data)}`);
+  }
+
+  if (assigneeId) {
+    const agent = await cwtAccountFetch(
+      `/api/v1/accounts/${client.chatwoot_account_id}/conversations/${conversation.display_id}/assignments`,
+      token,
+      { method: 'POST', body: JSON.stringify({ assignee_id: assigneeId }) },
+    );
+    if (agent.status >= 300) throw new Error(`assign triage agent failed: ${JSON.stringify(agent.data)}`);
   }
 }
 
@@ -2945,11 +3155,180 @@ function startCrmAiAutoAnalysis() {
   setInterval(runCrmAiAutoAnalysis, intervalMs);
 }
 
+let triageBotRunning = false;
+
+async function triageClients() {
+  const { rows } = await pool.query(
+    `SELECT *
+     FROM fluvius_clients
+     WHERE chatwoot_account_id IS NOT NULL
+       AND inbox_id IS NOT NULL
+       AND (chatwoot_user_id IS NOT NULL OR chatwoot_user_email IS NOT NULL)
+     ORDER BY id ASC`,
+  );
+  return rows;
+}
+
+async function pendingTriageGreetings(client) {
+  const { rows } = await pool.query(
+    `SELECT conversations.id, conversations.display_id, conversations.account_id, conversations.inbox_id
+     FROM conversations
+     WHERE conversations.account_id = $1
+       AND conversations.inbox_id = $2
+       AND conversations.status <> 1
+       AND conversations.created_at > NOW() - ($3::int * INTERVAL '1 hour')
+       AND COALESCE(conversations.custom_attributes->>'fluvius_triage_state', '') = ''
+       AND EXISTS (
+         SELECT 1
+         FROM messages
+         WHERE messages.conversation_id = conversations.id
+           AND messages.private = false
+           AND messages.message_type = 0
+           AND messages.content IS NOT NULL
+           AND trim(messages.content) <> ''
+       )
+     ORDER BY conversations.created_at ASC
+     LIMIT $4`,
+    [
+      client.chatwoot_account_id,
+      client.inbox_id,
+      TRIAGE_BOT_NEW_CONVERSATION_WINDOW_HOURS,
+      TRIAGE_BOT_LIMIT,
+    ],
+  );
+  return rows;
+}
+
+async function waitingTriageReplies(client) {
+  const { rows } = await pool.query(
+    `SELECT
+       conversations.id,
+       conversations.display_id,
+       conversations.account_id,
+       conversations.inbox_id,
+       latest_message.id AS latest_incoming_message_id,
+       latest_message.content AS latest_incoming_content
+     FROM conversations
+     INNER JOIN LATERAL (
+       SELECT messages.id, messages.content, messages.created_at
+       FROM messages
+       WHERE messages.conversation_id = conversations.id
+         AND messages.private = false
+         AND messages.message_type = 0
+         AND messages.content IS NOT NULL
+         AND trim(messages.content) <> ''
+       ORDER BY messages.id DESC
+       LIMIT 1
+     ) latest_message ON true
+     WHERE conversations.account_id = $1
+       AND conversations.inbox_id = $2
+       AND conversations.status <> 1
+       AND conversations.custom_attributes->>'fluvius_triage_state' = 'waiting'
+       AND latest_message.created_at > COALESCE(
+         NULLIF(conversations.custom_attributes->>'fluvius_triage_greeted_at', '')::timestamptz,
+         conversations.created_at
+       )
+       AND latest_message.id > COALESCE(
+         NULLIF(conversations.custom_attributes->>'fluvius_triage_last_incoming_id', '')::bigint,
+         0
+       )
+     ORDER BY latest_message.id ASC
+     LIMIT $3`,
+    [client.chatwoot_account_id, client.inbox_id, TRIAGE_BOT_LIMIT],
+  );
+  return rows;
+}
+
+async function greetTriageConversation(client, conversation) {
+  await sendTriageMessage(client, conversation, triageGreetingForClient(client));
+  await addConversationLabel(client.chatwoot_account_id, conversation.id, 'triagem-bot', '#0ea5e9');
+  await updateConversationCustomAttributes(client.chatwoot_account_id, conversation.id, {
+    fluvius_triage_state: 'waiting',
+    fluvius_triage_greeted_at: new Date().toISOString(),
+    fluvius_triage_company_name: client.name || '',
+  });
+}
+
+function triageOptionFromContent(content) {
+  const normalized = String(content || '').trim().toLowerCase();
+  const numericMatch = normalized.match(/^(\d+)\b/);
+  const key = numericMatch ? numericMatch[1] : normalized;
+  return parseTriageOptions().find(option => option.key.toLowerCase() === key) || null;
+}
+
+async function routeTriageConversation(client, conversation) {
+  const option = triageOptionFromContent(conversation.latest_incoming_content);
+  const latestIncomingId = String(conversation.latest_incoming_message_id || '');
+
+  if (!option) {
+    await sendTriageMessage(client, conversation, triageInvalidOptionText());
+    await updateConversationCustomAttributes(client.chatwoot_account_id, conversation.id, {
+      fluvius_triage_last_incoming_id: latestIncomingId,
+      fluvius_triage_last_invalid_at: new Date().toISOString(),
+    });
+    return { routed: false, reason: 'invalid_option' };
+  }
+
+  const label = `triagem-${slugifyLabel(option.label) || option.key}`;
+  await addConversationLabel(client.chatwoot_account_id, conversation.id, label, '#22c55e');
+  await assignTriageConversation(client, conversation, option);
+  await sendTriageMessage(client, conversation, triageConfirmationText(option));
+  await updateConversationCustomAttributes(client.chatwoot_account_id, conversation.id, {
+    fluvius_triage_state: 'routed',
+    fluvius_triage_option: option.key,
+    fluvius_triage_label: option.label,
+    fluvius_triage_last_incoming_id: latestIncomingId,
+    fluvius_triage_routed_at: new Date().toISOString(),
+  });
+  return { routed: true, option };
+}
+
+async function runTriageBot() {
+  if (!TRIAGE_BOT_ENABLED || triageBotRunning) return;
+  triageBotRunning = true;
+  try {
+    const clients = await triageClients();
+    for (const client of clients) {
+      const greetings = await pendingTriageGreetings(client);
+      for (const conversation of greetings) {
+        try {
+          await greetTriageConversation(client, conversation);
+          console.log(`[triage-bot] greeted client=${client.id} conversation=${conversation.display_id}`);
+        } catch (error) {
+          console.warn(`[triage-bot] greeting failed client=${client.id} conversation=${conversation.display_id}: ${error.message}`);
+        }
+      }
+
+      const replies = await waitingTriageReplies(client);
+      for (const conversation of replies) {
+        try {
+          const result = await routeTriageConversation(client, conversation);
+          console.log(`[triage-bot] reply client=${client.id} conversation=${conversation.display_id} routed=${result.routed}`);
+        } catch (error) {
+          console.warn(`[triage-bot] routing failed client=${client.id} conversation=${conversation.display_id}: ${error.message}`);
+        }
+      }
+    }
+  } catch (error) {
+    console.warn(`[triage-bot] run failed: ${error.message}`);
+  } finally {
+    triageBotRunning = false;
+  }
+}
+
+function startTriageBot() {
+  if (!TRIAGE_BOT_ENABLED) return;
+  console.log(`[triage-bot] enabled every ${TRIAGE_BOT_INTERVAL_SECONDS}s`);
+  setTimeout(runTriageBot, 10000);
+  setInterval(runTriageBot, TRIAGE_BOT_INTERVAL_SECONDS * 1000);
+}
+
 migrateWithRetry()
   .then(() => {
     server.listen(port, () => {
       console.log(`Fluvius internal chat listening on ${port}`);
       startCrmAiAutoAnalysis();
+      startTriageBot();
     });
   })
   .catch(error => {
