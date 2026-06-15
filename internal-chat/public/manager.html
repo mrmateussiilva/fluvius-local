@@ -921,7 +921,10 @@
             <h3>Diagnóstico comercial interno</h3>
             <p>Leitura operacional do funil do cliente para suporte da revenda. O cliente usa o CRM dentro do Fluvius.</p>
           </div>
-          <button class="btn btn-ghost btn-sm" onclick="loadCompanyCrm(${c.id})">Atualizar CRM</button>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">
+            <button class="btn btn-ghost btn-sm" onclick="analyzeCompanyCrm(${c.id}, this)">Analisar com IA</button>
+            <button class="btn btn-ghost btn-sm" onclick="loadCompanyCrm(${c.id})">Atualizar CRM</button>
+          </div>
         </div>
         <div id="companyCrmContent">
           <div class="loading-wrap"><span class="spinner"></span> Carregando CRM...</div>
@@ -1065,7 +1068,12 @@
                 <td>
                   <span class="badge ${lead.needs_followup ? 'badge-connecting' : 'badge-unknown'}">${lead.needs_followup ? 'Follow-up' : lead.status_label}</span>
                 </td>
-                <td><a class="btn btn-ghost btn-sm" href="${lead.chatwoot_url}" target="_blank" style="text-decoration:none">Abrir</a></td>
+                <td>
+                  <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">
+                    <button class="btn btn-ghost btn-sm" onclick="analyzeCrmLead(${clientId}, ${lead.id}, this)">IA</button>
+                    <a class="btn btn-ghost btn-sm" href="${lead.chatwoot_url}" target="_blank" style="text-decoration:none">Abrir</a>
+                  </div>
+                </td>
               </tr>
             `).join('')}
           </tbody>
@@ -1097,6 +1105,54 @@
       toast(`Erro: ${e.message}`, 'error');
     } finally {
       select.disabled = false;
+    }
+  }
+
+  async function analyzeCrmLead(clientId, conversationId, btn) {
+    const original = btn?.textContent || 'IA';
+    if (btn) { btn.disabled = true; btn.textContent = 'Analisando...'; }
+    try {
+      const r = await apiFetch(`${API}/clients/${clientId}/crm/leads/${conversationId}/analyze`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ apply: true }),
+      });
+      const data = await readJsonResponse(r);
+      if (!r.ok) {
+        toast(readableError(data), 'error');
+        return;
+      }
+      const appliedText = data.applied ? `Etapa aplicada: ${data.stage}` : `Sugestão sem aplicar: ${data.stage}`;
+      toast(`${appliedText} (${Math.round((data.confidence || 0) * 100)}% de confiança).`);
+      await loadCompanyCrm(clientId);
+    } catch (e) {
+      toast(`Erro: ${e.message}`, 'error');
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = original; }
+    }
+  }
+
+  async function analyzeCompanyCrm(clientId, btn) {
+    if (!confirm('Analisar com IA as conversas abertas mais recentes desta empresa? Isso pode consumir créditos da API Gemini.')) return;
+    const original = btn?.textContent || 'Analisar com IA';
+    if (btn) { btn.disabled = true; btn.textContent = 'Analisando...'; }
+    try {
+      const r = await apiFetch(`${API}/clients/${clientId}/crm/analyze`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ limit: 10, apply: true }),
+      });
+      const data = await readJsonResponse(r);
+      if (!r.ok) {
+        toast(readableError(data), 'error');
+        return;
+      }
+      toast(`IA analisou ${data.analyzed || 0} conversas e aplicou ${data.applied || 0} etapas.`);
+      await loadCompanyCrm(clientId);
+    } catch (e) {
+      toast(`Erro: ${e.message}`, 'error');
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = original; }
     }
   }
 

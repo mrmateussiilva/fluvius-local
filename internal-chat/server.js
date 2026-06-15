@@ -20,6 +20,13 @@ const CHATWOOT_API_TOKEN = String(process.env.CHATWOOT_USER_ACCESS_TOKEN || '');
 const CHATWOOT_PLATFORM_TOKEN = String(process.env.CHATWOOT_PLATFORM_TOKEN || '');
 const CHATWOOT_ACCOUNT_ID = String(process.env.CHATWOOT_ACCOUNT_ID || '1');
 const MANAGER_ADMIN_TOKEN = String(process.env.MANAGER_ADMIN_TOKEN || '');
+const GEMINI_API_KEY = String(process.env.GEMINI_API_KEY || '');
+const CRM_AI_ENABLED = String(process.env.CRM_AI_ENABLED || 'false') === 'true';
+const CRM_AI_MODEL = String(process.env.CRM_AI_MODEL || process.env.CAPTAIN_GEMINI_MODEL || 'gemini-2.0-flash');
+const CRM_AI_CONFIDENCE_THRESHOLD = Math.min(Math.max(Number(process.env.CRM_AI_CONFIDENCE_THRESHOLD || 0.7), 0), 1);
+const CRM_AI_MAX_MESSAGES = Math.min(Math.max(Number(process.env.CRM_AI_MAX_MESSAGES || 30), 5), 80);
+const CRM_AI_AUTO_INTERVAL_SECONDS = Math.max(Number(process.env.CRM_AI_AUTO_INTERVAL_SECONDS || 0), 0);
+const CRM_AI_AUTO_LIMIT = Math.min(Math.max(Number(process.env.CRM_AI_AUTO_LIMIT || 5), 1), 30);
 
 function assertValidInternalUrl(name, value) {
   let parsed;
@@ -712,6 +719,250 @@ async function updateCrmFieldsForAccount(accountId, conversationId, fields) {
   return rows[0] || null;
 }
 
+function crmAiConfigured() {
+  return CRM_AI_ENABLED && Boolean(GEMINI_API_KEY);
+}
+
+function cleanJsonText(value) {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  return (fenced ? fenced[1] : text).trim();
+}
+
+function parseGeminiJson(value) {
+  const cleaned = cleanJsonText(value);
+  try {
+    return JSON.parse(cleaned);
+  } catch {
+    const start = cleaned.indexOf('{');
+    const end = cleaned.lastIndexOf('}');
+    if (start === -1 || end === -1 || end <= start) throw new Error('Gemini did not return valid JSON');
+    return JSON.parse(cleaned.slice(start, end + 1));
+  }
+}
+
+function normalizeAiAnalysis(raw) {
+  const stage = normalizeCrmStage(raw?.stage);
+  const confidence = Math.min(Math.max(Number(raw?.confidence || 0), 0), 1);
+  const summary = String(raw?.summary || raw?.reason || '').trim().slice(0, 1200);
+  const interest = String(raw?.interest || raw?.produto_interesse || '').trim().slice(0, 300);
+  const nextFollowUp = String(raw?.next_follow_up || '').trim().slice(0, 30);
+  const estimatedValue = String(raw?.estimated_value || '').trim().slice(0, 80);
+  const shouldFollowUp = Boolean(raw?.should_follow_up);
+
+  if (!stage) throw new Error('Gemini returned an invalid CRM stage');
+
+  return {
+    stage,
+    confidence,
+    summary,
+    interest,
+    next_follow_up: /^\d{4}-\d{2}-\d{2}$/.test(nextFollowUp) ? nextFollowUp : '',
+    estimated_value: estimatedValue,
+    should_follow_up: shouldFollowUp,
+  };
+}
+
+async function geminiGenerateJson(prompt) {
+  const model = CRM_AI_MODEL.startsWith('models/') ? CRM_AI_MODEL : `models/${CRM_AI_MODEL}`;
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/${encodeURIComponent(model).replace(/%2F/g, '/')}:generateContent?key=${encodeURIComponent(GEMINI_API_KEY)}`;
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: {
+        temperature: 0.2,
+        responseMimeType: 'application/json',
+      },
+    }),
+  });
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload?.error?.message || `Gemini request failed with status ${response.status}`);
+  }
+
+  const text = payload?.candidates?.[0]?.content?.parts?.map(part => part.text || '').join('\n').trim();
+  if (!text) throw new Error('Gemini returned an empty response');
+  return parseGeminiJson(text);
+}
+
+async function conversationTranscriptForAi(accountId, conversationId) {
+  const conversation = await pool.query(
+    `SELECT
+       conversations.id,
+       conversations.display_id,
+       conversations.status,
+       conversations.assignee_id,
+       conversations.created_at,
+       conversations.last_activity_at,
+       conversations.custom_attributes,
+       contacts.name AS contact_name,
+       contacts.email AS contact_email,
+       contacts.phone_number,
+       users.name AS assignee_name,
+       users.email AS assignee_email
+     FROM conversations
+     LEFT JOIN contacts ON contacts.id = conversations.contact_id
+     LEFT JOIN users ON users.id = conversations.assignee_id
+     WHERE conversations.id = $1
+       AND conversations.account_id = $2
+     LIMIT 1`,
+    [conversationId, accountId],
+  );
+  if (!conversation.rowCount) return null;
+
+  const messages = await pool.query(
+    `SELECT content, message_type, private, created_at
+     FROM messages
+     WHERE conversation_id = $1
+       AND private = false
+       AND content IS NOT NULL
+       AND trim(content) <> ''
+     ORDER BY created_at DESC
+     LIMIT $2`,
+    [conversationId, CRM_AI_MAX_MESSAGES],
+  );
+
+  return {
+    conversation: conversation.rows[0],
+    messages: messages.rows.reverse().map(message => ({
+      role: Number(message.message_type) === 0 ? 'cliente' : 'atendente',
+      content: String(message.content || '').slice(0, 1500),
+      created_at: message.created_at,
+    })),
+  };
+}
+
+function buildCrmAiPrompt(payload) {
+  const stageList = CRM_STAGES.map(stage => `- ${stage.key}: ${stage.title}`).join('\n');
+  const contact = payload.conversation;
+  const transcript = payload.messages
+    .map(message => `[${message.role}] ${message.content}`)
+    .join('\n');
+
+  return `
+Voce e um analista comercial do Fluvius. Classifique a conversa em uma etapa do funil CRM.
+
+Etapas validas:
+${stageList}
+
+Regras:
+- Responda somente JSON valido, sem markdown.
+- Use exatamente uma das chaves de etapa em "stage".
+- Nao invente informacoes que nao aparecam na conversa.
+- Use "confidence" entre 0 e 1.
+- Se o cliente pediu preco, proposta ou recebeu valores, prefira "orcamento-enviado".
+- Se falta resposta do cliente ou existe combinacao futura, prefira "follow-up".
+- Se houve compra/confirmacao/contrato/pagamento, use "fechado".
+- Se recusou, nao quer mais, sem interesse ou perdeu prazo, use "perdido".
+- Se ja e cliente e precisa suporte depois da venda, use "pos-venda".
+- Caso esteja em conversa ativa sem proposta clara, use "em-atendimento".
+- Caso tenha pouca informacao, use "novo-lead".
+
+Contato:
+Nome: ${contact.contact_name || 'Nao informado'}
+Telefone: ${contact.phone_number || 'Nao informado'}
+Email: ${contact.contact_email || 'Nao informado'}
+Responsavel: ${contact.assignee_name || contact.assignee_email || 'Nao atribuido'}
+
+Conversa:
+${transcript || 'Sem mensagens publicas com texto.'}
+
+Formato obrigatorio:
+{
+  "stage": "novo-lead",
+  "confidence": 0.0,
+  "interest": "",
+  "estimated_value": "",
+  "next_follow_up": "",
+  "should_follow_up": false,
+  "summary": ""
+}
+`.trim();
+}
+
+async function analyzeCrmConversation(accountId, conversationId, options = {}) {
+  if (!crmAiConfigured()) {
+    throw new Error('CRM AI is disabled or GEMINI_API_KEY is missing');
+  }
+
+  const payload = await conversationTranscriptForAi(accountId, conversationId);
+  if (!payload) return null;
+  if (!payload.messages.length) throw new Error('conversation has no public text messages to analyze');
+
+  const rawAnalysis = await geminiGenerateJson(buildCrmAiPrompt(payload));
+  const analysis = normalizeAiAnalysis(rawAnalysis);
+  const apply = options.apply !== false && analysis.confidence >= CRM_AI_CONFIDENCE_THRESHOLD;
+
+  let stageResult = null;
+  let fieldsResult = null;
+  if (apply) {
+    stageResult = await updateCrmStageForAccount(accountId, conversationId, analysis.stage);
+    const noteParts = [
+      analysis.summary && `IA: ${analysis.summary}`,
+      analysis.interest && `Interesse: ${analysis.interest}`,
+      analysis.estimated_value && `Valor estimado: ${analysis.estimated_value}`,
+      `Confianca: ${Math.round(analysis.confidence * 100)}%`,
+    ].filter(Boolean);
+    const fields = {
+      observacao_comercial: noteParts.join('\n'),
+    };
+    if (analysis.next_follow_up) fields.proximo_follow_up = analysis.next_follow_up;
+    fieldsResult = await updateCrmFieldsForAccount(accountId, conversationId, fields);
+  }
+
+  await pool.query(
+    `UPDATE conversations
+     SET custom_attributes = COALESCE(custom_attributes, '{}'::jsonb) || $3::jsonb,
+         updated_at = NOW()
+     WHERE id = $1
+       AND account_id = $2`,
+    [conversationId, accountId, JSON.stringify({
+      crm_ai_last_analyzed_at: new Date().toISOString(),
+      crm_ai_last_confidence: analysis.confidence,
+      crm_ai_last_stage: analysis.stage.key,
+      crm_ai_last_applied: apply,
+    })],
+  );
+
+  return {
+    conversation_id: conversationId,
+    display_id: payload.conversation.display_id,
+    applied: apply,
+    confidence_threshold: CRM_AI_CONFIDENCE_THRESHOLD,
+    stage_key: analysis.stage.key,
+    stage: analysis.stage.title,
+    confidence: analysis.confidence,
+    interest: analysis.interest,
+    estimated_value: analysis.estimated_value,
+    next_follow_up: analysis.next_follow_up,
+    should_follow_up: analysis.should_follow_up,
+    summary: analysis.summary,
+    labels: stageResult?.labels || null,
+    conversation_custom_attributes: fieldsResult?.custom_attributes || payload.conversation.custom_attributes || {},
+    chatwoot_url: conversationUrl(accountId, payload.conversation.display_id),
+  };
+}
+
+async function crmConversationIdsForAutoAnalysis(accountId, limit = 10) {
+  const safeLimit = Math.min(Math.max(Number(limit || 10), 1), 50);
+  const cutoff = new Date(Date.now() - (6 * 60 * 60 * 1000)).toISOString();
+  const { rows } = await pool.query(
+    `SELECT conversations.id
+     FROM conversations
+     WHERE conversations.account_id = $1
+       AND conversations.status <> 1
+       AND COALESCE(conversations.custom_attributes->>'crm_ai_last_analyzed_at', '') < $3
+     ORDER BY COALESCE(conversations.last_activity_at, conversations.created_at) DESC
+     LIMIT $2`,
+    [accountId, safeLimit, cutoff],
+  );
+  return rows.map(row => Number(row.id));
+}
+
 app.get('/api/accounts/:accountId/crm/summary', async (req, res) => {
   try {
     const access = await requireAccountAccess(req, res);
@@ -768,6 +1019,24 @@ app.patch('/api/accounts/:accountId/crm/leads/:conversationId/fields', async (re
     });
   } catch (err) {
     return res.status(500).json({ step: 'update_crm_fields', error: err.message });
+  }
+});
+
+app.post('/api/accounts/:accountId/crm/leads/:conversationId/analyze', async (req, res) => {
+  const access = await requireAccountAccess(req, res);
+  if (!access) return;
+
+  const conversationId = Number(req.params.conversationId);
+  if (!conversationId) return res.status(400).json({ error: 'conversationId is required' });
+
+  try {
+    const result = await analyzeCrmConversation(access.accountId, conversationId, {
+      apply: req.body?.apply !== false,
+    });
+    if (!result) return res.status(404).json({ error: 'conversation not found for this account' });
+    return res.json(result);
+  } catch (err) {
+    return res.status(500).json({ step: 'crm_ai_analyze', error: err.message });
   }
 });
 
@@ -2013,6 +2282,67 @@ app.post('/manager/api/clients/:id/crm/leads/:conversationId/stage', async (req,
   }
 });
 
+app.post('/manager/api/clients/:id/crm/leads/:conversationId/analyze', async (req, res) => {
+  const id = Number(req.params.id);
+  const conversationId = Number(req.params.conversationId);
+  if (!conversationId) return res.status(400).json({ error: 'conversationId is required' });
+
+  const { rows } = await pool.query(`SELECT ${CLIENT_PUBLIC_FIELDS} FROM fluvius_clients WHERE id = $1`, [id]);
+  if (!rows.length) return res.status(404).json({ error: 'client not found' });
+
+  const client = rows[0];
+  if (!client.chatwoot_account_id) return res.status(400).json({ error: 'client is missing chatwoot account' });
+
+  try {
+    const result = await analyzeCrmConversation(client.chatwoot_account_id, conversationId, {
+      apply: req.body?.apply !== false,
+    });
+    if (!result) return res.status(404).json({ error: 'conversation not found for this client' });
+    res.json({ client_id: id, ...result });
+  } catch (err) {
+    res.status(500).json({ step: 'crm_ai_analyze', error: err.message });
+  }
+});
+
+app.post('/manager/api/clients/:id/crm/analyze', async (req, res) => {
+  const id = Number(req.params.id);
+  const limit = Math.min(Math.max(Number(req.body?.limit || req.query.limit || 10), 1), 30);
+
+  const { rows } = await pool.query(`SELECT ${CLIENT_PUBLIC_FIELDS} FROM fluvius_clients WHERE id = $1`, [id]);
+  if (!rows.length) return res.status(404).json({ error: 'client not found' });
+
+  const client = rows[0];
+  if (!client.chatwoot_account_id) return res.status(400).json({ error: 'client is missing chatwoot account' });
+
+  try {
+    const conversationIds = await crmConversationIdsForAutoAnalysis(client.chatwoot_account_id, limit);
+    const results = [];
+    const errors = [];
+
+    for (const conversationId of conversationIds) {
+      try {
+        results.push(await analyzeCrmConversation(client.chatwoot_account_id, conversationId, {
+          apply: req.body?.apply !== false,
+        }));
+      } catch (err) {
+        errors.push({ conversation_id: conversationId, error: err.message });
+      }
+    }
+
+    res.json({
+      client_id: id,
+      requested: conversationIds.length,
+      analyzed: results.length,
+      applied: results.filter(item => item?.applied).length,
+      skipped: results.filter(item => item && !item.applied).length,
+      results,
+      errors,
+    });
+  } catch (err) {
+    res.status(500).json({ step: 'crm_ai_batch_analyze', error: err.message });
+  }
+});
+
 // Create and fully provision a client (multi-tenant: creates Fluvius account + user)
 app.post('/manager/api/clients', async (req, res) => {
   const name = String(req.body.name || '').trim();
@@ -2574,10 +2904,52 @@ async function migrateWithRetry(maxAttempts = 20, delayMs = 5000) {
   }
 }
 
+let crmAiAutoRunning = false;
+
+async function runCrmAiAutoAnalysis() {
+  if (!crmAiConfigured() || crmAiAutoRunning) return;
+  crmAiAutoRunning = true;
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, name, chatwoot_account_id
+       FROM fluvius_clients
+       WHERE chatwoot_account_id IS NOT NULL
+       ORDER BY id ASC`,
+    );
+
+    for (const client of rows) {
+      const accountId = Number(client.chatwoot_account_id);
+      if (!accountId) continue;
+      const conversationIds = await crmConversationIdsForAutoAnalysis(accountId, CRM_AI_AUTO_LIMIT);
+      for (const conversationId of conversationIds) {
+        try {
+          const result = await analyzeCrmConversation(accountId, conversationId, { apply: true });
+          console.log(`[crm-ai] ${client.name || client.id} conversation=${conversationId} stage=${result.stage_key} applied=${result.applied}`);
+        } catch (error) {
+          console.warn(`[crm-ai] failed conversation=${conversationId}: ${error.message}`);
+        }
+      }
+    }
+  } catch (error) {
+    console.warn(`[crm-ai] automatic analysis failed: ${error.message}`);
+  } finally {
+    crmAiAutoRunning = false;
+  }
+}
+
+function startCrmAiAutoAnalysis() {
+  if (!crmAiConfigured() || CRM_AI_AUTO_INTERVAL_SECONDS <= 0) return;
+  const intervalMs = Math.max(CRM_AI_AUTO_INTERVAL_SECONDS, 60) * 1000;
+  console.log(`[crm-ai] automatic CRM analysis enabled every ${Math.round(intervalMs / 1000)}s`);
+  setTimeout(runCrmAiAutoAnalysis, 15000);
+  setInterval(runCrmAiAutoAnalysis, intervalMs);
+}
+
 migrateWithRetry()
   .then(() => {
     server.listen(port, () => {
       console.log(`Fluvius internal chat listening on ${port}`);
+      startCrmAiAutoAnalysis();
     });
   })
   .catch(error => {
