@@ -13,6 +13,7 @@ const state = {
   typingUserIds: new Set(),
   activeTab: 'rooms',
   searchTerm: '',
+  pendingAttachment: null,
   embedded: params.get('embedded') === '1',
   forcedUserId: Number(params.get('userId') || 0),
   forcedUserEmail: params.get('userEmail') || '',
@@ -37,6 +38,13 @@ const roomsPanel = document.querySelector('#roomsPanel');
 const agentsPanel = document.querySelector('#agentsPanel');
 const typingIndicator = document.querySelector('#typingIndicator');
 const notice = document.querySelector('#notice');
+const roomsCount = document.querySelector('#roomsCount');
+const agentsCount = document.querySelector('#agentsCount');
+const roomAvatar = document.querySelector('#roomAvatar');
+const roomMeta = document.querySelector('#roomMeta');
+const attachButton = document.querySelector('#attachButton');
+const attachmentInput = document.querySelector('#attachmentInput');
+const attachmentPreview = document.querySelector('#attachmentPreview');
 
 let typingTimer = null;
 let sending = false;
@@ -78,6 +86,14 @@ function formatTime(value) {
     : { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).format(date);
 }
 
+function formatFileSize(bytes) {
+  const size = Number(bytes || 0);
+  if (!size) return '';
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${Math.round(size / 1024)} KB`;
+  return `${(size / (1024 * 1024)).toFixed(size >= 10 * 1024 * 1024 ? 0 : 1)} MB`;
+}
+
 function currentUser() {
   return state.agents.find(agent => Number(agent.id) === state.currentUserId);
 }
@@ -109,10 +125,13 @@ function showNotice(message, type = 'error') {
 
 function setComposerState() {
   const hasRoom = Boolean(state.currentRoomId);
+  const hasDraft = Boolean(messageInput.value.trim() || state.pendingAttachment);
   messageInput.disabled = !hasRoom || sending;
-  sendButton.disabled = !hasRoom || sending || !messageInput.value.trim();
-  sendButton.textContent = sending ? 'Enviando' : 'Enviar';
+  attachButton.disabled = !hasRoom || sending;
+  sendButton.disabled = !hasRoom || sending || !hasDraft;
+  sendButton.classList.toggle('loading', sending);
   sendButton.setAttribute('aria-label', sending ? 'Enviando mensagem' : 'Enviar mensagem');
+  sendButton.title = sending ? 'Enviando mensagem' : 'Enviar mensagem';
   messageInput.placeholder = hasRoom
     ? 'Escreva uma mensagem interna'
     : 'Selecione uma conversa para responder';
@@ -155,16 +174,18 @@ function renderAgents() {
   const filteredAgents = state.agents
     .filter(agent => Number(agent.id) !== state.currentUserId)
     .filter(agent => matchesSearch(agent.name, agent.email));
+  agentsCount.textContent = String(filteredAgents.length);
 
   agentList.innerHTML = filteredAgents.length
     ? filteredAgents.map(
       agent => `
         <button class="row" type="button" data-agent-id="${agent.id}">
           <span class="avatar ${isOnline(agent.id) ? 'online' : ''}">${initials(agent.name || agent.email)}</span>
-          <span>
+          <span class="rowMain">
             <strong>${escapeHtml(agent.name || agent.email)}</strong>
-            <small>${isOnline(agent.id) ? 'Online agora' : escapeHtml(agent.email || '')}</small>
+            <small>${escapeHtml(agent.email || 'Agente interno')}</small>
           </span>
+          <span class="statusPill ${isOnline(agent.id) ? 'online' : ''}">${isOnline(agent.id) ? 'Online' : 'Off'}</span>
         </button>
       `,
     ).join('')
@@ -174,13 +195,14 @@ function renderAgents() {
 
 function renderRooms() {
   const filteredRooms = state.rooms.filter(room => matchesSearch(room.display_name, room.title, room.last_message));
+  roomsCount.textContent = String(filteredRooms.length);
 
   roomList.innerHTML = filteredRooms.length
     ? filteredRooms.map(
       room => `
         <button class="row ${Number(room.id) === Number(state.currentRoomId) ? 'active' : ''}" type="button" data-room-id="${room.id}">
           <span class="avatar ${room.kind === 'group' ? 'group' : ''}">${initials(room.display_name || room.title || 'Chat')}</span>
-          <span>
+          <span class="rowMain">
             <strong>${escapeHtml(room.display_name || room.title || 'Conversa')}</strong>
             <small>${escapeHtml(room.last_message || 'Sem mensagens ainda')}</small>
           </span>
@@ -196,6 +218,9 @@ function renderCurrentHeader() {
   if (!state.currentRoomId) {
     roomTitle.textContent = 'Selecione uma conversa';
     roomSubtitle.textContent = 'Mensagens internas não são enviadas ao cliente.';
+    roomAvatar.textContent = 'FI';
+    roomAvatar.className = 'avatar headerAvatar';
+    roomMeta.textContent = 'Interno';
     messages.innerHTML = emptyConversationMarkup();
     setComposerState();
     return;
@@ -210,6 +235,9 @@ function renderCurrentHeader() {
     .filter(Boolean);
 
   roomTitle.textContent = title;
+  roomAvatar.textContent = initials(title);
+  roomAvatar.className = `avatar headerAvatar ${room?.kind === 'group' ? 'group' : ''}`;
+  roomMeta.textContent = room?.kind === 'group' ? 'Grupo' : 'Direto';
   roomSubtitle.textContent = room?.kind === 'group'
     ? `${participants.length} participantes`
     : participantNames[0] || 'Mensagem direta interna';
@@ -217,6 +245,7 @@ function renderCurrentHeader() {
   if (room?.kind === 'dm') {
     const other = participants.find(participant => Number(participant.id) !== state.currentUserId);
     roomSubtitle.textContent = other && isOnline(other.id) ? 'Online agora' : 'Mensagem direta interna';
+    roomAvatar.classList.toggle('online', Boolean(other && isOnline(other.id)));
   }
   setComposerState();
 }
@@ -240,7 +269,8 @@ function renderMessages(items) {
       return `
         <article class="bubble ${mine ? 'mine' : ''}">
           <header>${mine ? 'Você' : escapeHtml(message.sender_name)}</header>
-          <p>${escapeHtml(message.content).replace(/\n/g, '<br>')}</p>
+          ${message.content ? `<p>${escapeHtml(message.content).replace(/\n/g, '<br>')}</p>` : ''}
+          ${renderAttachment(message)}
           <footer><time>${formatTime(message.created_at)}</time>${mine ? '<span class="messageStatus">✓✓</span>' : ''}</footer>
         </article>
       `;
@@ -256,11 +286,99 @@ function appendMessage(message) {
   element.className = `bubble ${mine ? 'mine' : ''}`;
   element.innerHTML = `
     <header>${mine ? 'Você' : escapeHtml(message.sender_name)}</header>
-    <p>${escapeHtml(message.content).replace(/\n/g, '<br>')}</p>
+    ${message.content ? `<p>${escapeHtml(message.content).replace(/\n/g, '<br>')}</p>` : ''}
+    ${renderAttachment(message)}
     <footer><time>${formatTime(message.created_at)}</time>${mine ? '<span class="messageStatus">✓✓</span>' : ''}</footer>
   `;
   messages.appendChild(element);
   messages.scrollTop = messages.scrollHeight;
+}
+
+function messageAttachment(message) {
+  const kind = message.attachment_kind || message.kind || '';
+  if (!kind) return null;
+  return {
+    kind,
+    name: message.attachment_name || message.name || 'arquivo',
+    mime: message.attachment_mime || message.mime || '',
+    size: message.attachment_size || message.size || 0,
+    url: message.attachment_url || message.attachment_data_url || message.url || message.dataUrl || '',
+  };
+}
+
+function renderAttachment(message) {
+  const attachment = messageAttachment(message);
+  if (!attachment?.url) return '';
+  const name = escapeHtml(attachment.name);
+  const size = escapeHtml(formatFileSize(attachment.size));
+  if (attachment.kind === 'image') {
+    return `
+      <a class="messageAttachment imageAttachment" href="${escapeHtml(attachment.url)}" target="_blank" rel="noopener">
+        <img src="${escapeHtml(attachment.url)}" alt="${name}" loading="lazy" />
+      </a>
+    `;
+  }
+  if (attachment.kind === 'audio') {
+    return `
+      <div class="messageAttachment audioAttachment">
+        <strong>${name}</strong>
+        <audio controls src="${escapeHtml(attachment.url)}"></audio>
+      </div>
+    `;
+  }
+  return `
+    <a class="messageAttachment fileAttachment" href="${escapeHtml(attachment.url)}" target="_blank" rel="noopener" download>
+      <span class="fileIcon">ARQ</span>
+      <span>
+        <strong>${name}</strong>
+        <small>${size || 'Arquivo'}</small>
+      </span>
+    </a>
+  `;
+}
+
+function renderAttachmentPreview() {
+  if (!state.pendingAttachment) {
+    attachmentPreview.classList.add('hidden');
+    attachmentPreview.innerHTML = '';
+    return;
+  }
+  const file = state.pendingAttachment;
+  attachmentPreview.classList.remove('hidden');
+  attachmentPreview.innerHTML = `
+    <span class="fileIcon">${file.type.startsWith('image/') ? 'IMG' : file.type.startsWith('audio/') ? 'AUD' : 'ARQ'}</span>
+    <span>
+      <strong>${escapeHtml(file.name)}</strong>
+      <small>${escapeHtml(formatFileSize(file.size))}</small>
+    </span>
+    <button type="button" data-clear-attachment aria-label="Remover anexo" title="Remover anexo">&times;</button>
+  `;
+}
+
+async function uploadAttachment(file) {
+  const contentType = file.type === 'application/json'
+    ? 'application/octet-stream'
+    : file.type || 'application/octet-stream';
+  const response = await fetch(`/api/uploads?userId=${state.currentUserId}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': contentType,
+      'X-File-Name': encodeURIComponent(file.name || 'arquivo'),
+    },
+    body: file,
+  });
+  if (!response.ok) throw new Error(await response.text());
+  return response.json();
+}
+
+function createSocketMessage(payload) {
+  return new Promise(resolve => {
+    const sendTimeout = window.setTimeout(() => resolve({ ok: false, timeout: true }), 7000);
+    socket.emit('message:create', payload, response => {
+      window.clearTimeout(sendTimeout);
+      resolve(response || { ok: false });
+    });
+  });
 }
 
 async function loadRooms() {
@@ -388,33 +506,38 @@ roomList.addEventListener('click', event => {
   if (button) openRoom(Number(button.dataset.roomId));
 });
 
-messageForm.addEventListener('submit', event => {
+messageForm.addEventListener('submit', async event => {
   event.preventDefault();
   const content = messageInput.value.trim();
-  if (!content || !state.currentRoomId || sending) return;
+  const file = state.pendingAttachment;
+  if ((!content && !file) || !state.currentRoomId || sending) return;
   sending = true;
   setComposerState();
   socket.emit('typing:stop', { userId: state.currentUserId, accountId: state.accountId, roomId: state.currentRoomId });
-  const sendTimeout = window.setTimeout(() => {
-    if (!sending) return;
+  try {
+    const attachment = file ? await uploadAttachment(file) : null;
+    const response = await createSocketMessage({
+      userId: state.currentUserId,
+      accountId: state.accountId,
+      roomId: state.currentRoomId,
+      content,
+      attachment,
+    });
+    if (!response?.ok) {
+      showNotice(response?.timeout ? 'A mensagem demorou para confirmar. Verifique a conversa.' : 'Nao foi possivel enviar a mensagem.');
+      return;
+    }
+    messageInput.value = '';
+    state.pendingAttachment = null;
+    renderAttachmentPreview();
+    resizeComposer();
+    loadRooms();
+  } catch (error) {
+    showNotice('Nao foi possivel enviar o anexo.');
+  } finally {
     sending = false;
     setComposerState();
-    showNotice('A mensagem demorou para confirmar. Verifique a conversa.');
-  }, 7000);
-  socket.emit('message:create', {
-    userId: state.currentUserId,
-    accountId: state.accountId,
-    roomId: state.currentRoomId,
-    content,
-  }, response => {
-    window.clearTimeout(sendTimeout);
-    sending = false;
-    setComposerState();
-    if (!response?.ok) showNotice('Nao foi possivel enviar a mensagem.');
-  });
-  messageInput.value = '';
-  resizeComposer();
-  loadRooms();
+  }
 });
 
 messageInput.addEventListener('input', () => {
@@ -428,6 +551,32 @@ messageInput.addEventListener('keydown', event => {
     event.preventDefault();
     messageForm.requestSubmit();
   }
+});
+
+attachButton.addEventListener('click', () => {
+  if (attachButton.disabled) return;
+  attachmentInput.click();
+});
+
+attachmentInput.addEventListener('change', event => {
+  const file = event.target.files?.[0];
+  attachmentInput.value = '';
+  if (!file) return;
+  if (file.size > 12 * 1024 * 1024) {
+    showNotice('O anexo pode ter no maximo 12 MB.');
+    return;
+  }
+  state.pendingAttachment = file;
+  renderAttachmentPreview();
+  setComposerState();
+});
+
+attachmentPreview.addEventListener('click', event => {
+  if (!event.target.closest('[data-clear-attachment]')) return;
+  state.pendingAttachment = null;
+  renderAttachmentPreview();
+  setComposerState();
+  messageInput.focus();
 });
 
 document.querySelector('#newGroupButton').addEventListener('click', () => {

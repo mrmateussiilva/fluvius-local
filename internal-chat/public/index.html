@@ -42,6 +42,7 @@
         <section id="roomsPanel" class="panel">
           <div class="panelHeader">
             <h2>Conversas</h2>
+            <span id="roomsCount" class="panelCount">0</span>
           </div>
           <div id="roomList" class="list"></div>
         </section>
@@ -49,6 +50,7 @@
         <section id="agentsPanel" class="panel hidden">
           <div class="panelHeader">
             <h2>Agentes</h2>
+            <span id="agentsCount" class="panelCount">0</span>
           </div>
           <div id="agentList" class="list"></div>
         </section>
@@ -56,16 +58,34 @@
 
       <section class="chat">
         <header class="chatHeader">
-          <div>
-            <h1 id="roomTitle">Selecione uma conversa</h1>
-            <p id="roomSubtitle">Mensagens internas não são enviadas ao cliente.</p>
+          <div class="chatIdentity">
+            <span id="roomAvatar" class="avatar headerAvatar">FI</span>
+            <div>
+              <h1 id="roomTitle">Selecione uma conversa</h1>
+              <p id="roomSubtitle">Mensagens internas não são enviadas ao cliente.</p>
+            </div>
           </div>
+          <span id="roomMeta" class="roomMeta">Interno</span>
         </header>
         <div id="messages" class="messages"></div>
         <div id="typingIndicator" class="typingIndicator"></div>
         <form id="messageForm" class="composer">
-          <textarea id="messageInput" rows="1" autocomplete="off" placeholder="Escreva uma mensagem interna"></textarea>
-          <button id="sendButton" type="submit">Enviar</button>
+          <div id="attachmentPreview" class="attachmentPreview hidden"></div>
+          <div class="composerRow">
+            <button id="attachButton" class="iconButton" type="button" aria-label="Anexar arquivo" title="Anexar arquivo">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M21.4 11.6 12 21a6 6 0 0 1-8.5-8.5l9.7-9.7a4 4 0 0 1 5.7 5.7l-9.7 9.7a2 2 0 0 1-2.8-2.8l8.9-8.9" />
+              </svg>
+            </button>
+            <textarea id="messageInput" rows="1" autocomplete="off" placeholder="Escreva uma mensagem interna"></textarea>
+            <button id="sendButton" class="sendButton" type="submit" aria-label="Enviar mensagem" title="Enviar mensagem">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="m22 2-7 20-4-9-9-4 20-7Z" />
+                <path d="M22 2 11 13" />
+              </svg>
+            </button>
+          </div>
+          <input id="attachmentInput" class="visuallyHidden" type="file" />
         </form>
       </section>
     </main>
