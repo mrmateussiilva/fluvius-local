@@ -224,7 +224,7 @@ repair_instance() {
     return 1
   fi
 
-  payload="$(printf '{"enabled":true,"accountId":"%s","token":"%s","url":"%s","signMsg":false,"reopenConversation":true,"conversationPending":false,"importContacts":true,"importMessages":true,"daysLimitImportMessages":365}' \
+  payload="$(printf '{"enabled":true,"accountId":"%s","token":"%s","url":"%s","signMsg":true,"signDelimiter":"\\n","reopenConversation":true,"conversationPending":false,"importContacts":true,"importMessages":true,"daysLimitImportMessages":365}' \
     "$account_id" "$user_token" "$CHATWOOT_INTERNAL_URL")"
 
   response_file="$(mktemp)"
