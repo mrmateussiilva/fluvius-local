@@ -48,14 +48,14 @@ validate_instance_name() {
 }
 
 wait_for_chatwoot() {
-  echo "Aguardando Chatwoot ficar pronto..."
+  echo "Aguardando Fluvius ficar pronto..."
   for attempt in $(seq 1 60); do
     if compose exec -T chatwoot bundle exec rails runner 'puts "ready"' >/dev/null 2>&1; then
-      echo "Chatwoot pronto."
+      echo "Fluvius pronto."
       return 0
     fi
     if [ "$attempt" = "60" ]; then
-      echo "ERRO: Chatwoot nao ficou pronto a tempo." >&2
+      echo "ERRO: Fluvius nao ficou pronto a tempo." >&2
       exit 1
     fi
     sleep 5
@@ -73,7 +73,7 @@ ensure_private_webhooks_enabled() {
     return 0
   fi
 
-  echo "Habilitando ALLOW_PRIVATE_WEBHOOK_URLS=true e recriando Chatwoot/Sidekiq..."
+  echo "Habilitando ALLOW_PRIVATE_WEBHOOK_URLS=true e recriando Fluvius/Sidekiq..."
   set_env_var "ALLOW_PRIVATE_WEBHOOK_URLS" "true"
   compose up -d --force-recreate chatwoot sidekiq
   wait_for_chatwoot
@@ -109,10 +109,10 @@ cd "$VPS_DIR"
 
 echo ""
 echo "=============================================="
-echo "  Reparar Evolution -> Chatwoot"
+echo "  Reparar Evolution -> Fluvius"
 echo "=============================================="
 echo "Compose: $COMPOSE_FILE"
-echo "Chatwoot interno: $CHATWOOT_INTERNAL_URL"
+echo "Fluvius interno: $CHATWOOT_INTERNAL_URL"
 echo "Evolution interno: $EVOLUTION_INTERNAL_URL"
 echo ""
 
@@ -244,9 +244,9 @@ repair_instance() {
   fi
   rm -f "$response_file"
 
-  echo "  Evolution Chatwoot URL: $CHATWOOT_INTERNAL_URL"
+  echo "  Evolution Fluvius URL: $CHATWOOT_INTERNAL_URL"
   update_inbox_webhook "$inbox_id" "$webhook_url"
-  echo "  Chatwoot inbox webhook: $webhook_url"
+  echo "  Fluvius inbox webhook: $webhook_url"
   echo ""
 }
 

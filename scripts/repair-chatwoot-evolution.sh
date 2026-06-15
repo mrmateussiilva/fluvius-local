@@ -12,7 +12,7 @@ fi
 CHATWOOT_WEBHOOK_URL="http://evolution:8080/chatwoot/webhook/${INSTANCE_NAME}"
 WEBHOOK_TIMEOUT="${WEBHOOK_TIMEOUT:-30}"
 
-echo "Updating Chatwoot API inbox webhook to ${CHATWOOT_WEBHOOK_URL}"
+echo "Updating Fluvius API inbox webhook to ${CHATWOOT_WEBHOOK_URL}"
 docker compose exec -T postgres psql -U postgres -d chatwoot \
   -v ON_ERROR_STOP=1 \
   -c "UPDATE channel_api
@@ -21,7 +21,7 @@ docker compose exec -T postgres psql -U postgres -d chatwoot \
          OR id = 1;
       SELECT id, webhook_url FROM channel_api;"
 
-echo "Setting Chatwoot WEBHOOK_TIMEOUT=${WEBHOOK_TIMEOUT}"
+echo "Setting Fluvius WEBHOOK_TIMEOUT=${WEBHOOK_TIMEOUT}"
 docker compose exec -T chatwoot bundle exec rails runner "
   config = InstallationConfig.where(name: 'WEBHOOK_TIMEOUT').first_or_initialize
   config.value = ENV.fetch('WEBHOOK_TIMEOUT', '${WEBHOOK_TIMEOUT}')

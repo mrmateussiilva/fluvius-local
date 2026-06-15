@@ -62,7 +62,7 @@ docker compose exec -T chatwoot env \
     puts \"Captain AI configured for #{ENV.fetch('CAPTAIN_PROVIDER_VALUE')} / #{ENV.fetch('CAPTAIN_MODEL_VALUE')}\"
   "
 
-echo "Restarting Chatwoot and Sidekiq so AI settings are loaded..."
+echo "Restarting Fluvius and Sidekiq so AI settings are loaded..."
 docker compose restart chatwoot sidekiq
 
 echo "Done."

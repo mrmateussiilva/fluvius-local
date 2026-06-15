@@ -125,7 +125,7 @@ $SSH $VPS_USER@$VPS_HOST "
   docker compose -f docker-compose.prod.yml pull --ignore-buildable || true
   echo 'Subindo containers...'
   docker compose -f docker-compose.prod.yml up -d
-  echo 'Configurando Chatwoot e Manager automaticamente...'
+  echo 'Configurando Fluvius e Manager automaticamente...'
   bash scripts/auto-configure-production.sh
   echo ''
   echo 'Status dos containers:'
@@ -136,7 +136,7 @@ echo ""
 echo "========================================"
 echo "  Deploy concluido!"
 echo ""
-echo "  Chatwoot:   https://fluvius.finderbit.com.br"
+echo "  Fluvius:   https://fluvius.finderbit.com.br"
 echo "  Evolution:  https://evolution.fluvius.finderbit.com.br"
 echo "  Manager:    https://chat.fluvius.finderbit.com.br/manager"
 echo ""

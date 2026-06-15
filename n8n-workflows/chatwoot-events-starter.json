@@ -1,22 +1,22 @@
 {
-  "name": "Fluvius - Chatwoot Events Starter",
+  "name": "Fluvius Events Starter",
   "nodes": [
     {
       "parameters": {
         "httpMethod": "POST",
-        "path": "chatwoot-events",
+        "path": "fluvius-events",
         "responseMode": "responseNode",
         "options": {}
       },
       "id": "f4d8ad5a-50e7-4358-bf69-b0b97842b017",
-      "name": "Chatwoot Webhook",
+      "name": "Fluvius Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
       "position": [
         0,
         0
       ],
-      "webhookId": "chatwoot-events"
+      "webhookId": "fluvius-events"
     },
     {
       "parameters": {
@@ -121,7 +121,7 @@
     }
   ],
   "connections": {
-    "Chatwoot Webhook": {
+    "Fluvius Webhook": {
       "main": [
         [
           {

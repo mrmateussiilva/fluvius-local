@@ -1,6 +1,6 @@
 # Pos-login em producao
 
-Este guia continua a partir do ponto em que o deploy ja subiu e voce conseguiu entrar no Chatwoot.
+Este guia continua a partir do ponto em que o deploy ja subiu e voce conseguiu entrar no Fluvius.
 
 ## Contexto da VPS
 
@@ -39,7 +39,7 @@ Para acompanhar logs:
 docker compose -f docker-compose.prod.yml logs -f chatwoot internal-chat evolution
 ```
 
-## Admin do Chatwoot
+## Admin do Fluvius
 
 As credenciais do admin ficam no `.env`:
 
@@ -121,21 +121,21 @@ Use o Manager Fluvius apenas para sua operacao privada de revenda/plataforma:
 - importar historico
 - verificar integracoes tecnicas
 
-A empresa deve usar o Fluvius/Chatwoot para atendimento diario e CRM:
+A empresa deve usar o Fluvius para atendimento diario e CRM:
 
 ```text
 https://fluvius.finderbit.com.br
 ```
 
-No Manager, cada empresa tem um botao para abrir diretamente o Chatwoot na conta correta:
+No Manager, cada empresa tem um botao para abrir diretamente o Fluvius na conta correta:
 
 ```text
-Abrir Chatwoot da empresa
+Abrir Fluvius da empresa
 ```
 
-O admin da empresa ve conversas, contatos, agentes, atribuicoes, labels do funil e campos comerciais dentro do Chatwoot. O Manager nao e tela de atendimento nem painel do cliente final.
+O admin da empresa ve conversas, contatos, agentes, atribuicoes, labels do funil e campos comerciais dentro do Fluvius. O Manager nao e tela de atendimento nem painel do cliente final.
 
-Tela CRM dentro do Chatwoot da empresa:
+Tela CRM dentro do Fluvius da empresa:
 
 ```text
 https://fluvius.finderbit.com.br/app/accounts/<ID_DA_CONTA>/crm
@@ -143,7 +143,7 @@ https://fluvius.finderbit.com.br/app/accounts/<ID_DA_CONTA>/crm
 
 O item tambem aparece na sidebar como `CRM`.
 
-O CRM inicial do cliente usa labels e atributos personalizados nativos do Chatwoot:
+O CRM inicial do cliente usa labels e atributos personalizados nativos do Fluvius:
 
 ```text
 novo-lead
@@ -180,12 +180,12 @@ No Manager:
 3. Escaneie o QR Code com o WhatsApp.
 4. Aguarde o status ficar conectado.
 5. Envie uma mensagem de teste para esse numero.
-6. Confirme se a conversa aparece no Chatwoot.
+6. Confirme se a conversa aparece no Fluvius.
 
 ## URLs de producao
 
 ```text
-Chatwoot:  https://fluvius.finderbit.com.br
+Fluvius:  https://fluvius.finderbit.com.br
 Manager:   https://chat.fluvius.finderbit.com.br/manager
 Evolution: https://evolution.fluvius.finderbit.com.br
 ```
@@ -209,7 +209,7 @@ Se houve muitas tentativas:
 docker compose -f docker-compose.prod.yml restart redis
 ```
 
-### Chatwoot abriu onboarding
+### Fluvius abriu onboarding
 
 Rode a configuracao automatica:
 
@@ -235,9 +235,9 @@ Se necessario, crie manualmente o banco `evolution` usando os valores do `.env`.
 
 ### Evolution mostra `getaddrinfo ENOTFOUND host`
 
-Esse erro indica que a configuracao Chatwoot gravada na Evolution esta apontando para um host invalido.
+Esse erro indica que a configuracao Fluvius gravada na Evolution esta apontando para um host invalido.
 
-Repare todas as instancias cadastradas. O script tambem garante `ALLOW_PRIVATE_WEBHOOK_URLS=true`, recria Chatwoot/Sidekiq se necessario e espera o Chatwoot ficar pronto:
+Repare todas as instancias cadastradas. O script tambem garante `ALLOW_PRIVATE_WEBHOOK_URLS=true`, recria Fluvius/Sidekiq se necessario e espera o Fluvius ficar pronto:
 
 ```bash
 cd /opt/apps/fluvius-local
@@ -266,7 +266,7 @@ docker compose -f docker-compose.prod.yml logs --tail=120 evolution
 Depois de conectar o WhatsApp, envie uma mensagem real para validar o caminho completo:
 
 ```text
-WhatsApp -> Evolution -> Chatwoot -> Manager
+WhatsApp -> Evolution -> Fluvius -> Manager
 ```
 
 Esse e o teste que confirma que o deploy esta funcional para uso.

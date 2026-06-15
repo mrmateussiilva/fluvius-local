@@ -106,7 +106,7 @@ services:
       # S3_ENDPOINT: ${S3_ENDPOINT}
 
     volumes:
-      # Volume persistente para uploads e arquivos de midia do Chatwoot
+      # Volume persistente para uploads e arquivos de midia do Fluvius
       - chatwoot_storage:/app/storage
       - chatwoot_public_uploads:/app/public/uploads
 

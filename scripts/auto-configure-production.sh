@@ -61,21 +61,21 @@ if [ "$(get_env_var ALLOW_PRIVATE_WEBHOOK_URLS false)" != "true" ]; then
   echo ""
 fi
 
-echo ">>> [1/4] Aguardando Chatwoot ficar pronto..."
+echo ">>> [1/4] Aguardando Fluvius ficar pronto..."
 for attempt in $(seq 1 60); do
   if $COMPOSE exec -T chatwoot bundle exec rails runner 'puts "ready"' >/dev/null 2>&1; then
-    echo "  Chatwoot pronto."
+    echo "  Fluvius pronto."
     break
   fi
   if [ "$attempt" = "60" ]; then
-    echo "ERRO: Chatwoot nao ficou pronto a tempo."
+    echo "ERRO: Fluvius nao ficou pronto a tempo."
     exit 1
   fi
   sleep 5
 done
 
 echo ""
-echo ">>> [2/4] Criando admin, conta e tokens do Chatwoot..."
+echo ">>> [2/4] Criando admin, conta e tokens do Fluvius..."
 BOOTSTRAP_OUTPUT="$(
   $COMPOSE exec -T \
     -e BOOTSTRAP_ADMIN_EMAIL="$CHATWOOT_ADMIN_EMAIL" \
@@ -120,7 +120,7 @@ USER_TOKEN="$(printf '%s\n' "$BOOTSTRAP_OUTPUT" | awk -F= '/^CHATWOOT_USER_ACCES
 PLATFORM_TOKEN="$(printf '%s\n' "$BOOTSTRAP_OUTPUT" | awk -F= '/^CHATWOOT_PLATFORM_TOKEN=/{print $2}' | tail -1)"
 
 if [ -z "$ACCOUNT_ID" ] || [ -z "$USER_TOKEN" ] || [ -z "$PLATFORM_TOKEN" ]; then
-  echo "ERRO: nao foi possivel extrair tokens do Chatwoot."
+  echo "ERRO: nao foi possivel extrair tokens do Fluvius."
   echo "$BOOTSTRAP_OUTPUT"
   exit 1
 fi
@@ -140,9 +140,9 @@ echo ">>> [4/4] Aplicando branding Fluvius..."
 BRAND_URL="$(get_env_var CHATWOOT_FRONTEND_URL https://fluvius.finderbit.com.br)" \
 COMPOSE_FILE="$COMPOSE_FILE" \
   bash "$VPS_DIR/scripts/apply-fluvius-branding.sh" || \
-  echo "  AVISO: branding falhou; verifique logs do Chatwoot."
+  echo "  AVISO: branding falhou; verifique logs do Fluvius."
 
 echo ""
 echo "Configuracao automatica concluida."
-echo "Admin Chatwoot: $CHATWOOT_ADMIN_EMAIL"
+echo "Admin Fluvius: $CHATWOOT_ADMIN_EMAIL"
 echo "Manager: $(get_env_var INTERNAL_CHAT_PUBLIC_URL https://chat.fluvius.finderbit.com.br)/manager"

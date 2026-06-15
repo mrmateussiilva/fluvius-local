@@ -9,7 +9,7 @@ ADMIN_PASSWORD="${CHATWOOT_BOOTSTRAP_ADMIN_PASSWORD:-Admin123!}"
 ACCOUNT_NAME="${CHATWOOT_BOOTSTRAP_ACCOUNT_NAME:-Fluvius Admin}"
 PLATFORM_APP_NAME="${CHATWOOT_BOOTSTRAP_PLATFORM_APP_NAME:-Fluvius Provisioner}"
 
-echo "Bootstrapping Chatwoot local admin and tokens..."
+echo "Bootstrapping Fluvius local admin and tokens..."
 
 OUTPUT="$(
   docker compose exec -T \
@@ -58,7 +58,7 @@ USER_TOKEN="$(printf '%s\n' "$OUTPUT" | awk -F= '/^CHATWOOT_USER_ACCESS_TOKEN=/{
 PLATFORM_TOKEN="$(printf '%s\n' "$OUTPUT" | awk -F= '/^CHATWOOT_PLATFORM_TOKEN=/{print $2}' | tail -1)"
 
 if [[ -z "$ACCOUNT_ID" || -z "$USER_TOKEN" || -z "$PLATFORM_TOKEN" ]]; then
-  echo "Failed to extract bootstrap tokens from Chatwoot output." >&2
+  echo "Failed to extract bootstrap tokens from Fluvius output." >&2
   exit 1
 fi
 
@@ -83,6 +83,6 @@ set_env CHATWOOT_PLATFORM_TOKEN "$PLATFORM_TOKEN"
 
 docker compose up -d internal-chat
 
-echo "Chatwoot bootstrap complete."
+echo "Fluvius bootstrap complete."
 echo "Admin: ${ADMIN_EMAIL}"
 echo "Password: ${ADMIN_PASSWORD}"

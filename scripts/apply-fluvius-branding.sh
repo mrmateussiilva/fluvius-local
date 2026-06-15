@@ -84,14 +84,14 @@ docker compose -f "$COMPOSE_FILE" exec -T chatwoot bundle exec rails runner "
       }
 
       .woot-logo,
-      img[alt='Chatwoot'],
+      img[alt='Fluvius'],
       img[alt='chatwoot'] {
         content: url('/brand-assets/logo.svg') !important;
         object-fit: contain;
       }
 
       body.dark .woot-logo,
-      body.dark img[alt='Chatwoot'],
+      body.dark img[alt='Fluvius'],
       body.dark img[alt='chatwoot'] {
         content: url('/brand-assets/logo_dark.svg') !important;
       }
@@ -236,7 +236,7 @@ docker compose -f "$COMPOSE_FILE" exec -T chatwoot bundle exec rails runner "
           }
 
           const selectors = [
-            'img[alt=\"Chatwoot\"]',
+            'img[alt=\"Fluvius\"]',
             'img[alt=\"chatwoot\"]',
             '.woot-logo'
           ];

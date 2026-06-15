@@ -488,13 +488,13 @@
 <div class="modal-overlay hidden" id="clientModal">
   <div class="modal">
     <h2>Nova Empresa</h2>
-    <p>O sistema criará automaticamente uma conta no Chatwoot, um canal WhatsApp e configurará tudo.</p>
+    <p>O sistema criará automaticamente uma conta no Fluvius, um canal WhatsApp e configurará tudo.</p>
     <div class="form-group">
       <label>Nome da empresa</label>
       <input type="text" id="clientNameInput" placeholder="Ex: Loja do João, Suporte Finderbit" />
     </div>
     <div class="form-group">
-      <label>E-mail do administrador <span style="color:var(--muted);font-weight:400">(login no Chatwoot)</span></label>
+      <label>E-mail do administrador <span style="color:var(--muted);font-weight:400">(login no Fluvius)</span></label>
       <input type="email" id="clientEmailInput" placeholder="admin@empresa.com" />
     </div>
     <div class="modal-actions">
@@ -601,12 +601,12 @@
 
   const errorLabels = {
     validate_email: 'Este e-mail já foi provisionado.',
-    create_chatwoot_account: 'Não foi possível criar a conta no Chatwoot.',
+    create_chatwoot_account: 'Não foi possível criar a conta no Fluvius.',
     create_chatwoot_user: 'Não foi possível criar o usuário administrador.',
     associate_user: 'Não foi possível vincular o usuário à conta.',
     create_instance: 'Não foi possível criar a instância WhatsApp.',
-    create_inbox: 'Não foi possível criar o canal no Chatwoot.',
-    link_chatwoot: 'Não foi possível vincular Evolution ao Chatwoot.',
+    create_inbox: 'Não foi possível criar o canal no Fluvius.',
+    link_chatwoot: 'Não foi possível vincular Evolution ao Fluvius.',
     enable_history_sync: 'Não foi possível habilitar sincronização de histórico na Evolution.',
     update_inbox_webhook: 'Não foi possível configurar o webhook do canal.',
     provision_client: 'Não foi possível concluir o provisionamento.',
@@ -711,7 +711,7 @@
             ${data.evolution === 'ok' ? '<span class="badge badge-open">✓ OK</span>' : `<span class="badge badge-close">✗ Erro (${data.evolution_status})</span>`}
           </div>
           <div style="margin-bottom:12px; display:flex; justify-content:space-between; align-items:center;">
-            <strong>Chatwoot API</strong>
+            <strong>Fluvius API</strong>
             ${data.chatwoot === 'ok' ? '<span class="badge badge-open">✓ OK</span>' : `<span class="badge badge-close">✗ Erro (${data.chatwoot_status})</span>`}
           </div>
           <div style="margin-bottom:12px; display:flex; justify-content:space-between; align-items:center;">
@@ -782,17 +782,17 @@
     const total = clients.length;
     const connected = clients.filter(c => c.status === 'connected').length;
     const pending = clients.filter(c => c.status !== 'connected').length;
-    const withChatwoot = clients.filter(c => c.chatwoot_account_id).length;
+    const withFluvius = clients.filter(c => c.chatwoot_account_id).length;
     return `
       <div class="ops-summary">
         <div class="ops-card"><span>Empresas</span><strong>${total}</strong><small>Total provisionado no Fluvius</small></div>
         <div class="ops-card"><span>WhatsApp conectado</span><strong>${connected}</strong><small>Prontas para atendimento</small></div>
         <div class="ops-card"><span>Pendências</span><strong>${pending}</strong><small>Exigem conexão ou revisão</small></div>
-        <div class="ops-card"><span>Contas Chatwoot</span><strong>${withChatwoot}</strong><small>Painéis de atendimento criados</small></div>
+        <div class="ops-card"><span>Contas Fluvius</span><strong>${withFluvius}</strong><small>Painéis de atendimento criados</small></div>
       </div>
       <div class="panel-map">
         <div class="panel-box">
-          <strong>Fluvius/Chatwoot: operação do cliente</strong>
+          <strong>Fluvius: operação do cliente</strong>
           <p>O cliente usa o painel de atendimento para conversas, contatos, agentes, CRM simples e rotina diária.</p>
         </div>
         <div class="panel-box">
@@ -839,12 +839,12 @@
         <div class="company-kpis">
           <div class="company-kpi"><span>Canal</span><strong>${escapeHtml(channelName)}</strong></div>
           <div class="company-kpi"><span>WhatsApp</span><strong>${c.phone || 'Aguardando conexão'}</strong></div>
-          <div class="company-kpi"><span>Conta Chatwoot</span><strong>${c.chatwoot_account_id || '—'}</strong></div>
+          <div class="company-kpi"><span>Conta Fluvius</span><strong>${c.chatwoot_account_id || '—'}</strong></div>
         </div>
         <div class="company-actions">
           ${primaryAction}
           <button class="btn btn-ghost btn-sm" onclick="openCompany(${c.id})">Ver empresa</button>
-          <a class="btn btn-ghost btn-sm" href="${chatwootUrl}" target="_blank" style="text-decoration:none">Chatwoot</a>
+          <a class="btn btn-ghost btn-sm" href="${chatwootUrl}" target="_blank" style="text-decoration:none">Fluvius</a>
           <a class="btn btn-ghost btn-sm" href="${link}" target="_blank" style="text-decoration:none">Onboarding</a>
           <button class="btn btn-ghost btn-sm" onclick="copyLink('${link}', this)">Copiar onboarding</button>
         </div>
@@ -881,12 +881,12 @@
     const channelName = c.channel_display_name || c.instance_name || 'WhatsApp principal';
     document.getElementById('companyTitle').textContent = c.name;
     document.getElementById('companySubtitle').textContent = c.status === 'connected'
-      ? 'Operação pronta para atendimento no Chatwoot.'
+      ? 'Operação pronta para atendimento no Fluvius.'
       : 'Empresa provisionada, aguardando conclusão da conexão WhatsApp.';
     document.getElementById('companyContent').innerHTML = `
       <div class="panel-map">
         <div class="panel-box">
-          <strong>Cliente entra no Fluvius/Chatwoot</strong>
+          <strong>Cliente entra no Fluvius</strong>
           <p>É ali que ele acompanha conversas, agentes, contatos, funil por labels e atendimento diário.</p>
         </div>
         <div class="panel-box">
@@ -905,7 +905,7 @@
         <div class="detail-box"><span>Instância técnica</span><code>${c.instance_name || '—'}</code></div>
       </div>
       <div class="company-actions" style="margin-bottom:18px">
-        <a class="btn btn-primary btn-sm" href="${chatwootAccountUrl}" target="_blank" style="text-decoration:none">Abrir Chatwoot da empresa</a>
+        <a class="btn btn-primary btn-sm" href="${chatwootAccountUrl}" target="_blank" style="text-decoration:none">Abrir Fluvius da empresa</a>
         <a class="btn btn-ghost btn-sm" href="${onboardLink}" target="_blank" style="text-decoration:none">Abrir onboarding WhatsApp</a>
         <button class="btn btn-ghost btn-sm" onclick="copyCompanyAccess(${c.id})">Copiar acesso</button>
         <button class="btn btn-ghost btn-sm" onclick="renameCompanyChannel(${c.id}, '${escapeAttr(channelName)}', this)">Renomear conexão</button>
@@ -919,7 +919,7 @@
         <div class="crm-panel-head">
           <div>
             <h3>Diagnóstico comercial interno</h3>
-            <p>Leitura operacional do funil do cliente para suporte da revenda. O cliente usa o CRM dentro do Fluvius/Chatwoot.</p>
+            <p>Leitura operacional do funil do cliente para suporte da revenda. O cliente usa o CRM dentro do Fluvius.</p>
           </div>
           <button class="btn btn-ghost btn-sm" onclick="loadCompanyCrm(${c.id})">Atualizar CRM</button>
         </div>
@@ -928,7 +928,7 @@
         </div>
       </section>
       <div style="margin-top:18px;color:var(--muted);font-size:12px;line-height:1.6">
-        A empresa deve usar o Fluvius/Chatwoot para atendimento e CRM. O Manager fica reservado para sua operacao privada de revenda, provisionamento, conexao WhatsApp e manutencao.
+        A empresa deve usar o Fluvius para atendimento e CRM. O Manager fica reservado para sua operacao privada de revenda, provisionamento, conexao WhatsApp e manutencao.
       </div>
     `;
     loadCompanyCrm(c.id);
@@ -937,7 +937,7 @@
   function companyPendingActions(c, chatwootAccountUrl, onboardLink) {
     const actions = [];
     if (!c.chatwoot_account_id) {
-      actions.push(['Conta Chatwoot pendente', 'Revise o provisionamento da empresa.', null]);
+      actions.push(['Conta Fluvius pendente', 'Revise o provisionamento da empresa.', null]);
     }
     if (c.status !== 'connected') {
       actions.push(['WhatsApp pendente', 'Enviar link de conexão para o admin da empresa.', onboardLink]);
@@ -946,7 +946,7 @@
       actions.push(['Número não identificado', 'Conecte o WhatsApp para registrar o número da empresa.', onboardLink]);
     }
     if (!actions.length) {
-      actions.push(['Atendimento liberado', 'Abrir o Chatwoot para acompanhar conversas e agentes.', chatwootAccountUrl]);
+      actions.push(['Atendimento liberado', 'Abrir o Fluvius para acompanhar conversas e agentes.', chatwootAccountUrl]);
     }
     return `
       <div class="next-actions">
@@ -1016,7 +1016,7 @@
       content.innerHTML = `
         <div class="ops-summary" style="margin-bottom:12px">
           <div class="ops-card"><span>Leads novos</span><strong>${summary.new_leads || 0}</strong><small>Sem etapa comercial avançada</small></div>
-          <div class="ops-card"><span>Conversas abertas</span><strong>${summary.open_conversations || 0}</strong><small>Não resolvidas no Chatwoot</small></div>
+          <div class="ops-card"><span>Conversas abertas</span><strong>${summary.open_conversations || 0}</strong><small>Não resolvidas no Fluvius</small></div>
           <div class="ops-card"><span>Follow-up necessário</span><strong>${summary.followups || 0}</strong><small>Mais de 24h sem atividade</small></div>
           <div class="ops-card"><span>Leads listados</span><strong>${leads.length}</strong><small>Últimas conversas da empresa</small></div>
         </div>
@@ -1032,7 +1032,7 @@
 
   function renderCrmLeadsTable(clientId, stages, leads) {
     if (!leads.length) {
-      return `<div class="detail-box" style="margin-top:12px"><span>Nenhum lead encontrado</span><strong>As conversas do WhatsApp aparecerão aqui quando chegarem no Chatwoot.</strong></div>`;
+      return `<div class="detail-box" style="margin-top:12px"><span>Nenhum lead encontrado</span><strong>As conversas do WhatsApp aparecerão aqui quando chegarem no Fluvius.</strong></div>`;
     }
     return `
       <div style="overflow:auto;border:1px solid var(--border);border-radius:8px;margin-top:12px">
@@ -1313,7 +1313,7 @@
   }
 
   async function deleteClient(id, name) {
-    if (!confirm(`Excluir a empresa "${name}"? A instância WhatsApp e a conta Chatwoot também serão removidas.`)) return;
+    if (!confirm(`Excluir a empresa "${name}"? A instância WhatsApp e a conta Fluvius também serão removidas.`)) return;
     await apiFetch(`${API}/clients/${id}`, { method: 'DELETE' });
     toast(`${name} excluído`, 'error');
     loadClients();

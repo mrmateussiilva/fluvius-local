@@ -1,4 +1,4 @@
-# Chatwoot principal
+# Fluvius principal
 fluvius.finderbit.com.br {
     reverse_proxy 127.0.0.1:3000 {
         header_up Host {host}

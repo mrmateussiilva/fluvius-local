@@ -1,4 +1,4 @@
-# Allows local Chatwoot to use OpenAI-compatible providers whose base URL
+# Allows local Fluvius to use OpenAI-compatible providers whose base URL
 # already includes the OpenAI compatibility path, such as Gemini.
 Rails.application.config.after_initialize do
   require 'agents'

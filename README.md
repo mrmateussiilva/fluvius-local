@@ -1,6 +1,6 @@
 # Fluvius Local
 
-Stack local com Fluvius, uma imagem customizada do Chatwoot, Evolution API, Postgres com pgvector e Redis.
+Stack local com Fluvius, uma imagem customizada do Fluvius, Evolution API, Postgres com pgvector e Redis.
 
 ## Subir
 
@@ -16,7 +16,7 @@ docs/pos-login-producao.md
 
 Servicos:
 
-- Chatwoot: http://localhost:3000
+- Fluvius: http://localhost:3000
 - Chat interno Fluvius: http://localhost:4000
 - Evolution API: http://localhost:8080
 - Mailpit, caixa de e-mails local: http://localhost:8025
@@ -42,7 +42,7 @@ O arquivo `.env` esta no `.gitignore` para evitar commit de segredos.
 
 ## Criar agentes
 
-No Chatwoot:
+No Fluvius:
 
 1. Acesse `Configuracoes` > `Agentes`.
 2. Clique em adicionar agente.
@@ -56,7 +56,7 @@ Neste ambiente local, os e-mails nao vao para a caixa real do Gmail/Outlook. Ele
 
 O servico `internal-chat` cria o backend do chat interno entre agentes.
 
-No Fluvius/Chatwoot, ele aparece como item nativo da sidebar:
+No Fluvius, ele aparece como item nativo da sidebar:
 
 ```text
 Chat interno
@@ -81,7 +81,7 @@ Como usar:
 3. Use `Grupo` para criar conversa com varios agentes.
 4. As mensagens sao internas e nao sao enviadas ao WhatsApp nem ao cliente.
 
-O chat le os agentes do banco do Chatwoot e grava as mensagens em tabelas proprias:
+O chat le os agentes do banco do Fluvius e grava as mensagens em tabelas proprias:
 
 - `internal_chat_rooms`
 - `internal_chat_participants`
@@ -89,9 +89,9 @@ O chat le os agentes do banco do Chatwoot e grava as mensagens em tabelas propri
 
 ## CRM WhatsApp para o cliente
 
-O CRM vendavel do Fluvius fica dentro do Chatwoot da empresa, usando labels e atributos personalizados nativos.
+O CRM vendavel do Fluvius fica dentro do Fluvius da empresa, usando labels e atributos personalizados nativos.
 
-O cliente usa o Fluvius/Chatwoot para:
+O cliente usa o Fluvius para:
 
 - atender conversas do WhatsApp
 - abrir a tela nativa `CRM`
@@ -100,7 +100,7 @@ O cliente usa o Fluvius/Chatwoot para:
 - preencher campos comerciais do contato/conversa
 - acompanhar follow-ups combinados
 
-Rota da tela CRM no Chatwoot:
+Rota da tela CRM no Fluvius:
 
 ```text
 http://localhost:3000/app/accounts/1/crm
@@ -132,7 +132,7 @@ Campos comerciais padrao:
 - `proximo_follow_up`
 - `observacao_comercial`
 
-Empresas novas ja recebem as labels e os campos comerciais no Chatwoot. Para aplicar em empresas antigas:
+Empresas novas ja recebem as labels e os campos comerciais no Fluvius. Para aplicar em empresas antigas:
 
 ```bash
 ./scripts/apply-crm-defaults.sh
@@ -146,7 +146,7 @@ COMPOSE_FILE=docker-compose.prod.yml ./scripts/apply-crm-defaults.sh
 
 O Manager tambem mostra um diagnostico comercial interno no detalhe da empresa, mas ele e reservado para operacao da revenda. O cliente final nao deve acessar `/manager`.
 
-## Customizacao do Chatwoot
+## Customizacao do Fluvius
 
 O Fluvius usa uma imagem local customizada:
 
@@ -163,10 +163,10 @@ chatwoot-custom/overrides
 Hoje a customizacao adiciona:
 
 - rota nativa `/app/accounts/:accountId/internal-chat`
-- item `Chat interno` na sidebar do Chatwoot
+- item `Chat interno` na sidebar do Fluvius
 - tela Vue que embute o servico `internal-chat`
 - tema visual Fluvius aplicado no dashboard, login, botoes, sidebar e estados principais
-- substituicao de referencias visuais/textuais de Chatwoot por Fluvius quando possivel
+- substituicao de referencias visuais/textuais de Fluvius por Fluvius quando possivel
 
 Para reconstruir:
 
@@ -175,7 +175,7 @@ docker compose build chatwoot
 docker compose up -d chatwoot sidekiq
 ```
 
-Para reaplicar a identidade visual no banco do Chatwoot:
+Para reaplicar a identidade visual no banco do Fluvius:
 
 ```bash
 ./scripts/apply-fluvius-branding.sh
@@ -200,13 +200,13 @@ https://n8n.corrigeja.com.br
 Workflow inicial:
 
 ```text
-n8n-workflows/chatwoot-events-starter.json
+n8n-workflows/fluvius-events-starter.json
 ```
 
-Como ativar eventos do Chatwoot para o n8n:
+Como ativar eventos do Fluvius para o n8n:
 
 1. Abra o n8n em `https://n8n.corrigeja.com.br`.
-2. Importe o workflow `n8n-workflows/chatwoot-events-starter.json`.
+2. Importe o workflow `n8n-workflows/fluvius-events-starter.json`.
 3. Ative o workflow no n8n.
 4. Rode:
 
@@ -214,10 +214,10 @@ Como ativar eventos do Chatwoot para o n8n:
 ./scripts/register-chatwoot-n8n-webhook.sh
 ```
 
-Isso registra no Chatwoot o webhook:
+Isso registra no Fluvius o webhook:
 
 ```text
-https://n8n.corrigeja.com.br/webhook/chatwoot-events
+https://n8n.corrigeja.com.br/webhook/fluvius-events
 ```
 
 Eventos enviados:
@@ -236,16 +236,16 @@ Para remover:
 ./scripts/unregister-chatwoot-n8n-webhook.sh
 ```
 
-Nao registre o webhook antes de ativar o workflow no n8n, porque o Chatwoot vai tentar entregar eventos e receber erro 404.
+Nao registre o webhook antes de ativar o workflow no n8n, porque o Fluvius vai tentar entregar eventos e receber erro 404.
 
 ## Enderecos entre containers
 
 Dentro da rede Docker, nao use `localhost` entre servicos:
 
-- Evolution chama Chatwoot em `http://chatwoot:3000`
-- Chatwoot chama Evolution em `http://evolution:8080`
+- Evolution chama Fluvius em `http://chatwoot:3000`
+- Fluvius chama Evolution em `http://evolution:8080`
 
-## Reparar integracao Chatwoot/Evolution
+## Reparar integracao Fluvius/Evolution
 
 Se recriar inbox, instancia ou a Evolution voltar a gravar webhook com `localhost`, rode:
 
@@ -261,13 +261,13 @@ Para outra instancia:
 
 Esse script:
 
-- corrige a URL do webhook da inbox API do Chatwoot para `http://evolution:8080/chatwoot/webhook/<instancia>`
-- ajusta `WEBHOOK_TIMEOUT=30` no Chatwoot
-- limpa o cache de configuracao do Chatwoot
+- corrige a URL do webhook da inbox API do Fluvius para `http://evolution:8080/chatwoot/webhook/<instancia>`
+- ajusta `WEBHOOK_TIMEOUT=30` no Fluvius
+- limpa o cache de configuracao do Fluvius
 
 ## Reaplicar marca Fluvius
 
-Se o container ou as configuracoes do Chatwoot forem recriados, rode:
+Se o container ou as configuracoes do Fluvius forem recriados, rode:
 
 ```bash
 ./scripts/apply-fluvius-branding.sh
@@ -279,9 +279,9 @@ Esse script define:
 - logos em `/brand-assets`
 - paleta principal em tons de verde
 
-## Configurar IA do Chatwoot
+## Configurar IA do Fluvius
 
-O Captain AI do Chatwoot usa as configs:
+O Captain AI do Fluvius usa as configs:
 
 - `CAPTAIN_OPEN_AI_API_KEY`
 - `CAPTAIN_OPEN_AI_MODEL`
@@ -311,10 +311,10 @@ CAPTAIN_GEMINI_MODEL=gemini-2.5-flash
 ./scripts/apply-ai-config.sh gemini
 ```
 
-O script grava as configs no banco do Chatwoot e reinicia `chatwoot` e `sidekiq`.
+O script grava as configs no banco do Fluvius e reinicia `chatwoot` e `sidekiq`.
 
 ## Observacoes
 
-O servico `sidekiq` e necessario para envio de mensagens pelo Chatwoot. Sem ele, mensagens podem aparecer no Chatwoot, mas nao sair para o WhatsApp.
+O servico `sidekiq` e necessario para envio de mensagens pelo Fluvius. Sem ele, mensagens podem aparecer no Fluvius, mas nao sair para o WhatsApp.
 
 `ALLOW_PRIVATE_WEBHOOK_URLS=true` e o initializer local permitem webhooks para containers Docker internos. Use isso apenas neste ambiente local.

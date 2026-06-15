@@ -771,7 +771,7 @@ app.patch('/api/accounts/:accountId/crm/leads/:conversationId/fields', async (re
   }
 });
 
-// Standalone selector bootstrap. Chatwoot embeds should call /api/agents with userId/accountId.
+// Standalone selector bootstrap. Fluvius embeds should call /api/agents with userId/accountId.
 app.get('/api/bootstrap-users', async (_req, res) => {
   const { rows } = await pool.query(`
     SELECT DISTINCT ${userFields('users')}, account_users.account_id
@@ -1105,7 +1105,7 @@ async function cwtFetch(path, options = {}) {
   }
 }
 
-// Uses Chatwoot Platform API token for account/user provisioning
+// Uses Fluvius Platform API token for account/user provisioning
 async function platformFetch(path, options = {}) {
   try {
     const res = await fetch(`${CHATWOOT_URL}${path}`, {
@@ -1119,7 +1119,7 @@ async function platformFetch(path, options = {}) {
   }
 }
 
-// Uses a specific user's access token for a given Chatwoot account
+// Uses a specific user's access token for a given Fluvius account
 async function cwtAccountFetch(path, userToken, options = {}) {
   try {
     const res = await fetch(`${CHATWOOT_URL}${path}`, {
@@ -1199,7 +1199,7 @@ async function enableEvolutionHistorySync(instanceName, accountId, userToken) {
   return { settings, chatwoot };
 }
 
-async function getChatwootUserIdByEmail(email) {
+async function getCwtUserIdByEmail(email) {
   const { rows } = await pool.query('SELECT id FROM users WHERE lower(email) = lower($1) LIMIT 1', [email]);
   return rows[0]?.id || null;
 }
@@ -1312,7 +1312,7 @@ function generateTempPassword() {
   return `${randomBytes(4).toString('hex')}Ab1!`;
 }
 
-async function resetChatwootUserPassword(userId, password) {
+async function resetCwtUserPassword(userId, password) {
   const payload = {
     password,
     confirmed: true,
@@ -1389,7 +1389,7 @@ function evolutionDate(value, fallback = new Date()) {
   return Number.isNaN(parsed.getTime()) ? fallback : parsed;
 }
 
-async function ensureChatwootThreadForRemoteJid({
+async function ensureCwtThreadForRemoteJid({
   client,
   remoteJid,
   displayName,
@@ -1494,7 +1494,7 @@ async function importEvolutionHistoryForClient(client) {
 
   let userId = client.chatwoot_user_id || null;
   if (!userId && client.chatwoot_user_email) {
-    userId = await getChatwootUserIdByEmail(client.chatwoot_user_email);
+    userId = await getCwtUserIdByEmail(client.chatwoot_user_email);
     if (userId) await pool.query('UPDATE fluvius_clients SET chatwoot_user_id = $1 WHERE id = $2', [userId, client.id]);
   }
   if (!userId) {
@@ -1504,7 +1504,7 @@ async function importEvolutionHistoryForClient(client) {
     );
     userId = fallback.rows[0]?.id || null;
   }
-  if (!userId) throw new Error(`No Chatwoot user found for account ${client.chatwoot_account_id}`);
+  if (!userId) throw new Error(`No Fluvius user found for account ${client.chatwoot_account_id}`);
 
   const userToken = await getPlatformUserToken(userId);
   if (userToken) await enableEvolutionHistorySync(client.instance_name, client.chatwoot_account_id, userToken);
@@ -1579,7 +1579,7 @@ async function importEvolutionHistoryForClient(client) {
   for (const row of contactsResult.rows) {
     const remoteJid = evolutionRemoteJid(row);
     if (!remoteJid || remoteJid === 'status@broadcast' || seenRemoteJids.has(remoteJid)) continue;
-    await ensureChatwootThreadForRemoteJid({
+    await ensureCwtThreadForRemoteJid({
       client,
       remoteJid,
       displayName: contactNameFromEvolution(row, remoteJid),
@@ -1594,7 +1594,7 @@ async function importEvolutionHistoryForClient(client) {
   for (const row of chatsResult.rows) {
     const remoteJid = evolutionRemoteJid(row);
     if (!remoteJid || remoteJid === 'status@broadcast' || seenRemoteJids.has(remoteJid)) continue;
-    await ensureChatwootThreadForRemoteJid({
+    await ensureCwtThreadForRemoteJid({
       client,
       remoteJid,
       displayName: contactNameFromEvolution(row, remoteJid),
@@ -1641,7 +1641,7 @@ async function importEvolutionHistoryForClient(client) {
     const content = evolutionMessageContent(row).trim();
     const createdAt = new Date(Number(row.messageTimestamp) * 1000);
     const contactName = contactNameFromEvolution(row, remoteJid);
-    const conversation = await ensureChatwootThreadForRemoteJid({
+    const conversation = await ensureCwtThreadForRemoteJid({
       client,
       remoteJid,
       displayName: contactName,
@@ -1729,7 +1729,7 @@ app.get('/manager/api/instances/:name/status', async (req, res) => {
   res.status(status).json(data);
 });
 
-// Create instance + Chatwoot inbox and link them
+// Create instance + Fluvius inbox and link them
 app.post('/manager/api/instances', async (req, res) => {
   const { name } = req.body;
   if (!name) return res.status(400).json({ error: 'name is required' });
@@ -1742,7 +1742,7 @@ app.post('/manager/api/instances', async (req, res) => {
   });
   if (evo.status >= 300) return res.status(evo.status).json({ step: 'create_instance', error: evo.data });
 
-  // 2. Create Chatwoot inbox
+  // 2. Create Fluvius inbox
   const cwt = await cwtFetch(`/api/v1/accounts/${CHATWOOT_ACCOUNT_ID}/inboxes`, {
     method: 'POST',
     body: JSON.stringify({ name, channel: { type: 'api', webhook_url: '' } }),
@@ -1752,7 +1752,7 @@ app.post('/manager/api/instances', async (req, res) => {
   const inboxToken = cwt.data?.channel_id || cwt.data?.id || '';
   const accessToken = cwt.data?.inbox_identifier || cwt.data?.channel?.identifier || '';
 
-  // 3. Link Evolution → Chatwoot
+  // 3. Link Evolution → Fluvius
   const link = await evoFetch(`/chatwoot/set/${name}`, {
     method: 'POST',
     body: JSON.stringify({
@@ -1846,12 +1846,12 @@ app.patch('/manager/api/clients/:id/channel-name', async (req, res) => {
 
   const client = rows[0];
   if (!client.chatwoot_account_id || !client.inbox_id) {
-    return res.status(400).json({ error: 'client is missing Chatwoot account or inbox' });
+    return res.status(400).json({ error: 'client is missing Fluvius account or inbox' });
   }
 
   let adminUserId = client.chatwoot_user_id || null;
   if (!adminUserId && client.chatwoot_user_email) {
-    adminUserId = await getChatwootUserIdByEmail(client.chatwoot_user_email);
+    adminUserId = await getCwtUserIdByEmail(client.chatwoot_user_email);
     if (adminUserId) {
       await pool.query('UPDATE fluvius_clients SET chatwoot_user_id = $1 WHERE id = $2', [adminUserId, id]);
     }
@@ -1859,7 +1859,7 @@ app.patch('/manager/api/clients/:id/channel-name', async (req, res) => {
   if (!adminUserId) return res.status(404).json({ error: 'client admin user not found' });
 
   const userToken = await getPlatformUserToken(adminUserId);
-  if (!userToken) return res.status(400).json({ error: 'could not create Chatwoot admin token' });
+  if (!userToken) return res.status(400).json({ error: 'could not create Fluvius admin token' });
 
   const chatwootUpdate = await cwtAccountFetch(
     `/api/v1/accounts/${client.chatwoot_account_id}/inboxes/${client.inbox_id}`,
@@ -1883,7 +1883,7 @@ app.patch('/manager/api/clients/:id/channel-name', async (req, res) => {
      RETURNING id, name`,
     [channelDisplayName, client.inbox_id, client.chatwoot_account_id],
   );
-  if (!inbox.rowCount) return res.status(404).json({ error: 'Chatwoot inbox not found for this client' });
+  if (!inbox.rowCount) return res.status(404).json({ error: 'Fluvius inbox not found for this client' });
 
   const updated = await pool.query(
     `UPDATE fluvius_clients
@@ -2013,7 +2013,7 @@ app.post('/manager/api/clients/:id/crm/leads/:conversationId/stage', async (req,
   }
 });
 
-// Create and fully provision a client (multi-tenant: creates Chatwoot account + user)
+// Create and fully provision a client (multi-tenant: creates Fluvius account + user)
 app.post('/manager/api/clients', async (req, res) => {
   const name = String(req.body.name || '').trim();
   const email = String(req.body.email || '').trim();
@@ -2036,7 +2036,7 @@ app.post('/manager/api/clients', async (req, res) => {
   const created = {};
 
   try {
-    // STEP 1: Create Chatwoot account for the company
+    // STEP 1: Create Fluvius account for the company
     const acct = await platformFetch('/platform/api/v1/accounts', {
       method: 'POST',
       body: JSON.stringify({ name }),
@@ -2047,11 +2047,11 @@ app.post('/manager/api/clients', async (req, res) => {
     }
 
     const accountId = acct.data?.id;
-    if (!accountId) throw new Error('Chatwoot account response did not include id');
+    if (!accountId) throw new Error('Fluvius account response did not include id');
     created.accountId = accountId;
     await ensureCrmDefaults(accountId);
 
-    // STEP 2: Create Chatwoot user (admin of the company)
+    // STEP 2: Create Fluvius user (admin of the company)
     const usr = await platformFetch('/platform/api/v1/users', {
       method: 'POST',
       body: JSON.stringify({ name, email, password: tempPassword, role: 'agent', confirmed: true }),
@@ -2064,7 +2064,7 @@ app.post('/manager/api/clients', async (req, res) => {
 
     const userId = usr.data?.id;
     const userToken = usr.data?.access_token;
-    if (!userId || !userToken) throw new Error('Chatwoot user response did not include id/access_token');
+    if (!userId || !userToken) throw new Error('Fluvius user response did not include id/access_token');
 
     // STEP 3: Associate user to the new account as Administrator
     const assoc = await platformFetch(`/platform/api/v1/accounts/${accountId}/account_users`, {
@@ -2089,7 +2089,7 @@ app.post('/manager/api/clients', async (req, res) => {
     }
     created.instanceName = instanceName;
 
-    // STEP 5: Create Chatwoot inbox inside the company's account
+    // STEP 5: Create Fluvius inbox inside the company's account
     // Uses the user's token to create within the correct account
     const cwt = await cwtAccountFetch(`/api/v1/accounts/${accountId}/inboxes`, userToken, {
       method: 'POST',
@@ -2103,9 +2103,9 @@ app.post('/manager/api/clients', async (req, res) => {
 
     const inboxId = cwt.data?.id || null;
     const inboxToken = cwt.data?.inbox_identifier || '';
-    if (!inboxId || !inboxToken) throw new Error('Chatwoot inbox response did not include id/inbox_identifier');
+    if (!inboxId || !inboxToken) throw new Error('Fluvius inbox response did not include id/inbox_identifier');
 
-    // STEP 6: Link Evolution to Chatwoot using the user's access token.
+    // STEP 6: Link Evolution to Fluvius using the user's access token.
     const link = await evoFetch(`/chatwoot/set/${instanceName}`, {
       method: 'POST',
       body: JSON.stringify({
@@ -2138,7 +2138,7 @@ app.post('/manager/api/clients', async (req, res) => {
       });
     }
 
-    // STEP 7: Update inbox webhook so Chatwoot replies go back to Evolution.
+    // STEP 7: Update inbox webhook so Fluvius replies go back to Evolution.
     const evolutionWebhookUrl = `${EVOLUTION_URL}/chatwoot/webhook/${instanceName}`;
     const webhook = await cwtAccountFetch(`/api/v1/accounts/${accountId}/inboxes/${inboxId}`, userToken, {
       method: 'PATCH',
@@ -2192,7 +2192,7 @@ app.post('/manager/api/clients/:id/agents', async (req, res) => {
 
   let adminUserId = client.chatwoot_user_id || null;
   if (!adminUserId && client.chatwoot_user_email) {
-    adminUserId = await getChatwootUserIdByEmail(client.chatwoot_user_email);
+    adminUserId = await getCwtUserIdByEmail(client.chatwoot_user_email);
     if (adminUserId) {
       await pool.query('UPDATE fluvius_clients SET chatwoot_user_id = $1 WHERE id = $2', [adminUserId, id]);
     }
@@ -2228,7 +2228,7 @@ app.post('/manager/api/clients/:id/agents', async (req, res) => {
       }
 
       const userId = user.data?.id;
-      if (!userId) throw new Error(`Chatwoot agent response did not include id for ${agent.email}`);
+      if (!userId) throw new Error(`Fluvius agent response did not include id for ${agent.email}`);
       createdUserIds.push(userId);
 
       const assoc = await platformFetch(`/platform/api/v1/accounts/${client.chatwoot_account_id}/account_users`, {
@@ -2297,7 +2297,7 @@ app.post('/manager/api/clients/:id/admin/reset-password', async (req, res) => {
 
   let userId = client.chatwoot_user_id || null;
   if (!userId && client.chatwoot_user_email) {
-    userId = await getChatwootUserIdByEmail(client.chatwoot_user_email);
+    userId = await getCwtUserIdByEmail(client.chatwoot_user_email);
     if (userId) await pool.query('UPDATE fluvius_clients SET chatwoot_user_id = $1 WHERE id = $2', [userId, id]);
   }
 
@@ -2315,7 +2315,7 @@ app.post('/manager/api/clients/:id/admin/reset-password', async (req, res) => {
   if (!membership.rowCount) return res.status(404).json({ error: 'client admin user is not linked to this account' });
 
   const password = generateTempPassword();
-  const reset = await resetChatwootUserPassword(userId, password);
+  const reset = await resetCwtUserPassword(userId, password);
 
   if (reset.status >= 300) {
     return res.status(reset.status).json({
@@ -2358,7 +2358,7 @@ app.post('/manager/api/clients/:id/agents/:userId/reset-password', async (req, r
   if (!membership.rowCount) return res.status(404).json({ error: 'agent not found for this client' });
 
   const password = generateTempPassword();
-  const reset = await resetChatwootUserPassword(userId, password);
+  const reset = await resetCwtUserPassword(userId, password);
 
   if (reset.status >= 300) {
     return res.status(reset.status).json({

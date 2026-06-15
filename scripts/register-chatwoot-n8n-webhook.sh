@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-WEBHOOK_URL="${WEBHOOK_URL:-${N8N_WEBHOOK_URL:-https://n8n.corrigeja.com.br/webhook/chatwoot-events}}"
+WEBHOOK_URL="${WEBHOOK_URL:-${N8N_WEBHOOK_URL:-https://n8n.corrigeja.com.br/webhook/fluvius-events}}"
 WEBHOOK_NAME="${WEBHOOK_NAME:-Fluvius n8n events}"
 ACCOUNT_ID="${ACCOUNT_ID:-1}"
 

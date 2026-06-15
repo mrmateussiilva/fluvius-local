@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-WEBHOOK_URL="${WEBHOOK_URL:-${N8N_WEBHOOK_URL:-https://n8n.corrigeja.com.br/webhook/chatwoot-events}}"
+WEBHOOK_URL="${WEBHOOK_URL:-${N8N_WEBHOOK_URL:-https://n8n.corrigeja.com.br/webhook/fluvius-events}}"
 ACCOUNT_ID="${ACCOUNT_ID:-1}"
 
 docker compose exec -T chatwoot env \
