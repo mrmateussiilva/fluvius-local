@@ -6,6 +6,7 @@ Rails.application.config.after_initialize do
   api_key = InstallationConfig.find_by(name: 'CAPTAIN_OPEN_AI_API_KEY')&.value
   model = InstallationConfig.find_by(name: 'CAPTAIN_OPEN_AI_MODEL')&.value.presence || LlmConstants::DEFAULT_MODEL
   api_endpoint = InstallationConfig.find_by(name: 'CAPTAIN_OPEN_AI_ENDPOINT')&.value.presence || LlmConstants::OPENAI_API_ENDPOINT
+  response_language = ENV.fetch('CAPTAIN_RESPONSE_LANGUAGE', 'Português do Brasil')
 
   next if api_key.blank?
 
@@ -51,6 +52,32 @@ Rails.application.config.after_initialize do
   end
 
   api_base_override = Module.new do
+    define_method(:fluvius_language_instruction) do
+      language = ENV.fetch('CAPTAIN_RESPONSE_LANGUAGE', 'Português do Brasil').to_s.strip
+      language = 'Português do Brasil' if language.blank?
+
+      <<~PROMPT.strip
+        Regra obrigatória de idioma do Fluvius:
+        - Responda sempre em #{language}.
+        - Use uma linguagem natural, clara e profissional para atendimento via WhatsApp/CRM no Brasil.
+        - Só responda em outro idioma se o cliente pedir explicitamente.
+      PROMPT
+    end
+
+    define_method(:make_api_call) do |model:, messages:, schema: nil, tools: []|
+      localized_messages = messages.map do |message|
+        next message unless message[:role] == 'system'
+
+        message.merge(content: "#{message[:content]}\n\n#{fluvius_language_instruction}")
+      end
+
+      if localized_messages.none? { |message| message[:role] == 'system' }
+        localized_messages.unshift({ role: 'system', content: fluvius_language_instruction })
+      end
+
+      super(model: model, messages: localized_messages, schema: schema, tools: tools)
+    end
+
     define_method(:api_base) do
       endpoint = InstallationConfig.find_by(name: 'CAPTAIN_OPEN_AI_ENDPOINT')&.value.presence || 'https://api.openai.com'
       endpoint = endpoint.chomp('/')
@@ -67,6 +94,8 @@ Rails.application.config.after_initialize do
     config.default_model = model
     config.debug = false
   end
+
+  Rails.logger.info "Fluvius Captain AI configured with response language: #{response_language}"
 rescue StandardError => e
   Rails.logger.error "Failed to configure Fluvius AI Agents SDK override: #{e.message}"
 end
