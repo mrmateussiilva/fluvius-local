@@ -1,10 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+VPS_DIR="${VPS_DIR:-$(pwd)}"
+COMPOSE_FILE="${COMPOSE_FILE:-$VPS_DIR/docker-compose.prod.yml}"
+ENV_FILE="${ENV_FILE:-$VPS_DIR/.env}"
+
+cd "$VPS_DIR"
+
+compose() {
+  docker compose -f "$COMPOSE_FILE" "$@"
+}
+
 dotenv_value() {
   local key="$1"
-  if [[ -f .env ]]; then
-    grep -E "^${key}=" .env | tail -n 1 | cut -d= -f2- || true
+  if [[ -f "$ENV_FILE" ]]; then
+    grep -E "^${key}=" "$ENV_FILE" | tail -n 1 | cut -d= -f2- || true
   fi
 }
 
@@ -41,7 +51,7 @@ fi
 
 echo "Applying Captain AI config for provider=${provider}, model=${model}, endpoint=${endpoint}"
 
-docker compose exec -T chatwoot env \
+compose exec -T chatwoot env \
   CAPTAIN_PROVIDER_VALUE="${provider}" \
   CAPTAIN_API_KEY_VALUE="${api_key}" \
   CAPTAIN_MODEL_VALUE="${model}" \
@@ -63,6 +73,6 @@ docker compose exec -T chatwoot env \
   "
 
 echo "Restarting Fluvius and Sidekiq so AI settings are loaded..."
-docker compose restart chatwoot sidekiq
+compose restart chatwoot sidekiq
 
 echo "Done."
