@@ -10,13 +10,17 @@ const route = useRoute();
 const currentUserId = useMapGetter('getCurrentUserID');
 
 const loading = ref(true);
+const analyzingLeadId = ref(null);
 const savingConversationId = ref(null);
 const savingFieldsId = ref(null);
 const error = ref('');
 const summary = ref(null);
 const leadsPayload = ref({ stages: [], leads: [] });
 const stageFilter = ref('');
+const priorityFilter = ref('');
+const assigneeFilter = ref('');
 const followupOnly = ref(false);
+const reviewOnly = ref(false);
 const searchTerm = ref('');
 const selectedLeadId = ref(null);
 
@@ -25,25 +29,58 @@ const userId = computed(() => Number(currentUserId.value || 0));
 const stages = computed(() => leadsPayload.value.stages || summary.value?.stages || []);
 const leads = computed(() => leadsPayload.value.leads || []);
 const stageCards = computed(() => summary.value?.stages || []);
+const aiConfigured = computed(() => Boolean(summary.value?.ai_configured ?? leadsPayload.value.ai_configured));
 const selectedLead = computed(() => {
-  return visibleLeads.value.find(lead => lead.id === selectedLeadId.value) || visibleLeads.value[0] || null;
+  return leads.value.find(lead => lead.id === selectedLeadId.value)
+    || visibleLeads.value[0]
+    || leads.value[0]
+    || null;
+});
+const assigneeOptions = computed(() => {
+  const agents = new Map();
+  leads.value.forEach(lead => {
+    const key = lead.assignee_id ? String(lead.assignee_id) : 'unassigned';
+    const label = lead.assignee_name || 'Sem responsável';
+    agents.set(key, label);
+  });
+  return [...agents.entries()].map(([value, label]) => ({ value, label }));
 });
 const visibleLeads = computed(() => {
   const query = searchTerm.value.trim().toLowerCase();
-  if (!query) return leads.value;
   return leads.value.filter(lead => {
+    if (stageFilter.value && lead.stage_key !== stageFilter.value) return false;
+    if (priorityFilter.value && lead.ai_priority !== priorityFilter.value) return false;
+    if (followupOnly.value && !lead.needs_followup) return false;
+    if (reviewOnly.value && !lead.ai_needs_review) return false;
+    if (assigneeFilter.value) {
+      const assigneeKey = lead.assignee_id ? String(lead.assignee_id) : 'unassigned';
+      if (assigneeKey !== assigneeFilter.value) return false;
+    }
+    if (!query) return true;
     const text = [
       lead.contact_name,
       lead.phone_number,
       lead.contact_email,
       lead.assignee_name,
       lead.last_message,
+      lead.ai_next_action,
+      lead.ai_risk_reason,
+      lead.ai_stage_reason,
       commercialField(lead, 'origem_lead'),
       commercialField(lead, 'produto_interesse'),
       commercialField(lead, 'observacao_comercial'),
     ].filter(Boolean).join(' ').toLowerCase();
     return text.includes(query);
   });
+});
+const leadsByStage = computed(() => {
+  return Object.fromEntries(stages.value.map(stage => [
+    stage.key,
+    visibleLeads.value.filter(lead => lead.stage_key === stage.key),
+  ]));
+});
+const stageSummaryByKey = computed(() => {
+  return Object.fromEntries(stageCards.value.map(stage => [stage.key, stage]));
 });
 
 async function request(path, options = {}) {
@@ -70,6 +107,14 @@ function formatDate(value) {
   }).format(new Date(value));
 }
 
+function formatCurrency(value) {
+  return new Intl.NumberFormat('pt-BR', {
+    style: 'currency',
+    currency: 'BRL',
+    maximumFractionDigits: 0,
+  }).format(Number(value || 0));
+}
+
 function commercialField(lead, key) {
   return lead.conversation_custom_attributes?.[key]
     || lead.contact_custom_attributes?.[key]
@@ -81,8 +126,8 @@ function normalizeLead(lead) {
     ...lead,
     crm_fields: {
       origem_lead: commercialField(lead, 'origem_lead'),
-      produto_interesse: commercialField(lead, 'produto_interesse'),
-      valor_estimado: commercialField(lead, 'valor_estimado'),
+      produto_interesse: commercialField(lead, 'produto_interesse') || lead.conversation_custom_attributes?.crm_ai_interest || '',
+      valor_estimado: commercialField(lead, 'valor_estimado') || lead.conversation_custom_attributes?.crm_ai_estimated_value || '',
       proximo_follow_up: commercialField(lead, 'proximo_follow_up'),
       observacao_comercial: commercialField(lead, 'observacao_comercial'),
     },
@@ -93,8 +138,14 @@ function leadInitial(lead) {
   return String(lead?.contact_name || lead?.phone_number || '?').trim().charAt(0).toUpperCase();
 }
 
-function stageByKey(key) {
-  return stages.value.find(stage => stage.key === key) || stages.value[0] || {};
+function priorityLabel(priority) {
+  return { alta: 'Alta', media: 'Média', baixa: 'Baixa' }[priority] || 'Sem prioridade';
+}
+
+function priorityClass(priority) {
+  if (priority === 'alta') return 'border-n-ruby-5 bg-n-ruby-2 text-n-ruby-11';
+  if (priority === 'media') return 'border-n-amber-5 bg-n-amber-2 text-n-amber-11';
+  return 'border-n-weak bg-n-alpha-2 text-n-slate-11';
 }
 
 function selectLead(lead) {
@@ -111,10 +162,7 @@ async function loadCrm() {
   error.value = '';
 
   try {
-    const params = new URLSearchParams({ limit: '120' });
-    if (stageFilter.value) params.set('stage', stageFilter.value);
-    if (followupOnly.value) params.set('followup', 'true');
-
+    const params = new URLSearchParams({ limit: '200' });
     const [summaryData, leadsData] = await Promise.all([
       request(`/api/accounts/${accountId.value}/crm/summary`),
       request(`/api/accounts/${accountId.value}/crm/leads?${params.toString()}`),
@@ -157,6 +205,24 @@ async function updateStage(lead, event) {
   }
 }
 
+async function analyzeLead(lead) {
+  analyzingLeadId.value = lead.id;
+  error.value = '';
+
+  try {
+    await request(`/api/accounts/${accountId.value}/crm/leads/${lead.id}/analyze`, {
+      method: 'POST',
+      body: JSON.stringify({ userId: userId.value, apply: true }),
+    });
+    selectedLeadId.value = lead.id;
+    await loadCrm();
+  } catch (err) {
+    error.value = err.message || 'Não foi possível analisar o lead com IA.';
+  } finally {
+    analyzingLeadId.value = null;
+  }
+}
+
 async function saveCommercialFields(lead) {
   savingFieldsId.value = lead.id;
   error.value = '';
@@ -171,6 +237,7 @@ async function saveCommercialFields(lead) {
       ...lead.crm_fields,
       ...lead.conversation_custom_attributes,
     };
+    await loadCrm();
   } catch (err) {
     error.value = err.message || 'Não foi possível salvar os campos comerciais.';
   } finally {
@@ -182,15 +249,15 @@ onMounted(loadCrm);
 </script>
 
 <template>
-  <main class="flex flex-col w-full min-h-full overflow-auto bg-n-background text-n-slate-12">
+  <main class="flex min-h-full w-full flex-col overflow-auto bg-n-background text-n-slate-12">
     <header class="border-b border-n-weak bg-n-background">
       <div class="flex flex-wrap items-center justify-between gap-3 px-5 py-3">
         <div class="min-w-0">
           <h1 class="m-0 text-base font-semibold text-n-slate-12">
-            CRM
+            Pipeline comercial
           </h1>
           <p class="mt-1 mb-0 text-xs text-n-slate-11">
-            Leads, etapas e follow-ups do WhatsApp em uma tela operacional.
+            Gestão de oportunidades do WhatsApp com score, valor e próxima ação por IA.
           </p>
         </div>
         <Button
@@ -203,16 +270,16 @@ onMounted(loadCrm);
         />
       </div>
 
-      <div class="grid gap-3 px-5 pb-3 md:grid-cols-[minmax(240px,1fr)_auto_auto] md:items-end">
+      <div class="grid gap-3 px-5 pb-3 xl:grid-cols-[minmax(220px,1fr)_auto_auto_auto_auto_auto] xl:items-end">
         <label class="grid gap-1">
-          <span class="text-xs font-medium text-n-slate-11">Buscar lead</span>
+          <span class="text-xs font-medium text-n-slate-11">Buscar oportunidade</span>
           <div class="relative">
             <span class="i-lucide-search absolute left-3 top-1/2 size-4 -translate-y-1/2 text-n-slate-10" />
             <input
               v-model="searchTerm"
               type="search"
               class="h-10 w-full rounded-md border border-n-weak bg-n-solid-1 pl-9 pr-3 text-sm text-n-slate-12 outline-none focus:border-n-brand"
-              placeholder="Nome, telefone, produto ou observação"
+              placeholder="Nome, telefone, ação, risco ou produto"
             />
           </div>
         </label>
@@ -221,24 +288,49 @@ onMounted(loadCrm);
           <span class="text-xs font-medium text-n-slate-11">Etapa</span>
           <select
             v-model="stageFilter"
-            class="h-10 min-w-48 rounded-md border border-n-weak bg-n-solid-1 px-3 text-sm text-n-slate-12 outline-none focus:border-n-brand"
-            @change="loadCrm"
+            class="h-10 min-w-44 rounded-md border border-n-weak bg-n-solid-1 px-3 text-sm text-n-slate-12 outline-none focus:border-n-brand"
           >
-            <option value="">Todas as etapas</option>
+            <option value="">Todas</option>
             <option v-for="stage in stages" :key="stage.key" :value="stage.key">
               {{ stage.title }}
             </option>
           </select>
         </label>
 
+        <label class="grid gap-1">
+          <span class="text-xs font-medium text-n-slate-11">Responsável</span>
+          <select
+            v-model="assigneeFilter"
+            class="h-10 min-w-44 rounded-md border border-n-weak bg-n-solid-1 px-3 text-sm text-n-slate-12 outline-none focus:border-n-brand"
+          >
+            <option value="">Todos</option>
+            <option v-for="agent in assigneeOptions" :key="agent.value" :value="agent.value">
+              {{ agent.label }}
+            </option>
+          </select>
+        </label>
+
+        <label class="grid gap-1">
+          <span class="text-xs font-medium text-n-slate-11">Prioridade</span>
+          <select
+            v-model="priorityFilter"
+            class="h-10 min-w-36 rounded-md border border-n-weak bg-n-solid-1 px-3 text-sm text-n-slate-12 outline-none focus:border-n-brand"
+          >
+            <option value="">Todas</option>
+            <option value="alta">Alta</option>
+            <option value="media">Média</option>
+            <option value="baixa">Baixa</option>
+          </select>
+        </label>
+
         <label class="flex h-10 items-center gap-2 rounded-md border border-n-weak bg-n-solid-1 px-3 text-sm text-n-slate-12">
-          <input
-            v-model="followupOnly"
-            type="checkbox"
-            class="m-0 size-4"
-            @change="loadCrm"
-          />
-          <span>Follow-up pendente</span>
+          <input v-model="reviewOnly" type="checkbox" class="m-0 size-4" />
+          <span>Revisar IA</span>
+        </label>
+
+        <label class="flex h-10 items-center gap-2 rounded-md border border-n-weak bg-n-solid-1 px-3 text-sm text-n-slate-12">
+          <input v-model="followupOnly" type="checkbox" class="m-0 size-4" />
+          <span>Parados</span>
         </label>
       </div>
     </header>
@@ -251,179 +343,263 @@ onMounted(loadCrm);
         {{ error }}
       </div>
 
-      <div v-if="summary" class="mb-4 grid grid-cols-2 gap-2 md:grid-cols-4 xl:grid-cols-8">
+      <div
+        v-if="summary && !aiConfigured"
+        class="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-md border border-n-amber-5 bg-n-amber-2 px-3 py-2.5 text-sm text-n-amber-12"
+      >
+        <span>IA do CRM indisponível. Configure `CRM_AI_ENABLED=true` e `GEMINI_API_KEY` para gerar score, prioridade e próxima ação.</span>
+      </div>
+
+      <div v-if="summary" class="mb-4 grid grid-cols-2 gap-2 lg:grid-cols-6">
         <article class="rounded-md border border-n-weak bg-n-solid-1 px-3 py-2">
-          <span class="text-xs font-medium text-n-slate-11">Leads novos</span>
-          <strong class="block mt-1 text-lg font-semibold leading-none text-n-slate-12">{{ summary.new_leads }}</strong>
+          <span class="text-xs font-medium text-n-slate-11">Pipeline aberto</span>
+          <strong class="mt-1 block text-lg font-semibold leading-none text-n-slate-12">{{ formatCurrency(summary.pipeline_value_open) }}</strong>
         </article>
         <article class="rounded-md border border-n-weak bg-n-solid-1 px-3 py-2">
-          <span class="text-xs font-medium text-n-slate-11">Abertas</span>
-          <strong class="block mt-1 text-lg font-semibold leading-none text-n-slate-12">{{ summary.open_conversations }}</strong>
+          <span class="text-xs font-medium text-n-slate-11">Ganho</span>
+          <strong class="mt-1 block text-lg font-semibold leading-none text-n-slate-12">{{ formatCurrency(summary.pipeline_value_won) }}</strong>
         </article>
         <article class="rounded-md border border-n-weak bg-n-solid-1 px-3 py-2">
-          <span class="text-xs font-medium text-n-slate-11">Follow-up</span>
-          <strong class="block mt-1 text-lg font-semibold leading-none text-n-slate-12">{{ summary.followups }}</strong>
+          <span class="text-xs font-medium text-n-slate-11">Perdido</span>
+          <strong class="mt-1 block text-lg font-semibold leading-none text-n-slate-12">{{ formatCurrency(summary.pipeline_value_lost) }}</strong>
         </article>
-        <article
-          v-for="stage in stageCards"
-          :key="stage.key"
-          class="rounded-md border border-n-weak bg-n-solid-1 px-3 py-2"
-        >
-          <span class="flex items-center gap-1.5 truncate text-xs font-medium text-n-slate-11">
-            <span class="size-1.5 rounded-full bg-n-slate-8" :style="stage.color ? { backgroundColor: stage.color } : undefined" />
-            {{ stage.title }}
-          </span>
-          <strong class="block mt-1 text-lg font-semibold leading-none text-n-slate-12">{{ stage.total }}</strong>
+        <article class="rounded-md border border-n-weak bg-n-solid-1 px-3 py-2">
+          <span class="text-xs font-medium text-n-slate-11">Em risco</span>
+          <strong class="mt-1 block text-lg font-semibold leading-none text-n-slate-12">{{ summary.at_risk_count || 0 }}</strong>
+        </article>
+        <article class="rounded-md border border-n-weak bg-n-solid-1 px-3 py-2">
+          <span class="text-xs font-medium text-n-slate-11">Revisar IA</span>
+          <strong class="mt-1 block text-lg font-semibold leading-none text-n-slate-12">{{ summary.needs_ai_review_count || 0 }}</strong>
+        </article>
+        <article class="rounded-md border border-n-weak bg-n-solid-1 px-3 py-2">
+          <span class="text-xs font-medium text-n-slate-11">Oportunidades</span>
+          <strong class="mt-1 block text-lg font-semibold leading-none text-n-slate-12">{{ visibleLeads.length }} / {{ leads.length }}</strong>
         </article>
       </div>
 
-      <div class="grid min-h-[520px] overflow-hidden rounded-md border border-n-weak bg-n-solid-1 lg:grid-cols-[360px_minmax(0,1fr)]">
-        <aside class="border-b border-n-weak lg:border-b-0 lg:border-r">
-          <div class="flex items-center justify-between gap-2 border-b border-n-weak px-4 py-3">
-            <strong class="text-sm text-n-slate-12">Leads</strong>
-            <span class="text-xs text-n-slate-11">{{ visibleLeads.length }} de {{ leads.length }}</span>
-          </div>
-
+      <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+        <section class="min-w-0">
           <div
             v-if="loading"
-            class="flex min-h-48 items-center justify-center text-sm text-n-slate-11"
+            class="flex min-h-72 items-center justify-center rounded-md border border-n-weak bg-n-solid-1 text-sm text-n-slate-11"
           >
-            Carregando CRM...
+            Carregando pipeline...
           </div>
+
           <div
             v-else-if="!visibleLeads.length"
-            class="flex min-h-48 flex-col items-center justify-center gap-1 px-4 text-center"
+            class="flex min-h-72 flex-col items-center justify-center gap-1 rounded-md border border-n-weak bg-n-solid-1 px-4 text-center"
           >
-            <strong class="text-sm text-n-slate-12">Nenhum lead encontrado.</strong>
-            <span class="text-sm text-n-slate-11">Ajuste os filtros ou aguarde novas conversas do WhatsApp.</span>
+            <strong class="text-sm text-n-slate-12">Nenhuma oportunidade encontrada.</strong>
+            <span class="text-sm text-n-slate-11">Ajuste os filtros ou analise novas conversas do WhatsApp.</span>
           </div>
-          <div v-else class="max-h-[680px] overflow-auto">
-            <button
-              v-for="lead in visibleLeads"
-              :key="lead.id"
-              type="button"
-              class="grid w-full grid-cols-[36px_minmax(0,1fr)] gap-3 border-b border-n-weak px-4 py-2.5 text-left hover:bg-n-alpha-1"
-              :class="lead.id === selectedLead?.id ? 'bg-n-alpha-2' : ''"
-              @click="selectLead(lead)"
-            >
-              <span class="flex size-9 items-center justify-center rounded-full bg-n-alpha-2 text-xs font-semibold text-n-slate-11">
-                {{ leadInitial(lead) }}
-              </span>
-              <span class="min-w-0">
-                <span class="flex items-center justify-between gap-2">
-                  <strong class="truncate text-sm font-medium text-n-slate-12">
-                    {{ lead.contact_name || lead.phone_number || 'Contato sem nome' }}
-                  </strong>
-                  <span
-                    v-if="lead.needs_followup"
-                    class="inline-flex shrink-0 items-center gap-1.5 text-xs font-medium text-n-slate-11"
+
+          <div v-else class="overflow-x-auto pb-2">
+            <div class="grid min-w-[1820px] grid-cols-7 gap-3">
+              <section
+                v-for="stage in stages"
+                :key="stage.key"
+                class="min-h-[620px] rounded-md border border-n-weak bg-n-solid-1"
+              >
+                <header class="border-b border-n-weak px-3 py-3">
+                  <div class="flex items-center justify-between gap-2">
+                    <span class="flex min-w-0 items-center gap-2">
+                      <span class="size-2 rounded-full bg-n-slate-8" :style="stage.color ? { backgroundColor: stage.color } : undefined" />
+                      <strong class="truncate text-sm font-semibold text-n-slate-12">{{ stage.title }}</strong>
+                    </span>
+                    <span class="text-xs text-n-slate-11">{{ (leadsByStage[stage.key] || []).length }}</span>
+                  </div>
+                  <div class="mt-2 flex items-center justify-between gap-2 text-xs text-n-slate-11">
+                    <span>{{ stageSummaryByKey[stage.key]?.total || 0 }} no total</span>
+                    <span>{{ formatCurrency(stageSummaryByKey[stage.key]?.estimated_value_total || 0) }}</span>
+                  </div>
+                </header>
+
+                <div class="grid gap-2 p-2">
+                  <button
+                    v-for="lead in leadsByStage[stage.key] || []"
+                    :key="lead.id"
+                    type="button"
+                    class="grid gap-2 rounded-md border border-n-weak bg-n-background p-3 text-left transition-colors hover:bg-n-alpha-1"
+                    :class="lead.id === selectedLead?.id ? 'outline outline-1 outline-n-brand' : ''"
+                    @click="selectLead(lead)"
                   >
-                    <span class="size-1.5 rounded-full bg-n-amber-9" />
-                    Follow-up
-                  </span>
-                </span>
-                <span class="mt-1 block truncate text-xs text-n-slate-11">
-                  {{ commercialField(lead, 'produto_interesse') || lead.last_message || 'Sem produto registrado' }}
-                </span>
-                <span class="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-n-slate-11">
-                  <span class="size-1.5 rounded-full bg-n-slate-8" :style="stageByKey(lead.stage_key).color ? { backgroundColor: stageByKey(lead.stage_key).color } : undefined" />
-                  {{ lead.stage }}
-                </span>
-              </span>
-            </button>
-          </div>
-        </aside>
+                    <span class="flex items-start justify-between gap-2">
+                      <span class="flex min-w-0 items-center gap-2">
+                        <span class="flex size-8 shrink-0 items-center justify-center rounded-full bg-n-alpha-2 text-xs font-semibold text-n-slate-11">
+                          {{ leadInitial(lead) }}
+                        </span>
+                        <span class="min-w-0">
+                          <strong class="block truncate text-sm font-medium text-n-slate-12">
+                            {{ lead.contact_name || lead.phone_number || 'Contato sem nome' }}
+                          </strong>
+                          <span class="block truncate text-xs text-n-slate-11">
+                            {{ lead.phone_number || lead.contact_email || 'Sem telefone' }}
+                          </span>
+                        </span>
+                      </span>
+                      <span class="shrink-0 text-sm font-semibold text-n-slate-12">
+                        {{ formatCurrency(lead.estimated_value_number) }}
+                      </span>
+                    </span>
 
-        <section v-if="selectedLead" class="min-w-0">
-          <div class="flex flex-wrap items-start justify-between gap-3 border-b border-n-weak px-5 py-4">
-            <div class="min-w-0">
-              <h2 class="m-0 truncate text-lg font-semibold text-n-slate-12">
-                {{ selectedLead.contact_name || selectedLead.phone_number || 'Contato sem nome' }}
-              </h2>
-              <p class="mt-1 mb-0 text-sm text-n-slate-11">
-                {{ selectedLead.phone_number || selectedLead.contact_email || 'Sem telefone' }}
-              </p>
+                    <span class="flex flex-wrap items-center gap-1.5">
+                      <span class="rounded-md border px-1.5 py-0.5 text-xs font-medium" :class="priorityClass(lead.ai_priority)">
+                        {{ priorityLabel(lead.ai_priority) }}
+                      </span>
+                      <span class="rounded-md border border-n-weak bg-n-alpha-2 px-1.5 py-0.5 text-xs font-medium text-n-slate-11">
+                        Score {{ lead.ai_score || 0 }}
+                      </span>
+                      <span
+                        v-if="lead.ai_needs_review"
+                        class="rounded-md border border-n-amber-5 bg-n-amber-2 px-1.5 py-0.5 text-xs font-medium text-n-amber-11"
+                      >
+                        Revisar IA
+                      </span>
+                    </span>
+
+                    <span class="grid gap-1 text-xs text-n-slate-11">
+                      <span class="line-clamp-2 text-n-slate-12">
+                        {{ lead.ai_next_action || 'Analisar conversa para definir próxima ação.' }}
+                      </span>
+                      <span v-if="lead.ai_risk_reason" class="line-clamp-2">
+                        Risco: {{ lead.ai_risk_reason }}
+                      </span>
+                    </span>
+
+                    <span class="flex items-center justify-between gap-2 text-xs text-n-slate-11">
+                      <span class="truncate">{{ lead.assignee_name || 'Sem responsável' }}</span>
+                      <span>{{ formatDate(lead.last_activity_at || lead.created_at) }}</span>
+                    </span>
+                  </button>
+                </div>
+              </section>
             </div>
-            <Button
-              label="Abrir conversa"
-              icon="i-lucide-message-square"
-              size="sm"
-              slate
-              @click="openConversation(selectedLead)"
-            />
           </div>
+        </section>
 
-          <div class="grid gap-5 p-5 xl:grid-cols-[minmax(0,1fr)_280px]">
-            <form class="grid gap-4" @submit.prevent="saveCommercialFields(selectedLead)">
-              <div class="grid gap-4 md:grid-cols-2">
-                <label class="grid gap-1">
-                  <span class="text-xs font-medium text-n-slate-11">Produto ou interesse</span>
-                  <input
-                    v-model="selectedLead.crm_fields.produto_interesse"
-                    class="h-10 rounded-md border border-n-weak bg-n-background px-3 text-sm text-n-slate-12 outline-none focus:border-n-brand"
-                    placeholder="Ex.: plano mensal, orçamento, suporte"
-                  />
-                </label>
-                <label class="grid gap-1">
-                  <span class="text-xs font-medium text-n-slate-11">Origem</span>
-                  <input
-                    v-model="selectedLead.crm_fields.origem_lead"
-                    class="h-10 rounded-md border border-n-weak bg-n-background px-3 text-sm text-n-slate-12 outline-none focus:border-n-brand"
-                    placeholder="Ex.: Instagram, indicação, site"
-                  />
-                </label>
-                <label class="grid gap-1">
-                  <span class="text-xs font-medium text-n-slate-11">Valor estimado</span>
-                  <input
-                    v-model="selectedLead.crm_fields.valor_estimado"
-                    class="h-10 rounded-md border border-n-weak bg-n-background px-3 text-sm text-n-slate-12 outline-none focus:border-n-brand"
-                    placeholder="Ex.: R$ 1.500"
-                  />
-                </label>
-                <label class="grid gap-1">
-                  <span class="text-xs font-medium text-n-slate-11">Próximo follow-up</span>
-                  <input
-                    v-model="selectedLead.crm_fields.proximo_follow_up"
-                    type="date"
-                    class="h-10 rounded-md border border-n-weak bg-n-background px-3 text-sm text-n-slate-12 outline-none focus:border-n-brand"
-                  />
-                </label>
+        <aside v-if="selectedLead" class="min-w-0 rounded-md border border-n-weak bg-n-solid-1">
+          <header class="border-b border-n-weak p-4">
+            <div class="flex items-start justify-between gap-3">
+              <div class="min-w-0">
+                <h2 class="m-0 truncate text-base font-semibold text-n-slate-12">
+                  {{ selectedLead.contact_name || selectedLead.phone_number || 'Contato sem nome' }}
+                </h2>
+                <p class="mt-1 mb-0 truncate text-sm text-n-slate-11">
+                  {{ selectedLead.phone_number || selectedLead.contact_email || 'Sem telefone' }}
+                </p>
+              </div>
+              <span class="rounded-md border px-2 py-1 text-xs font-medium" :class="priorityClass(selectedLead.ai_priority)">
+                {{ priorityLabel(selectedLead.ai_priority) }}
+              </span>
+            </div>
+            <div class="mt-3 flex flex-wrap gap-2">
+              <Button
+                label="Abrir conversa"
+                icon="i-lucide-message-square"
+                size="sm"
+                slate
+                @click="openConversation(selectedLead)"
+              />
+              <Button
+                label="Analisar IA"
+                icon="i-lucide-sparkles"
+                size="sm"
+                :disabled="!aiConfigured"
+                :is-loading="analyzingLeadId === selectedLead.id"
+                @click="analyzeLead(selectedLead)"
+              />
+            </div>
+          </header>
+
+          <div class="grid gap-4 p-4">
+            <section class="grid gap-2">
+              <div class="grid grid-cols-2 gap-2">
+                <article class="rounded-md border border-n-weak bg-n-background p-3">
+                  <span class="text-xs font-medium text-n-slate-11">Valor</span>
+                  <strong class="mt-1 block text-base text-n-slate-12">{{ formatCurrency(selectedLead.estimated_value_number) }}</strong>
+                </article>
+                <article class="rounded-md border border-n-weak bg-n-background p-3">
+                  <span class="text-xs font-medium text-n-slate-11">Score IA</span>
+                  <strong class="mt-1 block text-base text-n-slate-12">{{ selectedLead.ai_score || 0 }}/100</strong>
+                </article>
               </div>
 
+              <article class="rounded-md border border-n-weak bg-n-background p-3">
+                <span class="text-xs font-medium text-n-slate-11">Próxima ação</span>
+                <p class="mt-1 mb-0 text-sm leading-5 text-n-slate-12">
+                  {{ selectedLead.ai_next_action || 'Analise esta conversa com IA para gerar uma ação objetiva.' }}
+                </p>
+              </article>
+              <article v-if="selectedLead.ai_risk_reason" class="rounded-md border border-n-ruby-5 bg-n-ruby-2 p-3">
+                <span class="text-xs font-medium text-n-ruby-11">Risco</span>
+                <p class="mt-1 mb-0 text-sm leading-5 text-n-ruby-12">
+                  {{ selectedLead.ai_risk_reason }}
+                </p>
+              </article>
+              <article class="rounded-md border border-n-weak bg-n-background p-3">
+                <span class="text-xs font-medium text-n-slate-11">Motivo da etapa</span>
+                <p class="mt-1 mb-0 text-sm leading-5 text-n-slate-12">
+                  {{ selectedLead.ai_stage_reason || 'Sem justificativa da IA registrada.' }}
+                </p>
+              </article>
+            </section>
+
+            <form class="grid gap-3" @submit.prevent="saveCommercialFields(selectedLead)">
+              <label class="grid gap-1">
+                <span class="text-xs font-medium text-n-slate-11">Etapa do funil</span>
+                <select
+                  :value="selectedLead.stage_key"
+                  :disabled="savingConversationId === selectedLead.id"
+                  class="h-10 rounded-md border border-n-weak bg-n-background px-3 text-sm text-n-slate-12 outline-none focus:border-n-brand"
+                  @change="updateStage(selectedLead, $event)"
+                >
+                  <option v-for="stage in stages" :key="stage.key" :value="stage.key">
+                    {{ stage.title }}
+                  </option>
+                </select>
+              </label>
+
+              <label class="grid gap-1">
+                <span class="text-xs font-medium text-n-slate-11">Produto ou interesse</span>
+                <input
+                  v-model="selectedLead.crm_fields.produto_interesse"
+                  class="h-10 rounded-md border border-n-weak bg-n-background px-3 text-sm text-n-slate-12 outline-none focus:border-n-brand"
+                />
+              </label>
+              <label class="grid gap-1">
+                <span class="text-xs font-medium text-n-slate-11">Valor estimado</span>
+                <input
+                  v-model="selectedLead.crm_fields.valor_estimado"
+                  class="h-10 rounded-md border border-n-weak bg-n-background px-3 text-sm text-n-slate-12 outline-none focus:border-n-brand"
+                  placeholder="Ex.: R$ 1.500"
+                />
+              </label>
+              <label class="grid gap-1">
+                <span class="text-xs font-medium text-n-slate-11">Próximo follow-up</span>
+                <input
+                  v-model="selectedLead.crm_fields.proximo_follow_up"
+                  type="date"
+                  class="h-10 rounded-md border border-n-weak bg-n-background px-3 text-sm text-n-slate-12 outline-none focus:border-n-brand"
+                />
+              </label>
               <label class="grid gap-1">
                 <span class="text-xs font-medium text-n-slate-11">Observação comercial</span>
                 <textarea
                   v-model="selectedLead.crm_fields.observacao_comercial"
-                  class="min-h-28 resize-y rounded-md border border-n-weak bg-n-background px-3 py-2 text-sm text-n-slate-12 outline-none focus:border-n-brand"
-                  placeholder="Contexto, objeções, próximos passos e detalhes importantes."
+                  class="min-h-24 resize-y rounded-md border border-n-weak bg-n-background px-3 py-2 text-sm text-n-slate-12 outline-none focus:border-n-brand"
                 />
               </label>
-
-              <div class="flex flex-wrap items-center justify-between gap-3">
-                <label class="grid gap-1">
-                  <span class="text-xs font-medium text-n-slate-11">Etapa do funil</span>
-                  <select
-                    :value="selectedLead.stage_key"
-                    :disabled="savingConversationId === selectedLead.id"
-                    class="h-10 min-w-56 rounded-md border border-n-weak bg-n-background px-3 text-sm text-n-slate-12 outline-none focus:border-n-brand"
-                    @change="updateStage(selectedLead, $event)"
-                  >
-                    <option v-for="stage in stages" :key="stage.key" :value="stage.key">
-                      {{ stage.title }}
-                    </option>
-                  </select>
-                </label>
-                <Button
-                  label="Salvar campos"
-                  icon="i-lucide-save"
-                  type="submit"
-                  size="sm"
-                  :is-loading="savingFieldsId === selectedLead.id"
-                />
-              </div>
+              <Button
+                label="Salvar campos"
+                icon="i-lucide-save"
+                type="submit"
+                size="sm"
+                :is-loading="savingFieldsId === selectedLead.id"
+              />
             </form>
 
-            <aside class="grid content-start gap-3">
+            <section class="grid gap-2">
               <article class="rounded-md border border-n-weak bg-n-background p-3">
                 <span class="text-xs font-medium text-n-slate-11">Responsável</span>
                 <strong class="mt-1 block text-sm text-n-slate-12">{{ selectedLead.assignee_name || 'Sem responsável' }}</strong>
@@ -438,9 +614,9 @@ onMounted(loadCrm);
                   {{ selectedLead.last_message || 'Sem mensagem registrada.' }}
                 </p>
               </article>
-            </aside>
+            </section>
           </div>
-        </section>
+        </aside>
       </div>
     </section>
   </main>

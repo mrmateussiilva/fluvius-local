@@ -486,63 +486,164 @@ async function requireAccountAccess(req, res) {
   return { accountId, userId };
 }
 
+function clampNumber(value, min, max) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return min;
+  return Math.min(Math.max(number, min), max);
+}
+
+function crmAttribute(conversationAttrs, contactAttrs, key) {
+  return conversationAttrs?.[key] ?? contactAttrs?.[key] ?? '';
+}
+
+function crmTruthy(value) {
+  if (typeof value === 'boolean') return value;
+  return ['true', '1', 'yes', 'sim'].includes(String(value || '').toLowerCase());
+}
+
+function normalizeCurrencyNumber(value) {
+  if (typeof value === 'number' && Number.isFinite(value)) return Math.max(0, value);
+  const text = String(value || '').trim();
+  if (!text) return 0;
+
+  const normalized = text
+    .replace(/[^\d,.-]/g, '')
+    .replace(/\.(?=\d{3}(?:\D|$))/g, '')
+    .replace(',', '.');
+  const amount = Number(normalized);
+  return Number.isFinite(amount) ? Math.max(0, amount) : 0;
+}
+
+function normalizeCrmPriority(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (['alta', 'high'].includes(normalized)) return 'alta';
+  if (['media', 'média', 'medium'].includes(normalized)) return 'media';
+  if (['baixa', 'low'].includes(normalized)) return 'baixa';
+  return '';
+}
+
+function crmPriorityRank(priority) {
+  return { alta: 3, media: 2, baixa: 1 }[priority] || 0;
+}
+
+function decorateCrmLead(lead) {
+  const conversationAttrs = lead.conversation_custom_attributes || {};
+  const contactAttrs = lead.contact_custom_attributes || {};
+  const lastActivityAt = lead.last_activity_at || lead.created_at;
+  const stageDefinition = CRM_STAGES.find(stage => stage.key === lead.stage) || CRM_STAGES[0];
+  const isClosedStage = CRM_CLOSED_STAGE_KEYS.has(stageDefinition.key);
+  const needsFollowup = Number(lead.status) !== 1
+    && lastActivityAt
+    && new Date(lastActivityAt).getTime() < Date.now() - (24 * 60 * 60 * 1000)
+    && !isClosedStage;
+  const aiConfidence = clampNumber(conversationAttrs.crm_ai_last_confidence || 0, 0, 1);
+  const aiScore = Math.round(clampNumber(conversationAttrs.crm_ai_score || (needsFollowup ? 70 : 40), 0, 100));
+  const aiPriority = normalizeCrmPriority(conversationAttrs.crm_ai_priority)
+    || (needsFollowup ? 'alta' : Number(lead.status) !== 1 && !isClosedStage ? 'media' : 'baixa');
+  const estimatedValueNumber = normalizeCurrencyNumber(
+    conversationAttrs.crm_ai_estimated_value_number
+      ?? conversationAttrs.estimated_value_number
+      ?? crmAttribute(conversationAttrs, contactAttrs, 'valor_estimado')
+      ?? conversationAttrs.crm_ai_estimated_value
+  );
+  const aiLastAnalyzedAt = conversationAttrs.crm_ai_last_analyzed_at || '';
+  const aiNeedsReview = crmTruthy(conversationAttrs.crm_ai_needs_review)
+    || !aiLastAnalyzedAt
+    || (aiConfidence > 0 && aiConfidence < CRM_AI_CONFIDENCE_THRESHOLD);
+
+  return {
+    ...lead,
+    stage_key: stageDefinition.key,
+    stage: stageDefinition.title,
+    status_label: ['Aberta', 'Resolvida', 'Pendente', 'Adiada'][Number(lead.status)] || String(lead.status),
+    needs_followup: needsFollowup,
+    estimated_value_number: estimatedValueNumber,
+    ai_score: aiScore,
+    ai_priority: aiPriority,
+    ai_next_action: String(conversationAttrs.crm_ai_next_action || (needsFollowup ? 'Retomar contato parado há mais de 24h' : '')).slice(0, 240),
+    ai_risk_reason: String(conversationAttrs.crm_ai_risk_reason || (needsFollowup ? 'Sem atividade recente em oportunidade aberta' : '')).slice(0, 240),
+    ai_stage_reason: String(conversationAttrs.crm_ai_stage_reason || '').slice(0, 300),
+    ai_needs_review: aiNeedsReview,
+    ai_last_analyzed_at: aiLastAnalyzedAt,
+    ai_last_confidence: aiConfidence,
+    ai_suggested_stage_key: conversationAttrs.crm_ai_suggested_stage || '',
+    chatwoot_url: lead.display_id ? conversationUrl(lead.account_id, lead.display_id) : '',
+  };
+}
+
 async function crmSummaryForAccount(accountId) {
   await ensureCrmDefaults(accountId);
 
   const counts = Object.fromEntries(CRM_STAGE_KEYS.map(stage => [stage, 0]));
-  const countRows = await pool.query(
+  const stageValueTotals = Object.fromEntries(CRM_STAGE_KEYS.map(stage => [stage, 0]));
+  const summaryRows = await pool.query(
     `WITH conversation_stages AS (
        SELECT
          conversations.id,
-         COALESCE(MAX(tags.name) FILTER (WHERE tags.name = ANY($2::text[])), $3) AS stage
-       FROM conversations
-       LEFT JOIN taggings
-         ON taggings.taggable_type = 'Conversation'
-        AND taggings.context = 'labels'
-        AND taggings.taggable_id = conversations.id
-       LEFT JOIN tags ON tags.id = taggings.tag_id
-       WHERE conversations.account_id = $1
-       GROUP BY conversations.id
-     )
-     SELECT stage, COUNT(*)::int AS total
-     FROM conversation_stages
-     GROUP BY stage`,
-    [accountId, CRM_STAGE_KEYS, CRM_DEFAULT_STAGE_KEY],
-  );
-  for (const row of countRows.rows) {
-    if (counts[row.stage] !== undefined) counts[row.stage] = Number(row.total || 0);
-  }
-
-  const followupRows = await pool.query(
-    `WITH conversation_stages AS (
-       SELECT
-         conversations.id,
+         conversations.account_id,
          conversations.status,
          conversations.last_activity_at,
+         conversations.created_at,
+         conversations.custom_attributes AS conversation_custom_attributes,
+         contacts.custom_attributes AS contact_custom_attributes,
          COALESCE(MAX(tags.name) FILTER (WHERE tags.name = ANY($2::text[])), $3) AS stage
        FROM conversations
+       LEFT JOIN contacts ON contacts.id = conversations.contact_id
        LEFT JOIN taggings
          ON taggings.taggable_type = 'Conversation'
         AND taggings.context = 'labels'
         AND taggings.taggable_id = conversations.id
        LEFT JOIN tags ON tags.id = taggings.tag_id
        WHERE conversations.account_id = $1
-       GROUP BY conversations.id
+       GROUP BY conversations.id, contacts.id
      )
-     SELECT
-       COUNT(*) FILTER (WHERE status <> 1 AND COALESCE(last_activity_at, NOW()) < NOW() - INTERVAL '24 hours' AND stage <> ALL($4::text[]))::int AS followups,
-       COUNT(*) FILTER (WHERE status <> 1)::int AS open_conversations,
-       COUNT(*) FILTER (WHERE status <> 1 AND stage = $3)::int AS new_leads
+     SELECT *
      FROM conversation_stages`,
-    [accountId, CRM_STAGE_KEYS, CRM_DEFAULT_STAGE_KEY, [...CRM_CLOSED_STAGE_KEYS]],
+    [accountId, CRM_STAGE_KEYS, CRM_DEFAULT_STAGE_KEY],
   );
+  let followups = 0;
+  let openConversations = 0;
+  let newLeads = 0;
+  let pipelineValueOpen = 0;
+  let pipelineValueWon = 0;
+  let pipelineValueLost = 0;
+  let atRiskCount = 0;
+  let needsAiReviewCount = 0;
+
+  for (const row of summaryRows.rows.map(decorateCrmLead)) {
+    if (counts[row.stage_key] !== undefined) counts[row.stage_key] += 1;
+    if (stageValueTotals[row.stage_key] !== undefined) {
+      stageValueTotals[row.stage_key] += row.estimated_value_number;
+    }
+    if (row.needs_followup) followups += 1;
+    if (Number(row.status) !== 1) openConversations += 1;
+    if (Number(row.status) !== 1 && row.stage_key === CRM_DEFAULT_STAGE_KEY) newLeads += 1;
+    if (row.stage_key === 'fechado') pipelineValueWon += row.estimated_value_number;
+    else if (row.stage_key === 'perdido') pipelineValueLost += row.estimated_value_number;
+    else pipelineValueOpen += row.estimated_value_number;
+    if (!CRM_CLOSED_STAGE_KEYS.has(row.stage_key) && (row.needs_followup || row.ai_priority === 'alta' || row.ai_risk_reason)) {
+      atRiskCount += 1;
+    }
+    if (row.ai_needs_review) needsAiReviewCount += 1;
+  }
 
   return {
     account_id: accountId,
-    stages: CRM_STAGES.map(stage => ({ ...stage, total: counts[stage.key] || 0 })),
-    followups: Number(followupRows.rows[0]?.followups || 0),
-    open_conversations: Number(followupRows.rows[0]?.open_conversations || 0),
-    new_leads: Number(followupRows.rows[0]?.new_leads || 0),
+    ai_configured: crmAiConfigured(),
+    confidence_threshold: CRM_AI_CONFIDENCE_THRESHOLD,
+    stages: CRM_STAGES.map(stage => ({
+      ...stage,
+      total: counts[stage.key] || 0,
+      estimated_value_total: stageValueTotals[stage.key] || 0,
+    })),
+    followups,
+    open_conversations: openConversations,
+    new_leads: newLeads,
+    pipeline_value_open: pipelineValueOpen,
+    pipeline_value_won: pipelineValueWon,
+    pipeline_value_lost: pipelineValueLost,
+    at_risk_count: atRiskCount,
+    needs_ai_review_count: needsAiReviewCount,
   };
 }
 
@@ -614,22 +715,17 @@ async function crmLeadsForAccount(accountId, options = {}) {
   return {
     account_id: accountId,
     stages: CRM_STAGES,
-    leads: leads.rows.map(lead => {
-      const lastActivityAt = lead.last_activity_at || lead.created_at;
-      const needsFollowup = Number(lead.status) !== 1
-        && lastActivityAt
-        && new Date(lastActivityAt).getTime() < Date.now() - (24 * 60 * 60 * 1000)
-        && !CRM_CLOSED_STAGE_KEYS.has(lead.stage);
-      const stageDefinition = CRM_STAGES.find(stage => stage.key === lead.stage) || CRM_STAGES[0];
-      return {
-        ...lead,
-        stage_key: stageDefinition.key,
-        stage: stageDefinition.title,
-        status_label: ['Aberta', 'Resolvida', 'Pendente', 'Adiada'][Number(lead.status)] || String(lead.status),
-        needs_followup: needsFollowup,
-        chatwoot_url: conversationUrl(accountId, lead.display_id),
-      };
-    }),
+    ai_configured: crmAiConfigured(),
+    confidence_threshold: CRM_AI_CONFIDENCE_THRESHOLD,
+    leads: leads.rows
+      .map(lead => decorateCrmLead({ ...lead, account_id: accountId }))
+      .sort((a, b) => (
+        crmPriorityRank(b.ai_priority) - crmPriorityRank(a.ai_priority)
+        || Number(b.needs_followup) - Number(a.needs_followup)
+        || b.estimated_value_number - a.estimated_value_number
+        || b.ai_score - a.ai_score
+        || new Date(b.last_activity_at || b.created_at).getTime() - new Date(a.last_activity_at || a.created_at).getTime()
+      )),
   };
 }
 
@@ -754,7 +850,13 @@ function normalizeAiAnalysis(raw) {
   const interest = String(raw?.interest || raw?.produto_interesse || '').trim().slice(0, 300);
   const nextFollowUp = String(raw?.next_follow_up || '').trim().slice(0, 30);
   const estimatedValue = String(raw?.estimated_value || '').trim().slice(0, 80);
+  const estimatedValueNumber = normalizeCurrencyNumber(raw?.estimated_value_number || estimatedValue);
   const shouldFollowUp = Boolean(raw?.should_follow_up);
+  const score = Math.round(clampNumber(raw?.score || raw?.ai_score || 0, 0, 100));
+  const priority = normalizeCrmPriority(raw?.priority || raw?.ai_priority) || 'media';
+  const nextAction = String(raw?.next_action || raw?.ai_next_action || '').trim().slice(0, 240);
+  const riskReason = String(raw?.risk_reason || raw?.ai_risk_reason || '').trim().slice(0, 240);
+  const stageReason = String(raw?.stage_reason || raw?.ai_stage_reason || '').trim().slice(0, 300);
 
   if (!stage) throw new Error('Gemini returned an invalid CRM stage');
 
@@ -765,7 +867,13 @@ function normalizeAiAnalysis(raw) {
     interest,
     next_follow_up: /^\d{4}-\d{2}-\d{2}$/.test(nextFollowUp) ? nextFollowUp : '',
     estimated_value: estimatedValue,
+    estimated_value_number: estimatedValueNumber,
     should_follow_up: shouldFollowUp,
+    score,
+    priority,
+    next_action: nextAction,
+    risk_reason: riskReason,
+    stage_reason: stageReason,
   };
 }
 
@@ -866,6 +974,12 @@ Regras:
 - Se ja e cliente e precisa suporte depois da venda, use "pos-venda".
 - Caso esteja em conversa ativa sem proposta clara, use "em-atendimento".
 - Caso tenha pouca informacao, use "novo-lead".
+- "estimated_value_number" deve ser numero em reais, sem simbolo, usando 0 se nao houver valor.
+- "score" deve indicar chance comercial de 0 a 100, considerando interesse, urgencia, fit e avancos.
+- "priority" deve ser "alta", "media" ou "baixa" para orientar o gestor.
+- "next_action" deve ser uma acao objetiva para o responsavel executar.
+- "risk_reason" deve explicar risco comercial ou ficar vazio se nao houver risco claro.
+- "stage_reason" deve explicar em uma frase por que escolheu a etapa.
 
 Contato:
 Nome: ${contact.contact_name || 'Nao informado'}
@@ -882,6 +996,12 @@ Formato obrigatorio:
   "confidence": 0.0,
   "interest": "",
   "estimated_value": "",
+  "estimated_value_number": 0,
+  "score": 0,
+  "priority": "media",
+  "next_action": "",
+  "risk_reason": "",
+  "stage_reason": "",
   "next_follow_up": "",
   "should_follow_up": false,
   "summary": ""
@@ -910,27 +1030,45 @@ async function analyzeCrmConversation(accountId, conversationId, options = {}) {
       analysis.summary && `IA: ${analysis.summary}`,
       analysis.interest && `Interesse: ${analysis.interest}`,
       analysis.estimated_value && `Valor estimado: ${analysis.estimated_value}`,
+      analysis.next_action && `Proxima acao: ${analysis.next_action}`,
+      analysis.risk_reason && `Risco: ${analysis.risk_reason}`,
+      analysis.stage_reason && `Motivo da etapa: ${analysis.stage_reason}`,
       `Confianca: ${Math.round(analysis.confidence * 100)}%`,
     ].filter(Boolean);
     const fields = {
       observacao_comercial: noteParts.join('\n'),
     };
+    if (analysis.interest) fields.produto_interesse = analysis.interest;
+    if (analysis.estimated_value) fields.valor_estimado = analysis.estimated_value;
     if (analysis.next_follow_up) fields.proximo_follow_up = analysis.next_follow_up;
     fieldsResult = await updateCrmFieldsForAccount(accountId, conversationId, fields);
   }
 
-  await pool.query(
+  const aiAttributes = {
+    crm_ai_last_analyzed_at: new Date().toISOString(),
+    crm_ai_last_confidence: analysis.confidence,
+    crm_ai_last_stage: analysis.stage.key,
+    crm_ai_suggested_stage: analysis.stage.key,
+    crm_ai_last_applied: apply,
+    crm_ai_score: analysis.score,
+    crm_ai_priority: analysis.priority,
+    crm_ai_next_action: analysis.next_action,
+    crm_ai_risk_reason: analysis.risk_reason,
+    crm_ai_stage_reason: analysis.stage_reason,
+    crm_ai_summary: analysis.summary,
+    crm_ai_interest: analysis.interest,
+    crm_ai_estimated_value: analysis.estimated_value,
+    crm_ai_estimated_value_number: analysis.estimated_value_number,
+    crm_ai_needs_review: !apply,
+  };
+  const aiFieldsResult = await pool.query(
     `UPDATE conversations
      SET custom_attributes = COALESCE(custom_attributes, '{}'::jsonb) || $3::jsonb,
          updated_at = NOW()
      WHERE id = $1
-       AND account_id = $2`,
-    [conversationId, accountId, JSON.stringify({
-      crm_ai_last_analyzed_at: new Date().toISOString(),
-      crm_ai_last_confidence: analysis.confidence,
-      crm_ai_last_stage: analysis.stage.key,
-      crm_ai_last_applied: apply,
-    })],
+       AND account_id = $2
+     RETURNING custom_attributes`,
+    [conversationId, accountId, JSON.stringify(aiAttributes)],
   );
 
   return {
@@ -943,11 +1081,20 @@ async function analyzeCrmConversation(accountId, conversationId, options = {}) {
     confidence: analysis.confidence,
     interest: analysis.interest,
     estimated_value: analysis.estimated_value,
+    estimated_value_number: analysis.estimated_value_number,
+    score: analysis.score,
+    priority: analysis.priority,
+    next_action: analysis.next_action,
+    risk_reason: analysis.risk_reason,
+    stage_reason: analysis.stage_reason,
     next_follow_up: analysis.next_follow_up,
     should_follow_up: analysis.should_follow_up,
     summary: analysis.summary,
     labels: stageResult?.labels || null,
-    conversation_custom_attributes: fieldsResult?.custom_attributes || payload.conversation.custom_attributes || {},
+    conversation_custom_attributes: aiFieldsResult.rows[0]?.custom_attributes
+      || fieldsResult?.custom_attributes
+      || payload.conversation.custom_attributes
+      || {},
     chatwoot_url: conversationUrl(accountId, payload.conversation.display_id),
   };
 }
