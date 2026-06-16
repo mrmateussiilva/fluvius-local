@@ -184,12 +184,12 @@ onMounted(loadCrm);
 <template>
   <main class="flex flex-col w-full min-h-full overflow-auto bg-n-background text-n-slate-12">
     <header class="border-b border-n-weak bg-n-background">
-      <div class="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
+      <div class="flex flex-wrap items-center justify-between gap-3 px-5 py-3">
         <div class="min-w-0">
-          <h1 class="m-0 text-xl font-semibold text-n-slate-12">
+          <h1 class="m-0 text-base font-semibold text-n-slate-12">
             CRM
           </h1>
-          <p class="mt-1 mb-0 text-sm text-n-slate-11">
+          <p class="mt-1 mb-0 text-xs text-n-slate-11">
             Leads, etapas e follow-ups do WhatsApp em uma tela operacional.
           </p>
         </div>
@@ -197,12 +197,13 @@ onMounted(loadCrm);
           label="Atualizar"
           icon="i-lucide-refresh-cw"
           size="sm"
+          slate
           :is-loading="loading"
           @click="loadCrm"
         />
       </div>
 
-      <div class="grid gap-3 px-5 pb-4 md:grid-cols-[minmax(240px,1fr)_auto_auto] md:items-end">
+      <div class="grid gap-3 px-5 pb-3 md:grid-cols-[minmax(240px,1fr)_auto_auto] md:items-end">
         <label class="grid gap-1">
           <span class="text-xs font-medium text-n-slate-11">Buscar lead</span>
           <div class="relative">
@@ -250,31 +251,33 @@ onMounted(loadCrm);
         {{ error }}
       </div>
 
-      <div v-if="summary" class="grid grid-cols-2 gap-3 mb-5 lg:grid-cols-4 xl:grid-cols-6">
-        <article class="rounded-md border border-n-weak bg-n-solid-1 px-3 py-3">
+      <div v-if="summary" class="mb-4 grid grid-cols-2 gap-2 md:grid-cols-4 xl:grid-cols-8">
+        <article class="rounded-md border border-n-weak bg-n-solid-1 px-3 py-2">
           <span class="text-xs font-medium text-n-slate-11">Leads novos</span>
-          <strong class="block mt-2 text-2xl font-semibold text-n-slate-12">{{ summary.new_leads }}</strong>
+          <strong class="block mt-1 text-lg font-semibold leading-none text-n-slate-12">{{ summary.new_leads }}</strong>
         </article>
-        <article class="rounded-md border border-n-weak bg-n-solid-1 px-3 py-3">
-          <span class="text-xs font-medium text-n-slate-11">Conversas abertas</span>
-          <strong class="block mt-2 text-2xl font-semibold text-n-slate-12">{{ summary.open_conversations }}</strong>
+        <article class="rounded-md border border-n-weak bg-n-solid-1 px-3 py-2">
+          <span class="text-xs font-medium text-n-slate-11">Abertas</span>
+          <strong class="block mt-1 text-lg font-semibold leading-none text-n-slate-12">{{ summary.open_conversations }}</strong>
         </article>
-        <article class="rounded-md border border-n-amber-5 bg-n-amber-2 px-3 py-3">
-          <span class="text-xs font-medium text-n-amber-11">Follow-up</span>
-          <strong class="block mt-2 text-2xl font-semibold text-n-amber-12">{{ summary.followups }}</strong>
+        <article class="rounded-md border border-n-weak bg-n-solid-1 px-3 py-2">
+          <span class="text-xs font-medium text-n-slate-11">Follow-up</span>
+          <strong class="block mt-1 text-lg font-semibold leading-none text-n-slate-12">{{ summary.followups }}</strong>
         </article>
         <article
           v-for="stage in stageCards"
           :key="stage.key"
-          class="rounded-md border bg-n-solid-1 px-3 py-3"
-          :style="{ borderColor: `${stage.color}66` }"
+          class="rounded-md border border-n-weak bg-n-solid-1 px-3 py-2"
         >
-          <span class="block truncate text-xs font-medium text-n-slate-11">{{ stage.title }}</span>
-          <strong class="block mt-2 text-2xl font-semibold text-n-slate-12">{{ stage.total }}</strong>
+          <span class="flex items-center gap-1.5 truncate text-xs font-medium text-n-slate-11">
+            <span class="size-1.5 rounded-full bg-n-slate-8" :style="stage.color ? { backgroundColor: stage.color } : undefined" />
+            {{ stage.title }}
+          </span>
+          <strong class="block mt-1 text-lg font-semibold leading-none text-n-slate-12">{{ stage.total }}</strong>
         </article>
       </div>
 
-      <div class="grid min-h-[520px] overflow-hidden rounded-md border border-n-weak bg-n-solid-1 lg:grid-cols-[380px_minmax(0,1fr)]">
+      <div class="grid min-h-[520px] overflow-hidden rounded-md border border-n-weak bg-n-solid-1 lg:grid-cols-[360px_minmax(0,1fr)]">
         <aside class="border-b border-n-weak lg:border-b-0 lg:border-r">
           <div class="flex items-center justify-between gap-2 border-b border-n-weak px-4 py-3">
             <strong class="text-sm text-n-slate-12">Leads</strong>
@@ -299,11 +302,11 @@ onMounted(loadCrm);
               v-for="lead in visibleLeads"
               :key="lead.id"
               type="button"
-              class="grid w-full grid-cols-[40px_minmax(0,1fr)] gap-3 border-b border-n-weak px-4 py-3 text-left hover:bg-n-alpha-1"
+              class="grid w-full grid-cols-[36px_minmax(0,1fr)] gap-3 border-b border-n-weak px-4 py-2.5 text-left hover:bg-n-alpha-1"
               :class="lead.id === selectedLead?.id ? 'bg-n-alpha-2' : ''"
               @click="selectLead(lead)"
             >
-              <span class="flex size-10 items-center justify-center rounded-md bg-n-brand/10 text-sm font-semibold text-n-brand">
+              <span class="flex size-9 items-center justify-center rounded-full bg-n-alpha-2 text-xs font-semibold text-n-slate-11">
                 {{ leadInitial(lead) }}
               </span>
               <span class="min-w-0">
@@ -313,15 +316,17 @@ onMounted(loadCrm);
                   </strong>
                   <span
                     v-if="lead.needs_followup"
-                    class="shrink-0 rounded-md bg-n-amber-3 px-2 py-0.5 text-xs font-medium text-n-amber-11"
+                    class="inline-flex shrink-0 items-center gap-1.5 text-xs font-medium text-n-slate-11"
                   >
+                    <span class="size-1.5 rounded-full bg-n-amber-9" />
                     Follow-up
                   </span>
                 </span>
                 <span class="mt-1 block truncate text-xs text-n-slate-11">
                   {{ commercialField(lead, 'produto_interesse') || lead.last_message || 'Sem produto registrado' }}
                 </span>
-                <span class="mt-2 inline-flex rounded-md px-2 py-0.5 text-xs font-medium text-n-slate-12" :style="{ backgroundColor: `${stageByKey(lead.stage_key).color || '#94a3b8'}22` }">
+                <span class="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-n-slate-11">
+                  <span class="size-1.5 rounded-full bg-n-slate-8" :style="stageByKey(lead.stage_key).color ? { backgroundColor: stageByKey(lead.stage_key).color } : undefined" />
                   {{ lead.stage }}
                 </span>
               </span>
@@ -355,7 +360,7 @@ onMounted(loadCrm);
                   <span class="text-xs font-medium text-n-slate-11">Produto ou interesse</span>
                   <input
                     v-model="selectedLead.crm_fields.produto_interesse"
-                    class="h-10 rounded-md border border-n-weak bg-n-background px-3 text-sm outline-none focus:border-n-brand"
+                    class="h-10 rounded-md border border-n-weak bg-n-background px-3 text-sm text-n-slate-12 outline-none focus:border-n-brand"
                     placeholder="Ex.: plano mensal, orçamento, suporte"
                   />
                 </label>
@@ -363,7 +368,7 @@ onMounted(loadCrm);
                   <span class="text-xs font-medium text-n-slate-11">Origem</span>
                   <input
                     v-model="selectedLead.crm_fields.origem_lead"
-                    class="h-10 rounded-md border border-n-weak bg-n-background px-3 text-sm outline-none focus:border-n-brand"
+                    class="h-10 rounded-md border border-n-weak bg-n-background px-3 text-sm text-n-slate-12 outline-none focus:border-n-brand"
                     placeholder="Ex.: Instagram, indicação, site"
                   />
                 </label>
@@ -371,7 +376,7 @@ onMounted(loadCrm);
                   <span class="text-xs font-medium text-n-slate-11">Valor estimado</span>
                   <input
                     v-model="selectedLead.crm_fields.valor_estimado"
-                    class="h-10 rounded-md border border-n-weak bg-n-background px-3 text-sm outline-none focus:border-n-brand"
+                    class="h-10 rounded-md border border-n-weak bg-n-background px-3 text-sm text-n-slate-12 outline-none focus:border-n-brand"
                     placeholder="Ex.: R$ 1.500"
                   />
                 </label>
@@ -380,7 +385,7 @@ onMounted(loadCrm);
                   <input
                     v-model="selectedLead.crm_fields.proximo_follow_up"
                     type="date"
-                    class="h-10 rounded-md border border-n-weak bg-n-background px-3 text-sm outline-none focus:border-n-brand"
+                    class="h-10 rounded-md border border-n-weak bg-n-background px-3 text-sm text-n-slate-12 outline-none focus:border-n-brand"
                   />
                 </label>
               </div>
@@ -389,7 +394,7 @@ onMounted(loadCrm);
                 <span class="text-xs font-medium text-n-slate-11">Observação comercial</span>
                 <textarea
                   v-model="selectedLead.crm_fields.observacao_comercial"
-                  class="min-h-28 resize-y rounded-md border border-n-weak bg-n-background px-3 py-2 text-sm outline-none focus:border-n-brand"
+                  class="min-h-28 resize-y rounded-md border border-n-weak bg-n-background px-3 py-2 text-sm text-n-slate-12 outline-none focus:border-n-brand"
                   placeholder="Contexto, objeções, próximos passos e detalhes importantes."
                 />
               </label>
@@ -400,7 +405,7 @@ onMounted(loadCrm);
                   <select
                     :value="selectedLead.stage_key"
                     :disabled="savingConversationId === selectedLead.id"
-                    class="h-10 min-w-56 rounded-md border border-n-weak bg-n-background px-3 text-sm outline-none focus:border-n-brand"
+                    class="h-10 min-w-56 rounded-md border border-n-weak bg-n-background px-3 text-sm text-n-slate-12 outline-none focus:border-n-brand"
                     @change="updateStage(selectedLead, $event)"
                   >
                     <option v-for="stage in stages" :key="stage.key" :value="stage.key">

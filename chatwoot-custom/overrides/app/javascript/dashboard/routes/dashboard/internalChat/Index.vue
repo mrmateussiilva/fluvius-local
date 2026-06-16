@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { useMapGetter } from 'dashboard/composables/store';
+import Button from 'dashboard/components-next/button/Button.vue';
 
 const API_BASE = import.meta.env.VITE_INTERNAL_CHAT_API_URL || 'http://localhost:4000';
 const route = useRoute();
@@ -619,12 +620,28 @@ watch(userId, async nextUserId => {
       <div ref="messagesEl" class="internal-chat-messages">
         <div v-if="!currentRoomId && !loadingRoom" class="internal-chat-empty-thread">
           <div>
-            <i class="i-lucide-messages-square" />
+            <svg
+              class="size-9 text-n-slate-10"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z" />
+              <path d="M8 9h8" />
+              <path d="M8 13h5" />
+            </svg>
             <strong>Escolha uma conversa interna</strong>
             <span>Converse com outro agente sem sair do atendimento.</span>
-            <button type="button" @click="activeTab = 'agents'">
-              Iniciar conversa
-            </button>
+            <Button
+              label="Iniciar conversa"
+              size="sm"
+              slate
+              @click="activeTab = 'agents'"
+            />
           </div>
         </div>
 
@@ -677,7 +694,20 @@ watch(userId, async nextUserId => {
 
           <div v-if="!messages.length" class="internal-chat-empty-thread">
             <div>
-              <i class="i-lucide-message-circle-plus" />
+              <svg
+                class="size-9 text-n-slate-10"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z" />
+                <path d="M12 8v6" />
+                <path d="M9 11h6" />
+              </svg>
               <strong>Comece a conversa por aqui</strong>
               <span>Essa conversa fica visivel apenas para os agentes envolvidos.</span>
             </div>
@@ -760,14 +790,13 @@ watch(userId, async nextUserId => {
             @input="emitTyping"
             @keydown="handleComposerKeydown"
           />
-          <button
-            type="button"
-            class="send-button"
+          <Button
+            :label="sending ? 'Enviando' : 'Enviar'"
+            size="sm"
             :disabled="!canSend"
+            :is-loading="sending"
             @click="sendMessage"
-          >
-            {{ sending ? 'Enviando' : 'Enviar' }}
-          </button>
+          />
         </div>
       </footer>
     </section>
@@ -809,12 +838,17 @@ watch(userId, async nextUserId => {
         </div>
 
         <footer>
-          <button type="button" class="secondary" @click="showGroupDialog = false">
-            Cancelar
-          </button>
-          <button type="button" @click="createGroup">
-            Criar grupo
-          </button>
+          <Button
+            label="Cancelar"
+            size="sm"
+            slate
+            @click="showGroupDialog = false"
+          />
+          <Button
+            label="Criar grupo"
+            size="sm"
+            @click="createGroup"
+          />
         </footer>
       </section>
     </div>
@@ -877,12 +911,12 @@ watch(userId, async nextUserId => {
   height: 2rem;
   border: 1px solid rgb(var(--slate-4));
   border-radius: 0.375rem;
-  background: rgb(var(--slate-1));
-  color: rgb(var(--slate-11));
+  background: rgb(var(--slate-4));
+  color: rgb(var(--white));
 }
 
 .icon-button:hover {
-  background: rgb(var(--slate-3));
+  background: rgb(var(--slate-5));
 }
 
 .internal-chat-search {
@@ -896,7 +930,7 @@ watch(userId, async nextUserId => {
   left: 0.75rem;
   width: 1rem;
   height: 1rem;
-  color: rgb(var(--slate-9));
+  color: rgb(var(--slate-10));
   transform: translateY(-50%);
 }
 
@@ -906,7 +940,7 @@ watch(userId, async nextUserId => {
   min-height: 2.375rem;
   border: 1px solid rgb(var(--slate-4));
   border-radius: 0.375rem;
-  background: rgb(var(--slate-2));
+  background: rgb(var(--slate-1));
   color: rgb(var(--slate-12));
   outline: none;
 }
@@ -918,9 +952,9 @@ watch(userId, async nextUserId => {
 .internal-chat-search input:focus,
 .internal-chat-field input:focus,
 .internal-chat-composer textarea:focus {
-  border-color: rgb(var(--green-8));
-  background: rgb(var(--white));
-  box-shadow: 0 0 0 2px rgba(var(--green-7), 0.18);
+  border-color: rgb(var(--slate-10));
+  background: rgb(var(--slate-2));
+  box-shadow: none;
 }
 
 .internal-chat-tabs {
@@ -930,7 +964,7 @@ watch(userId, async nextUserId => {
   margin: 0.5rem;
   padding: 0.25rem;
   border-radius: 0.375rem;
-  background: rgb(var(--slate-3));
+  background: rgb(var(--slate-1));
 }
 
 .internal-chat-tabs button {
@@ -944,9 +978,9 @@ watch(userId, async nextUserId => {
 }
 
 .internal-chat-tabs button.active {
-  background: rgb(var(--white));
-  color: rgb(var(--slate-12));
-  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.08);
+  background: rgb(var(--slate-4));
+  color: rgb(var(--white));
+  box-shadow: none;
 }
 
 .internal-chat-list {
@@ -976,7 +1010,7 @@ watch(userId, async nextUserId => {
 
 .internal-chat-row.active {
   border-color: rgb(var(--slate-4));
-  background: rgb(var(--slate-3));
+  background: rgb(var(--slate-1));
 }
 
 .avatar {
@@ -985,7 +1019,7 @@ watch(userId, async nextUserId => {
   place-items: center;
   width: 2.25rem;
   height: 2.25rem;
-  border: 1px solid rgb(var(--slate-5));
+  border: 1px solid rgb(var(--slate-4));
   border-radius: 999px;
   background: rgb(var(--slate-2));
   color: rgb(var(--slate-11));
@@ -1000,14 +1034,14 @@ watch(userId, async nextUserId => {
   bottom: -1px;
   width: 0.625rem;
   height: 0.625rem;
-  border: 2px solid rgb(var(--white));
+  border: 2px solid rgb(var(--slate-1));
   border-radius: 999px;
   background: rgb(var(--green-8));
 }
 
 .avatar.group {
-  border-color: rgb(var(--slate-5));
-  background: rgb(var(--slate-3));
+  border-color: rgb(var(--slate-4));
+  background: rgb(var(--slate-4));
   color: rgb(var(--slate-11));
 }
 
@@ -1051,8 +1085,8 @@ watch(userId, async nextUserId => {
   min-width: 1.125rem;
   height: 1.125rem;
   border-radius: 999px;
-  background: rgb(var(--green-9));
-  color: rgb(var(--white));
+  background: rgb(var(--white));
+  color: rgb(var(--slate-12));
   font-size: 0.6875rem;
   font-style: normal;
   font-weight: 700;
@@ -1084,9 +1118,8 @@ watch(userId, async nextUserId => {
   max-width: min(42rem, 78%);
   border: 1px solid rgb(var(--slate-4));
   border-radius: 0.375rem;
-  background: rgb(var(--white));
+  background: rgb(var(--slate-1));
   padding: 0.5625rem 0.6875rem;
-  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
 }
 
 .internal-chat-bubble.mine {
@@ -1187,11 +1220,11 @@ watch(userId, async nextUserId => {
 .internal-chat-empty-thread i {
   width: 2rem;
   height: 2rem;
-  color: rgb(var(--slate-9));
+  color: rgb(var(--slate-10));
 }
 
 .internal-chat-empty-thread strong {
-  color: rgb(var(--slate-12));
+  color: rgb(var(--slate-11));
   font-size: 1rem;
   font-weight: 650;
 }
@@ -1199,9 +1232,9 @@ watch(userId, async nextUserId => {
 .internal-chat-empty-thread button {
   min-height: 2.125rem;
   margin-top: 0.375rem;
-  border: 1px solid rgb(var(--slate-5));
+  border: 1px solid rgb(var(--slate-4));
   border-radius: 0.375rem;
-  background: rgb(var(--white));
+  background: rgb(var(--slate-2));
   color: rgb(var(--slate-12));
   padding: 0.4375rem 0.75rem;
   font-weight: 650;
@@ -1217,7 +1250,7 @@ watch(userId, async nextUserId => {
   width: 0.4375rem;
   height: 0.4375rem;
   border-radius: 999px;
-  background: rgb(var(--slate-9));
+  background: rgb(var(--slate-10));
   animation: pulse 0.9s ease-in-out infinite;
 }
 
@@ -1292,8 +1325,8 @@ watch(userId, async nextUserId => {
 
 .internal-chat-tools button:hover,
 .internal-chat-attachment-preview button:hover {
-  background: rgb(var(--slate-3));
-  color: rgb(var(--slate-12));
+  background: rgb(var(--slate-4));
+  color: rgb(var(--white));
 }
 
 .internal-chat-tools button.recording {
@@ -1363,30 +1396,14 @@ watch(userId, async nextUserId => {
   width: 100%;
   min-height: 2.625rem;
   max-height: 7.5rem;
-  border: 1px solid rgb(var(--slate-5));
+  border: 1px solid rgb(var(--slate-4));
   border-radius: 0.375rem;
-  background: rgb(var(--white));
+  background: rgb(var(--slate-1));
   color: rgb(var(--slate-12));
   line-height: 1.4;
   outline: none;
   padding: 0.625rem 0.75rem;
   resize: vertical;
-}
-
-.internal-chat-composer .send-button,
-.internal-chat-dialog footer button {
-  min-height: 2.625rem;
-  border: 1px solid rgb(var(--green-9));
-  border-radius: 0.375rem;
-  background: rgb(var(--green-9));
-  color: rgb(var(--white));
-  padding: 0.5rem 0.875rem;
-  font-weight: 650;
-}
-
-.internal-chat-composer .send-button:disabled {
-  cursor: not-allowed;
-  opacity: 0.55;
 }
 
 .internal-chat-notice {
@@ -1397,9 +1414,8 @@ watch(userId, async nextUserId => {
   max-width: min(22rem, calc(100vw - 2.25rem));
   border: 1px solid rgba(var(--red-7), 0.45);
   border-radius: 0.5rem;
-  background: rgb(var(--white));
+  background: rgb(var(--slate-1));
   color: rgb(var(--slate-12));
-  box-shadow: 0 12px 30px rgba(16, 24, 40, 0.16);
   font-size: 0.8125rem;
   padding: 0.625rem 0.75rem;
 }
@@ -1410,7 +1426,7 @@ watch(userId, async nextUserId => {
   z-index: 70;
   display: grid;
   place-items: center;
-  background: rgba(16, 24, 40, 0.32);
+  background: rgba(var(--slate-12), 0.32);
   padding: 1rem;
 }
 
@@ -1420,8 +1436,7 @@ watch(userId, async nextUserId => {
   width: min(28rem, 100%);
   border: 1px solid rgb(var(--slate-4));
   border-radius: 0.5rem;
-  background: rgb(var(--white));
-  box-shadow: 0 24px 48px rgba(16, 24, 40, 0.18);
+  background: rgb(var(--slate-1));
   padding: 1rem;
 }
 
@@ -1471,12 +1486,6 @@ watch(userId, async nextUserId => {
 
 .internal-chat-dialog footer {
   justify-content: flex-end;
-}
-
-.internal-chat-dialog footer button.secondary {
-  border-color: rgb(var(--slate-5));
-  background: rgb(var(--white));
-  color: rgb(var(--slate-12));
 }
 
 @media (max-width: 900px) {
