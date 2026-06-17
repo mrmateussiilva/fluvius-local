@@ -328,6 +328,21 @@ docker compose restart evolution
 
 Operacionalmente, prefira resolver/fechar conversas em vez de apagar conversas com historico ativo de WhatsApp.
 
+### Mensagens chegam na Evolution mas nao aparecem no Fluvius
+
+Se os logs da Evolution mostram mensagens recebidas, mas elas nao entram no Fluvius, rode o reparo completo de entrada:
+
+```bash
+./scripts/repair-whatsapp-incoming.sh NomeDaInstancia
+```
+
+Esse script:
+
+- mostra as ultimas mensagens gravadas na Evolution;
+- limpa referencias orfas de conversas apagadas;
+- repara o link Evolution/Fluvius;
+- chama a importacao/relink de historico pelo Manager.
+
 ## Reaplicar marca Fluvius
 
 Se o container ou as configuracoes do Fluvius forem recriados, rode:

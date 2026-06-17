@@ -294,6 +294,25 @@ docker compose -f docker-compose.prod.yml restart evolution
 
 Em operacao normal, prefira resolver/fechar conversas em vez de apagar conversas com historico ativo.
 
+### Evolution recebe, mas Fluvius nao mostra
+
+Se os logs da Evolution mostram a mensagem recebida, mas a conversa/mensagem nao aparece no Fluvius, rode o reparo completo de entrada:
+
+```bash
+cd /opt/apps/fluvius-local
+
+VPS_DIR="/opt/apps/fluvius-local" \
+ENV_FILE="/opt/apps/fluvius-local/.env" \
+COMPOSE_FILE="/opt/apps/fluvius-local/docker-compose.prod.yml" \
+bash scripts/repair-whatsapp-incoming.sh NomeDaInstancia
+```
+
+Exemplo:
+
+```bash
+bash scripts/repair-whatsapp-incoming.sh fluvius-finderbit-mq7g2k0o
+```
+
 ## Proximo teste obrigatorio
 
 Depois de conectar o WhatsApp, envie uma mensagem real para validar o caminho completo:
