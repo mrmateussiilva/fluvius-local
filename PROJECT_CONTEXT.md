@@ -229,6 +229,7 @@ Principais grupos:
 - `scripts/unregister-chatwoot-n8n-webhook.sh`: remove webhook do n8n.
 - `scripts/repair-chatwoot-evolution.sh`: repara vínculo Chatwoot/Evolution de uma instância.
 - `scripts/repair-evolution-chatwoot-link.sh`: repara configuração de integração Evolution/Chatwoot.
+- `scripts/repair-deleted-chatwoot-conversations.sh`: limpa referências órfãs da Evolution quando conversas/mensagens foram apagadas no Chatwoot.
 - `scripts/sync-evolution-history-to-chatwoot.rb`: sincroniza histórico da Evolution para o Chatwoot.
 
 ## Comandos Úteis

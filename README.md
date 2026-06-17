@@ -296,6 +296,38 @@ Esse script:
 - ajusta `WEBHOOK_TIMEOUT=30` no Fluvius
 - limpa o cache de configuracao do Fluvius
 
+### Conversa apagada nao volta pelo WhatsApp
+
+Se apagar uma conversa no Fluvius e depois o mesmo contato mandar mensagem no WhatsApp, a Evolution pode continuar com ids antigos do Fluvius nos campos `chatwootConversationId`/`chatwootMessageId`. O sintoma costuma ser:
+
+```text
+The message could not be sent. Please check your connection. [object Object]
+```
+
+ou mensagens novas que chegam na Evolution mas nao aparecem no Fluvius.
+
+Repare os vinculos orfaos:
+
+```bash
+./scripts/repair-deleted-chatwoot-conversations.sh
+```
+
+Para uma instancia especifica:
+
+```bash
+./scripts/repair-deleted-chatwoot-conversations.sh NomeDaInstancia
+```
+
+Depois envie uma nova mensagem pelo WhatsApp e teste responder pelo Fluvius.
+
+Se o erro persistir, reinicie a Evolution para limpar estado em memoria:
+
+```bash
+docker compose restart evolution
+```
+
+Operacionalmente, prefira resolver/fechar conversas em vez de apagar conversas com historico ativo de WhatsApp.
+
 ## Reaplicar marca Fluvius
 
 Se o container ou as configuracoes do Fluvius forem recriados, rode:

@@ -261,6 +261,39 @@ docker compose -f docker-compose.prod.yml logs --tail=120 chatwoot
 docker compose -f docker-compose.prod.yml logs --tail=120 evolution
 ```
 
+### Conversa apagada nao recebe novas mensagens
+
+Se uma conversa foi apagada no Fluvius e, depois disso, novas mensagens do mesmo contato nao aparecem ou o envio pelo Fluvius mostra:
+
+```text
+The message could not be sent. Please check your connection. [object Object]
+```
+
+limpe os ids orfaos que ficaram na Evolution:
+
+```bash
+cd /opt/apps/fluvius-local
+
+VPS_DIR="/opt/apps/fluvius-local" \
+ENV_FILE="/opt/apps/fluvius-local/.env" \
+COMPOSE_FILE="/opt/apps/fluvius-local/docker-compose.prod.yml" \
+bash scripts/repair-deleted-chatwoot-conversations.sh
+```
+
+Para uma instancia especifica:
+
+```bash
+bash scripts/repair-deleted-chatwoot-conversations.sh NomeDaInstancia
+```
+
+Depois envie uma nova mensagem pelo WhatsApp e teste responder pelo Fluvius. Se o erro persistir, reinicie a Evolution:
+
+```bash
+docker compose -f docker-compose.prod.yml restart evolution
+```
+
+Em operacao normal, prefira resolver/fechar conversas em vez de apagar conversas com historico ativo.
+
 ## Proximo teste obrigatorio
 
 Depois de conectar o WhatsApp, envie uma mensagem real para validar o caminho completo:
