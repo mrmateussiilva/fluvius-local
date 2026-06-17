@@ -194,21 +194,38 @@ BRAND_URL=https://fluvius.finderbit.com.br \
 Esta stack usa o n8n externo:
 
 ```text
-https://n8n.corrigeja.com.br
+https://n8n.atrasado.online
 ```
 
-Workflow inicial:
+Workflow de triagem inicial:
 
 ```text
-n8n-workflows/fluvius-events-starter.json
+n8n-workflows/chatwoot-events-starter.json
 ```
 
 Como ativar eventos do Fluvius para o n8n:
 
-1. Abra o n8n em `https://n8n.corrigeja.com.br`.
-2. Importe o workflow `n8n-workflows/fluvius-events-starter.json`.
-3. Ative o workflow no n8n.
-4. Rode:
+1. Abra o n8n em `https://n8n.atrasado.online`.
+2. Crie uma credencial `Header Auth` chamada `Fluvius Chatwoot API`.
+   - Header name: `api_access_token`
+   - Header value: token de usuário do Fluvius/Chatwoot com acesso à conta.
+3. Configure no ambiente do n8n:
+
+```env
+CHATWOOT_BASE_URL=https://fluvius.finderbit.com.br
+```
+
+   Também pode usar `FLUVIUS_CHATWOOT_BASE_URL`; o workflow aceita os dois nomes.
+4. Importe o workflow `n8n-workflows/chatwoot-events-starter.json`.
+5. Em cada node HTTP, selecione a credencial `Fluvius Chatwoot API`.
+6. Ative o workflow no n8n.
+7. No ambiente onde você roda este repositório, configure o webhook público do n8n:
+
+```env
+N8N_WEBHOOK_URL=https://n8n.atrasado.online/webhook/fluvius-events
+```
+
+8. Rode:
 
 ```bash
 ./scripts/register-chatwoot-n8n-webhook.sh
@@ -217,7 +234,7 @@ Como ativar eventos do Fluvius para o n8n:
 Isso registra no Fluvius o webhook:
 
 ```text
-https://n8n.corrigeja.com.br/webhook/fluvius-events
+https://n8n.atrasado.online/webhook/fluvius-events
 ```
 
 Eventos enviados:
@@ -229,6 +246,20 @@ Eventos enviados:
 - `message_updated`
 - `contact_created`
 - `contact_updated`
+
+Triagem executada pelo workflow:
+
+- processa apenas `message_created` de mensagens públicas incoming;
+- envia menu com `1 - Comercial`, `2 - Financeiro`, `3 - Suporte`;
+- salva estado em `custom_attributes` da conversa (`fluvius_triage_state`, timestamps e opção escolhida);
+- aplica labels `triagem-comercial`, `triagem-financeiro` ou `triagem-suporte`;
+- ignora mensagens de agentes, mensagens privadas, eventos duplicados e conversas já roteadas.
+
+Quando o n8n estiver ativo, mantenha o bot interno desligado:
+
+```env
+TRIAGE_BOT_ENABLED=false
+```
 
 Para remover:
 

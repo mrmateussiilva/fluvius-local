@@ -266,13 +266,20 @@ docker compose -f docker-compose.prod.yml logs -f chatwoot internal-chat evoluti
 
 ## Integração n8n
 
-O fluxo inicial está em:
+O workflow de triagem inicial está em:
 
 ```text
 n8n-workflows/chatwoot-events-starter.json
 ```
 
-O README menciona o caminho `n8n-workflows/fluvius-events-starter.json`, mas o arquivo presente no repositório é `chatwoot-events-starter.json`. Antes de seguir a documentação operacional, confirme qual nome deve ser usado.
+Esse workflow recebe webhooks do Chatwoot, processa apenas mensagens públicas incoming e executa a triagem inicial com as opções Comercial, Financeiro e Suporte. O estado é salvo em `custom_attributes` da conversa com chaves `fluvius_triage_*`, e o roteamento aplica labels `triagem-comercial`, `triagem-financeiro` ou `triagem-suporte`.
+
+O workflow chama a API pública do Chatwoot diretamente. No n8n, crie/associe uma credencial `Header Auth` chamada `Fluvius Chatwoot API` com header `api_access_token`.
+
+Variáveis esperadas:
+
+- No ambiente do n8n: `CHATWOOT_BASE_URL` ou `FLUVIUS_CHATWOOT_BASE_URL`, apontando para o domínio público do Fluvius.
+- No ambiente que registra o webhook: `N8N_WEBHOOK_URL`, apontando para `https://<dominio-n8n>/webhook/fluvius-events`.
 
 Eventos enviados ao n8n:
 
@@ -285,6 +292,8 @@ Eventos enviados ao n8n:
 - `contact_updated`
 
 Registre o webhook somente depois de ativar o workflow no n8n, para evitar erro 404 nas entregas do Chatwoot.
+
+Quando o workflow n8n estiver ativo, mantenha o bot de triagem interno desativado com `TRIAGE_BOT_ENABLED=false` para evitar respostas duplicadas.
 
 ## Cuidados ao Alterar
 
@@ -300,4 +309,4 @@ Registre o webhook somente depois de ativar o workflow no n8n, para evitar erro 
 
 - Não há script de teste automatizado definido no `internal-chat/package.json`; existe apenas `npm start`.
 - O arquivo `test_signup.js` existe na raiz, mas não há comando documentado para executá-lo.
-- O README e o arquivo real do workflow n8n parecem discordar no nome do JSON.
+- O workflow n8n usa `CHATWOOT_BASE_URL`/`FLUVIUS_CHATWOOT_BASE_URL` no node `Prepare Incoming`; confirme essas variáveis antes de ativar em cada ambiente.
