@@ -27,6 +27,9 @@ const CRM_AI_CONFIDENCE_THRESHOLD = Math.min(Math.max(Number(process.env.CRM_AI_
 const CRM_AI_MAX_MESSAGES = Math.min(Math.max(Number(process.env.CRM_AI_MAX_MESSAGES || 30), 5), 80);
 const CRM_AI_AUTO_INTERVAL_SECONDS = Math.max(Number(process.env.CRM_AI_AUTO_INTERVAL_SECONDS || 0), 0);
 const CRM_AI_AUTO_LIMIT = Math.min(Math.max(Number(process.env.CRM_AI_AUTO_LIMIT || 5), 1), 30);
+const EVOLUTION_HISTORY_AUTO_IMPORT_ENABLED = String(process.env.EVOLUTION_HISTORY_AUTO_IMPORT_ENABLED || 'false') === 'true';
+const EVOLUTION_HISTORY_AUTO_IMPORT_INTERVAL_SECONDS = Math.max(Number(process.env.EVOLUTION_HISTORY_AUTO_IMPORT_INTERVAL_SECONDS || 10), 5);
+const EVOLUTION_HISTORY_AUTO_IMPORT_LIMIT = Math.min(Math.max(Number(process.env.EVOLUTION_HISTORY_AUTO_IMPORT_LIMIT || 20), 1), 100);
 const TRIAGE_BOT_ENABLED = String(process.env.TRIAGE_BOT_ENABLED || 'false') === 'true';
 const TRIAGE_BOT_INTERVAL_SECONDS = Math.max(Number(process.env.TRIAGE_BOT_INTERVAL_SECONDS || 20), 10);
 const TRIAGE_BOT_LIMIT = Math.min(Math.max(Number(process.env.TRIAGE_BOT_LIMIT || 10), 1), 50);
@@ -1993,7 +1996,7 @@ function evolutionMessageContent(row) {
 }
 
 function evolutionRemoteJid(key = {}) {
-  return key.remoteJidAlt || key.remoteJid || '';
+  return key.remoteJidAlt || key.remoteJid || key.remotejidalt || key.remotejid || '';
 }
 
 function jidPhone(jid) {
@@ -2003,7 +2006,7 @@ function jidPhone(jid) {
 
 function contactNameFromEvolution(row, remoteJid) {
   const chatName = String(row.chat_name || row.name || '').trim();
-  const pushName = String(row.pushName || '').trim();
+  const pushName = String(row.pushName || row.pushname || '').trim();
   if (chatName && chatName !== 'Você') return chatName;
   if (pushName && pushName !== 'Você') return pushName;
   return String(remoteJid || '').split('@')[0] || 'Contato';
@@ -2109,10 +2112,14 @@ async function ensureCwtThreadForRemoteJid({
   return conversationData;
 }
 
-async function importEvolutionHistoryForClient(client) {
+async function importEvolutionHistoryForClient(client, options = {}) {
   if (!client.instance_name || !client.chatwoot_account_id || !client.inbox_id) {
     throw new Error('client is missing instance/account/inbox');
   }
+
+  const syncSettings = options.syncSettings !== false;
+  const ensureAllThreads = options.ensureAllThreads !== false;
+  const pendingLimit = Math.min(Math.max(Number(options.pendingLimit || 0), 0), 500);
 
   const instance = await evolutionPool.query('SELECT id FROM "Instance" WHERE name = $1 LIMIT 1', [client.instance_name]);
   if (!instance.rowCount) throw new Error(`Evolution instance not found: ${client.instance_name}`);
@@ -2132,38 +2139,44 @@ async function importEvolutionHistoryForClient(client) {
   }
   if (!userId) throw new Error(`No Fluvius user found for account ${client.chatwoot_account_id}`);
 
-  const userToken = await getPlatformUserToken(userId);
-  if (userToken) await enableEvolutionHistorySync(client.instance_name, client.chatwoot_account_id, userToken);
+  if (syncSettings) {
+    const userToken = await getPlatformUserToken(userId);
+    if (userToken) await enableEvolutionHistorySync(client.instance_name, client.chatwoot_account_id, userToken);
+  }
 
   const [contactsResult, chatsResult, evolutionRows] = await Promise.all([
-    evolutionPool.query(
-      `
-        SELECT
-          id,
-          "remoteJid" AS remoteJid,
-          "pushName" AS pushName,
-          "createdAt" AS createdAt,
-          "updatedAt" AS updatedAt
-        FROM "Contact"
-        WHERE "instanceId" = $1
-        ORDER BY "createdAt" ASC, id ASC
-      `,
-      [instanceId],
-    ),
-    evolutionPool.query(
-      `
-        SELECT
-          id,
-          name,
-          "remoteJid" AS remoteJid,
-          "createdAt" AS createdAt,
-          "updatedAt" AS updatedAt
-        FROM "Chat"
-        WHERE "instanceId" = $1
-        ORDER BY "createdAt" ASC, id ASC
-      `,
-      [instanceId],
-    ),
+    ensureAllThreads
+      ? evolutionPool.query(
+          `
+            SELECT
+              id,
+              "remoteJid" AS remoteJid,
+              "pushName" AS pushName,
+              "createdAt" AS createdAt,
+              "updatedAt" AS updatedAt
+            FROM "Contact"
+            WHERE "instanceId" = $1
+            ORDER BY "createdAt" ASC, id ASC
+          `,
+          [instanceId],
+        )
+      : Promise.resolve({ rows: [], rowCount: 0 }),
+    ensureAllThreads
+      ? evolutionPool.query(
+          `
+            SELECT
+              id,
+              name,
+              "remoteJid" AS remoteJid,
+              "createdAt" AS createdAt,
+              "updatedAt" AS updatedAt
+            FROM "Chat"
+            WHERE "instanceId" = $1
+            ORDER BY "createdAt" ASC, id ASC
+          `,
+          [instanceId],
+        )
+      : Promise.resolve({ rows: [], rowCount: 0 }),
     evolutionPool.query(
       `
         SELECT
@@ -2183,8 +2196,9 @@ async function importEvolutionHistoryForClient(client) {
           AND (m."chatwootMessageId" IS NULL OR m."chatwootMessageId" = 0)
           AND COALESCE(m.key->>'remoteJidAlt', m.key->>'remoteJid') <> 'status@broadcast'
         ORDER BY m."messageTimestamp" ASC, m.id ASC
+        ${pendingLimit > 0 ? 'LIMIT $2' : ''}
       `,
-      [instanceId],
+      pendingLimit > 0 ? [instanceId, pendingLimit] : [instanceId],
     ),
   ]);
 
@@ -3302,6 +3316,57 @@ function startCrmAiAutoAnalysis() {
   setInterval(runCrmAiAutoAnalysis, intervalMs);
 }
 
+let evolutionHistoryAutoImportRunning = false;
+
+async function evolutionHistoryAutoImportClients() {
+  const { rows } = await pool.query(
+    `SELECT *
+     FROM fluvius_clients
+     WHERE instance_name IS NOT NULL
+       AND instance_name <> ''
+       AND chatwoot_account_id IS NOT NULL
+       AND inbox_id IS NOT NULL
+     ORDER BY id ASC`,
+  );
+  return rows;
+}
+
+async function runEvolutionHistoryAutoImport() {
+  if (!EVOLUTION_HISTORY_AUTO_IMPORT_ENABLED || evolutionHistoryAutoImportRunning) return;
+  evolutionHistoryAutoImportRunning = true;
+  try {
+    const clients = await evolutionHistoryAutoImportClients();
+    for (const client of clients) {
+      try {
+        const result = await importEvolutionHistoryForClient(client, {
+          syncSettings: false,
+          ensureAllThreads: false,
+          pendingLimit: EVOLUTION_HISTORY_AUTO_IMPORT_LIMIT,
+        });
+        if (result.messages_found || result.messages_imported || result.messages_relinked || result.messages_skipped) {
+          console.log(
+            `[evolution-import] client=${client.id} instance=${client.instance_name} found=${result.messages_found} imported=${result.messages_imported} relinked=${result.messages_relinked} skipped=${result.messages_skipped}`,
+          );
+        }
+      } catch (error) {
+        console.warn(`[evolution-import] failed client=${client.id} instance=${client.instance_name}: ${error.message}`);
+      }
+    }
+  } catch (error) {
+    console.warn(`[evolution-import] automatic import failed: ${error.message}`);
+  } finally {
+    evolutionHistoryAutoImportRunning = false;
+  }
+}
+
+function startEvolutionHistoryAutoImport() {
+  if (!EVOLUTION_HISTORY_AUTO_IMPORT_ENABLED) return;
+  const intervalMs = EVOLUTION_HISTORY_AUTO_IMPORT_INTERVAL_SECONDS * 1000;
+  console.log(`[evolution-import] automatic import enabled every ${EVOLUTION_HISTORY_AUTO_IMPORT_INTERVAL_SECONDS}s`);
+  setTimeout(runEvolutionHistoryAutoImport, 5000);
+  setInterval(runEvolutionHistoryAutoImport, intervalMs);
+}
+
 let triageBotRunning = false;
 
 async function triageClients() {
@@ -3474,6 +3539,7 @@ migrateWithRetry()
   .then(() => {
     server.listen(port, () => {
       console.log(`Fluvius internal chat listening on ${port}`);
+      startEvolutionHistoryAutoImport();
       startCrmAiAutoAnalysis();
       startTriageBot();
     });

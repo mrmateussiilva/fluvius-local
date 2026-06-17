@@ -343,6 +343,22 @@ Esse script:
 - repara o link Evolution/Fluvius;
 - chama a importacao/relink de historico pelo Manager.
 
+O `internal-chat` tambem roda uma importacao automatica leve para esse mesmo caso. Em producao ela fica ligada por padrao e processa, a cada ciclo, mensagens da Evolution que ainda estao sem `chatwootMessageId`:
+
+```env
+EVOLUTION_HISTORY_AUTO_IMPORT_ENABLED=true
+EVOLUTION_HISTORY_AUTO_IMPORT_INTERVAL_SECONDS=10
+EVOLUTION_HISTORY_AUTO_IMPORT_LIMIT=20
+```
+
+Para acompanhar:
+
+```bash
+docker compose logs -f internal-chat
+```
+
+Procure por linhas com `[evolution-import]`.
+
 ## Reaplicar marca Fluvius
 
 Se o container ou as configuracoes do Fluvius forem recriados, rode:
