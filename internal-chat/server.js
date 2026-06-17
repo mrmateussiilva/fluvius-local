@@ -1999,6 +1999,41 @@ function evolutionRemoteJid(key = {}) {
   return key.remoteJidAlt || key.remoteJid || key.remotejidalt || key.remotejid || '';
 }
 
+async function updateEvolutionMessageChatwootLink(row, values) {
+  const params = [
+    values.messageId,
+    values.inboxId,
+    values.conversationId,
+    values.contactInboxSourceId,
+    row.id,
+  ];
+  const byId = await evolutionPool.query(
+    'UPDATE "Message" SET "chatwootMessageId" = $1, "chatwootInboxId" = $2, "chatwootConversationId" = $3, "chatwootContactInboxSourceId" = $4, "chatwootIsRead" = true WHERE id = $5',
+    params,
+  );
+  if (byId.rowCount || !row.instance_id || !row.wa_id) return byId.rowCount;
+
+  const byWaId = await evolutionPool.query(
+    'UPDATE "Message" SET "chatwootMessageId" = $1, "chatwootInboxId" = $2, "chatwootConversationId" = $3, "chatwootContactInboxSourceId" = $4, "chatwootIsRead" = true WHERE "instanceId" = $5 AND key->>\'id\' = $6',
+    [values.messageId, values.inboxId, values.conversationId, values.contactInboxSourceId, row.instance_id, row.wa_id],
+  );
+  return byWaId.rowCount;
+}
+
+async function markEvolutionMessageSkipped(row) {
+  const byId = await evolutionPool.query(
+    'UPDATE "Message" SET "chatwootMessageId" = -1, "chatwootIsRead" = true WHERE id = $1 AND ("chatwootMessageId" IS NULL OR "chatwootMessageId" = 0)',
+    [row.id],
+  );
+  if (byId.rowCount || !row.instance_id || !row.wa_id) return byId.rowCount;
+
+  const byWaId = await evolutionPool.query(
+    'UPDATE "Message" SET "chatwootMessageId" = -1, "chatwootIsRead" = true WHERE "instanceId" = $1 AND key->>\'id\' = $2 AND ("chatwootMessageId" IS NULL OR "chatwootMessageId" = 0)',
+    [row.instance_id, row.wa_id],
+  );
+  return byWaId.rowCount;
+}
+
 function jidPhone(jid) {
   if (!jid || !jid.endsWith('@s.whatsapp.net')) return null;
   return `+${jid.split('@')[0].replace(/\D/g, '')}`;
@@ -2181,6 +2216,8 @@ async function importEvolutionHistoryForClient(client, options = {}) {
       `
         SELECT
           m.id,
+          m."instanceId" AS instance_id,
+          m.key->>'id' AS wa_id,
           m.key,
           m."pushName",
           m."messageType",
@@ -2250,6 +2287,7 @@ async function importEvolutionHistoryForClient(client, options = {}) {
     const key = safeJsonParse(row.key);
     const remoteJid = evolutionRemoteJid(key);
     if (!remoteJid || remoteJid === 'status@broadcast') {
+      await markEvolutionMessageSkipped(row);
       stats.messages_skipped += 1;
       continue;
     }
@@ -2270,10 +2308,12 @@ async function importEvolutionHistoryForClient(client, options = {}) {
 
     if (existingMessage.rowCount) {
       const existing = existingMessage.rows[0];
-      await evolutionPool.query(
-        'UPDATE "Message" SET "chatwootMessageId" = $1, "chatwootInboxId" = $2, "chatwootConversationId" = $3, "chatwootContactInboxSourceId" = $4, "chatwootIsRead" = true WHERE id = $5',
-        [existing.id, existing.inbox_id, existing.conversation_id, existing.contact_inbox_source_id, row.id],
-      );
+      await updateEvolutionMessageChatwootLink(row, {
+        messageId: existing.id,
+        inboxId: existing.inbox_id,
+        conversationId: existing.conversation_id,
+        contactInboxSourceId: existing.contact_inbox_source_id,
+      });
       stats.messages_relinked += 1;
       continue;
     }
@@ -2290,11 +2330,13 @@ async function importEvolutionHistoryForClient(client, options = {}) {
       stats,
     });
     if (!conversation) {
+      await markEvolutionMessageSkipped(row);
       stats.messages_skipped += 1;
       continue;
     }
 
     if (!content) {
+      await markEvolutionMessageSkipped(row);
       stats.messages_skipped += 1;
       continue;
     }
@@ -2320,10 +2362,12 @@ async function importEvolutionHistoryForClient(client, options = {}) {
       [createdAt, conversation.id],
     );
 
-    await evolutionPool.query(
-      'UPDATE "Message" SET "chatwootMessageId" = $1, "chatwootInboxId" = $2, "chatwootConversationId" = $3, "chatwootContactInboxSourceId" = $4, "chatwootIsRead" = true WHERE id = $5',
-      [message.rows[0].id, client.inbox_id, conversation.id, conversation.contact_inbox_source_id, row.id],
-    );
+    await updateEvolutionMessageChatwootLink(row, {
+      messageId: message.rows[0].id,
+      inboxId: client.inbox_id,
+      conversationId: conversation.id,
+      contactInboxSourceId: conversation.contact_inbox_source_id,
+    });
 
     stats.messages_imported += 1;
   }
