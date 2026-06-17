@@ -52,6 +52,8 @@ count_update() {
 repair_instance() {
   local instance_name="$1"
   local account_id="$2"
+  local account_conversation_filter=""
+  local account_message_filter=""
   local instance_id
   local conversation_ids
   local message_ids
@@ -60,12 +62,16 @@ repair_instance() {
   local fixed_contact_sources=0
 
   validate_instance_name "$instance_name"
+  if [ -n "$account_id" ] && [[ "$account_id" =~ ^[0-9]+$ ]]; then
+    account_conversation_filter="AND account_id = $account_id"
+    account_message_filter="AND account_id = $account_id"
+  fi
+
   echo ">>> Instancia: $instance_name"
 
   instance_id="$(
     psql_db "$EVOLUTION_POSTGRES_DB" -At \
-      -v instance_name="$instance_name" \
-      -c 'SELECT id FROM "Instance" WHERE name = :'\''instance_name'\'' LIMIT 1;'
+      -c "SELECT id FROM \"Instance\" WHERE name = '$instance_name' LIMIT 1;"
   )"
 
   if [ -z "$instance_id" ]; then
@@ -76,12 +82,11 @@ repair_instance() {
 
   conversation_ids="$(
     psql_db "$EVOLUTION_POSTGRES_DB" -At \
-      -v instance_id="$instance_id" \
-      -c 'SELECT DISTINCT "chatwootConversationId"
-          FROM "Message"
-          WHERE "instanceId" = :'\''instance_id'\''
-            AND COALESCE("chatwootConversationId", 0) > 0
-          ORDER BY 1;'
+      -c "SELECT DISTINCT \"chatwootConversationId\"
+          FROM \"Message\"
+          WHERE \"instanceId\" = '$instance_id'
+            AND COALESCE(\"chatwootConversationId\", 0) > 0
+          ORDER BY 1;"
   )"
 
   while IFS= read -r conversation_id; do
@@ -91,13 +96,11 @@ repair_instance() {
     local exists
     exists="$(
       psql_db "$CHATWOOT_POSTGRES_DB" -At \
-        -v conversation_id="$conversation_id" \
-        -v account_id="$account_id" \
-        -c 'SELECT 1
+        -c "SELECT 1
             FROM conversations
-            WHERE id = :conversation_id::bigint
-              AND (NULLIF(:'\''account_id'\'', '\'''\'' ) IS NULL OR account_id = NULLIF(:'\''account_id'\'', '\'''\'' )::bigint)
-            LIMIT 1;'
+            WHERE id = $conversation_id
+              $account_conversation_filter
+            LIMIT 1;"
     )"
 
     if [ "$exists" = "1" ]; then
@@ -107,21 +110,19 @@ repair_instance() {
     local updated
     updated="$(
       count_update "$EVOLUTION_POSTGRES_DB" \
-        -v instance_id="$instance_id" \
-        -v conversation_id="$conversation_id" \
-        -c 'WITH fixed AS (
-              UPDATE "Message"
+        -c "WITH fixed AS (
+              UPDATE \"Message\"
               SET
-                "chatwootMessageId" = NULL,
-                "chatwootInboxId" = NULL,
-                "chatwootConversationId" = NULL,
-                "chatwootContactInboxSourceId" = NULL,
-                "chatwootIsRead" = false
-              WHERE "instanceId" = :'\''instance_id'\''
-                AND "chatwootConversationId" = :conversation_id::bigint
+                \"chatwootMessageId\" = NULL,
+                \"chatwootInboxId\" = NULL,
+                \"chatwootConversationId\" = NULL,
+                \"chatwootContactInboxSourceId\" = NULL,
+                \"chatwootIsRead\" = false
+              WHERE \"instanceId\" = '$instance_id'
+                AND \"chatwootConversationId\" = $conversation_id
               RETURNING 1
             )
-            SELECT COUNT(*) FROM fixed;'
+            SELECT COUNT(*) FROM fixed;"
     )"
     fixed_conversations=$((fixed_conversations + updated))
     echo "  Conversa apagada no Fluvius: $conversation_id; referencias limpas em $updated mensagens."
@@ -129,12 +130,11 @@ repair_instance() {
 
   message_ids="$(
     psql_db "$EVOLUTION_POSTGRES_DB" -At \
-      -v instance_id="$instance_id" \
-      -c 'SELECT DISTINCT "chatwootMessageId"
-          FROM "Message"
-          WHERE "instanceId" = :'\''instance_id'\''
-            AND COALESCE("chatwootMessageId", 0) > 0
-          ORDER BY 1;'
+      -c "SELECT DISTINCT \"chatwootMessageId\"
+          FROM \"Message\"
+          WHERE \"instanceId\" = '$instance_id'
+            AND COALESCE(\"chatwootMessageId\", 0) > 0
+          ORDER BY 1;"
   )"
 
   while IFS= read -r message_id; do
@@ -144,13 +144,11 @@ repair_instance() {
     local exists
     exists="$(
       psql_db "$CHATWOOT_POSTGRES_DB" -At \
-        -v message_id="$message_id" \
-        -v account_id="$account_id" \
-        -c 'SELECT 1
+        -c "SELECT 1
             FROM messages
-            WHERE id = :message_id::bigint
-              AND (NULLIF(:'\''account_id'\'', '\'''\'' ) IS NULL OR account_id = NULLIF(:'\''account_id'\'', '\'''\'' )::bigint)
-            LIMIT 1;'
+            WHERE id = $message_id
+              $account_message_filter
+            LIMIT 1;"
     )"
 
     if [ "$exists" = "1" ]; then
@@ -160,34 +158,31 @@ repair_instance() {
     local updated
     updated="$(
       count_update "$EVOLUTION_POSTGRES_DB" \
-        -v instance_id="$instance_id" \
-        -v message_id="$message_id" \
-        -c 'WITH fixed AS (
-              UPDATE "Message"
+        -c "WITH fixed AS (
+              UPDATE \"Message\"
               SET
-                "chatwootMessageId" = NULL,
-                "chatwootIsRead" = false
-              WHERE "instanceId" = :'\''instance_id'\''
-                AND "chatwootMessageId" = :message_id::bigint
+                \"chatwootMessageId\" = NULL,
+                \"chatwootIsRead\" = false
+              WHERE \"instanceId\" = '$instance_id'
+                AND \"chatwootMessageId\" = $message_id
               RETURNING 1
             )
-            SELECT COUNT(*) FROM fixed;'
+            SELECT COUNT(*) FROM fixed;"
     )"
     fixed_messages=$((fixed_messages + updated))
   done <<< "$message_ids"
 
   fixed_contact_sources="$(
     count_update "$EVOLUTION_POSTGRES_DB" \
-      -v instance_id="$instance_id" \
-      -c 'WITH fixed AS (
-            UPDATE "Message"
-            SET "chatwootContactInboxSourceId" = NULL
-            WHERE "instanceId" = :'\''instance_id'\''
-              AND "chatwootContactInboxSourceId" IS NOT NULL
-              AND COALESCE("chatwootConversationId", 0) = 0
+      -c "WITH fixed AS (
+            UPDATE \"Message\"
+            SET \"chatwootContactInboxSourceId\" = NULL
+            WHERE \"instanceId\" = '$instance_id'
+              AND \"chatwootContactInboxSourceId\" IS NOT NULL
+              AND COALESCE(\"chatwootConversationId\", 0) = 0
             RETURNING 1
           )
-          SELECT COUNT(*) FROM fixed;'
+          SELECT COUNT(*) FROM fixed;"
   )"
 
   echo "  Resumo: mensagens com conversa orfa=$fixed_conversations, mensagens orfas=$fixed_messages, contact source limpo=$fixed_contact_sources"
