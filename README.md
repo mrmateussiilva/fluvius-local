@@ -269,6 +269,34 @@ Para remover:
 
 Nao registre o webhook antes de ativar o workflow no n8n, porque o Fluvius vai tentar entregar eventos e receber erro 404.
 
+## Triage bot por webhook
+
+O `triage-bot` é o serviço novo e isolado para triagem inicial via webhook oficial do Chatwoot. Ele recebe apenas `message_created`, usa API do Chatwoot para responder, aplicar labels e atribuir times, e guarda estado próprio em SQLite.
+
+A ativação/desativação e os IDs dos times são configurados por empresa no Manager, dentro do detalhe da empresa em `Bot de triagem inicial`.
+
+Guia completo:
+
+```text
+docs/triage-bot.md
+```
+
+Subir localmente:
+
+```bash
+docker compose up -d --build triage-bot
+```
+
+Webhook interno no Chatwoot:
+
+```text
+POST http://triage-bot:4100/webhook/chatwoot
+Header: X-Triage-Webhook-Secret
+Evento: message_created
+```
+
+Não use o workflow n8n e o `triage-bot` ao mesmo tempo para a mesma conta, e mantenha `TRIAGE_BOT_ENABLED=false` no `internal-chat`.
+
 ## Enderecos entre containers
 
 Dentro da rede Docker, nao use `localhost` entre servicos:

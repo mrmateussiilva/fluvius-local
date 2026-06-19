@@ -6,5 +6,7 @@
 backups/
 node_modules/
 internal-chat/node_modules/
+__pycache__/
+*.pyc
 *.tar.gz
 /tmp/

@@ -2,7 +2,7 @@ import express from 'express';
 import fs from 'fs/promises';
 import http from 'http';
 import path from 'path';
-import { randomBytes } from 'crypto';
+import { createHash, randomBytes } from 'crypto';
 import { Server } from 'socket.io';
 import pg from 'pg';
 import { fileURLToPath } from 'url';
@@ -16,9 +16,14 @@ const EVOLUTION_URL = String(process.env.EVOLUTION_SERVER_URL || 'http://evoluti
 const EVOLUTION_API_KEY = String(process.env.EVOLUTION_API_KEY || '');
 const CHATWOOT_URL = String(process.env.CHATWOOT_FRONTEND_URL || 'http://chatwoot:3000');
 const CHATWOOT_PUBLIC_URL = String(process.env.CHATWOOT_PUBLIC_URL || process.env.CHATWOOT_FRONTEND_URL || 'http://localhost:3000');
+const INTERNAL_CHAT_PUBLIC_URL = String(process.env.INTERNAL_CHAT_PUBLIC_URL || 'http://localhost:4000');
+const TRIAGE_BOT_URL = String(process.env.TRIAGE_BOT_URL || 'http://triage-bot:4100').replace(/\/$/, '');
+const TRIAGE_ADMIN_TOKEN = String(process.env.TRIAGE_ADMIN_TOKEN || process.env.TRIAGE_WEBHOOK_SECRET || '');
+const TRIAGE_WEBHOOK_SECRET = String(process.env.TRIAGE_WEBHOOK_SECRET || TRIAGE_ADMIN_TOKEN || '');
 const CHATWOOT_API_TOKEN = String(process.env.CHATWOOT_USER_ACCESS_TOKEN || '');
 const CHATWOOT_PLATFORM_TOKEN = String(process.env.CHATWOOT_PLATFORM_TOKEN || '');
 const CHATWOOT_ACCOUNT_ID = String(process.env.CHATWOOT_ACCOUNT_ID || '1');
+const PASSWORD_RESET_TOKEN_TTL_HOURS = 24;
 const MANAGER_ADMIN_TOKEN = String(process.env.MANAGER_ADMIN_TOKEN || '');
 const GEMINI_API_KEY = String(process.env.GEMINI_API_KEY || '');
 const CRM_AI_ENABLED = String(process.env.CRM_AI_ENABLED || 'false') === 'true';
@@ -333,6 +338,22 @@ async function migrate() {
       ADD COLUMN IF NOT EXISTS integration_last_checked_at TIMESTAMP,
       ADD COLUMN IF NOT EXISTS integration_last_error TEXT,
       ADD COLUMN IF NOT EXISTS integration_repaired_at TIMESTAMP;
+
+    CREATE TABLE IF NOT EXISTS fluvius_password_reset_tokens (
+      token_hash TEXT PRIMARY KEY,
+      user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      account_id BIGINT NOT NULL,
+      client_id BIGINT REFERENCES fluvius_clients(id) ON DELETE CASCADE,
+      expires_at TIMESTAMP NOT NULL,
+      used_at TIMESTAMP,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS index_fluvius_password_reset_tokens_user_account
+      ON fluvius_password_reset_tokens(user_id, account_id);
+
+    CREATE INDEX IF NOT EXISTS index_fluvius_password_reset_tokens_expires_at
+      ON fluvius_password_reset_tokens(expires_at);
   `);
 }
 
@@ -1554,6 +1575,94 @@ async function cwtFetch(path, options = {}) {
   }
 }
 
+async function triageBotFetch(path, options = {}) {
+  try {
+    const headers = { 'X-Triage-Admin-Token': TRIAGE_ADMIN_TOKEN, ...(options.headers || {}) };
+    if (options.body && !headers['Content-Type'] && !(options.body instanceof FormData)) {
+      headers['Content-Type'] = 'application/json';
+    }
+    const res = await fetch(`${TRIAGE_BOT_URL}${path}`, {
+      ...options,
+      headers,
+    });
+    const text = await res.text();
+    try { return { status: res.status, data: JSON.parse(text) }; } catch { return { status: res.status, data: text }; }
+  } catch (err) {
+    return { status: 503, data: { error: 'Network/Fetch Error', details: err.message } };
+  }
+}
+
+async function triageWebhookStatus(accountId) {
+  const url = `${TRIAGE_BOT_URL}/webhook/chatwoot`;
+  const { rows } = await pool.query(
+    `
+      SELECT id, url, subscriptions, secret
+      FROM webhooks
+      WHERE account_id = $1
+        AND url = $2
+      LIMIT 1
+    `,
+    [accountId, url],
+  );
+  const row = rows[0] || null;
+  return {
+    registered: Boolean(row),
+    id: row?.id || null,
+    url,
+    secret_configured: Boolean(row?.secret),
+  };
+}
+
+async function ensureTriageWebhook(accountId) {
+  if (!TRIAGE_WEBHOOK_SECRET) throw new Error('TRIAGE_WEBHOOK_SECRET is not configured');
+  const url = `${TRIAGE_BOT_URL}/webhook/chatwoot`;
+  const subscriptions = ['message_created'];
+  const existing = await pool.query(
+    'SELECT id FROM webhooks WHERE account_id = $1 AND url = $2 LIMIT 1',
+    [accountId, url],
+  );
+
+  if (existing.rowCount) {
+    const { rows } = await pool.query(
+      `
+        UPDATE webhooks
+        SET name = $1,
+            webhook_type = 0,
+            subscriptions = $2::jsonb,
+            secret = $3,
+            updated_at = NOW()
+        WHERE id = $4
+        RETURNING id, url, subscriptions, secret
+      `,
+      ['Fluvius triage bot', JSON.stringify(subscriptions), TRIAGE_WEBHOOK_SECRET, existing.rows[0].id],
+    );
+    return {
+      registered: true,
+      id: rows[0].id,
+      url: rows[0].url,
+      secret_configured: Boolean(rows[0].secret),
+    };
+  }
+
+  const { rows } = await pool.query(
+    `
+      INSERT INTO webhooks
+        (account_id, url, name, webhook_type, subscriptions, secret, created_at, updated_at)
+      VALUES
+        ($1, $2, $3, 0, $4::jsonb, $5, NOW(), NOW())
+      RETURNING id, url, subscriptions, secret
+    `,
+    [accountId, url, 'Fluvius triage bot', JSON.stringify(subscriptions), TRIAGE_WEBHOOK_SECRET],
+  );
+
+  return {
+    registered: true,
+    id: rows[0].id,
+    url: rows[0].url,
+    secret_configured: Boolean(rows[0].secret),
+  };
+}
+
 // Uses Fluvius Platform API token for account/user provisioning
 async function platformFetch(path, options = {}) {
   try {
@@ -2172,6 +2281,88 @@ function parseAgentPayload(value) {
 
 function generateTempPassword() {
   return `${randomBytes(4).toString('hex')}Ab1!`;
+}
+
+function passwordResetTokenHash(token) {
+  return createHash('sha256').update(String(token || '')).digest('hex');
+}
+
+function passwordResetUrl(token) {
+  return `${INTERNAL_CHAT_PUBLIC_URL.replace(/\/$/, '')}/reset-password/${encodeURIComponent(token)}`;
+}
+
+function sanitizeResetUser(row) {
+  if (!row) return null;
+  return {
+    id: Number(row.id),
+    name: row.name,
+    email: row.email,
+    account_id: Number(row.account_id),
+    role_label: row.role_label || row.role || 'Agente',
+  };
+}
+
+async function createPasswordResetLink({ clientId, accountId, userId }) {
+  const token = randomBytes(32).toString('base64url');
+  const tokenHash = passwordResetTokenHash(token);
+
+  await pool.query(
+    `
+      UPDATE fluvius_password_reset_tokens
+      SET used_at = NOW()
+      WHERE user_id = $1
+        AND account_id = $2
+        AND used_at IS NULL
+        AND expires_at > NOW()
+    `,
+    [userId, accountId],
+  );
+
+  await pool.query(
+    `
+      INSERT INTO fluvius_password_reset_tokens
+        (token_hash, user_id, account_id, client_id, expires_at)
+      VALUES ($1, $2, $3, $4, NOW() + ($5::int * INTERVAL '1 hour'))
+    `,
+    [tokenHash, userId, accountId, clientId, PASSWORD_RESET_TOKEN_TTL_HOURS],
+  );
+
+  return {
+    reset_url: passwordResetUrl(token),
+    expires_in_hours: PASSWORD_RESET_TOKEN_TTL_HOURS,
+  };
+}
+
+async function findValidPasswordResetToken(token) {
+  const tokenHash = passwordResetTokenHash(token);
+  const { rows } = await pool.query(
+    `
+      SELECT
+        reset.token_hash,
+        reset.user_id AS id,
+        reset.account_id,
+        reset.client_id,
+        reset.expires_at,
+        reset.used_at,
+        users.name,
+        users.email,
+        account_users.role
+      FROM fluvius_password_reset_tokens reset
+      INNER JOIN users ON users.id = reset.user_id
+      INNER JOIN account_users
+        ON account_users.user_id = reset.user_id
+       AND account_users.account_id = reset.account_id
+      WHERE reset.token_hash = $1
+      LIMIT 1
+    `,
+    [tokenHash],
+  );
+
+  const row = rows[0];
+  if (!row) return { error: 'invalid_token' };
+  if (row.used_at) return { error: 'token_already_used' };
+  if (new Date(row.expires_at).getTime() <= Date.now()) return { error: 'token_expired' };
+  return { row };
 }
 
 async function resetCwtUserPassword(userId, password) {
@@ -2919,6 +3110,69 @@ app.get('/manager/api/clients/:id', async (req, res) => {
   });
 });
 
+app.get('/manager/api/clients/:id/triage-bot', async (req, res) => {
+  const id = Number(req.params.id);
+  if (!TRIAGE_ADMIN_TOKEN) return res.status(400).json({ error: 'TRIAGE_ADMIN_TOKEN is not configured' });
+
+  const { rows } = await pool.query(`SELECT ${CLIENT_PUBLIC_FIELDS} FROM fluvius_clients WHERE id = $1`, [id]);
+  if (!rows.length) return res.status(404).json({ error: 'client not found' });
+  const client = rows[0];
+  if (!client.chatwoot_account_id) return res.status(400).json({ error: 'client is missing chatwoot account' });
+
+  const result = await triageBotFetch(`/admin/accounts/${client.chatwoot_account_id}/config`);
+  if (result.status >= 300) return res.status(result.status).json(result.data);
+  const webhook = await triageWebhookStatus(client.chatwoot_account_id);
+
+  return res.json({
+    ...result.data,
+    client_id: id,
+    chatwoot_account_id: client.chatwoot_account_id,
+    webhook,
+    webhook_url: webhook.url,
+  });
+});
+
+app.patch('/manager/api/clients/:id/triage-bot', async (req, res) => {
+  const id = Number(req.params.id);
+  if (!TRIAGE_ADMIN_TOKEN) return res.status(400).json({ error: 'TRIAGE_ADMIN_TOKEN is not configured' });
+
+  const { rows } = await pool.query(`SELECT ${CLIENT_PUBLIC_FIELDS} FROM fluvius_clients WHERE id = $1`, [id]);
+  if (!rows.length) return res.status(404).json({ error: 'client not found' });
+  const client = rows[0];
+  if (!client.chatwoot_account_id) return res.status(400).json({ error: 'client is missing chatwoot account' });
+
+  const payload = {
+    enabled: Boolean(req.body?.enabled),
+    finance_team_id: String(req.body?.finance_team_id || '').trim(),
+    support_team_id: String(req.body?.support_team_id || '').trim(),
+    sales_team_id: String(req.body?.sales_team_id || '').trim(),
+    human_team_id: String(req.body?.human_team_id || '').trim(),
+  };
+
+  let webhook = await triageWebhookStatus(client.chatwoot_account_id);
+  if (payload.enabled) {
+    try {
+      webhook = await ensureTriageWebhook(client.chatwoot_account_id);
+    } catch (error) {
+      return res.status(500).json({ error: 'ensure_triage_webhook_failed', details: error.message });
+    }
+  }
+
+  const result = await triageBotFetch(`/admin/accounts/${client.chatwoot_account_id}/config`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  });
+  if (result.status >= 300) return res.status(result.status).json(result.data);
+
+  return res.json({
+    ...result.data,
+    client_id: id,
+    chatwoot_account_id: client.chatwoot_account_id,
+    webhook,
+    webhook_url: webhook.url,
+  });
+});
+
 // Rename the visible WhatsApp channel/inbox name for manager operations.
 app.patch('/manager/api/clients/:id/channel-name', async (req, res) => {
   const id = Number(req.params.id);
@@ -3432,6 +3686,151 @@ app.post('/manager/api/clients/:id/agents', async (req, res) => {
       created_agents: createdAgents,
     });
   }
+});
+
+app.get('/reset-password/:token', (_req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'reset-password.html'));
+});
+
+app.get('/api/password-reset/:token', async (req, res) => {
+  const token = String(req.params.token || '');
+  const result = await findValidPasswordResetToken(token);
+  if (result.error) return res.status(400).json({ error: result.error });
+  return res.json({
+    user: sanitizeResetUser(result.row),
+    expires_at: result.row.expires_at,
+    chatwoot_url: CHATWOOT_PUBLIC_URL,
+  });
+});
+
+app.post('/api/password-reset/:token', async (req, res) => {
+  const token = String(req.params.token || '');
+  const password = String(req.body?.password || '');
+  const passwordConfirmation = String(req.body?.password_confirmation || '');
+
+  if (!CHATWOOT_PLATFORM_TOKEN) return res.status(400).json({ error: 'CHATWOOT_PLATFORM_TOKEN is not configured' });
+  if (password.length < 8) return res.status(400).json({ error: 'password_too_short' });
+  if (password !== passwordConfirmation) return res.status(400).json({ error: 'password_confirmation_mismatch' });
+
+  const result = await findValidPasswordResetToken(token);
+  if (result.error) return res.status(400).json({ error: result.error });
+
+  const consumed = await pool.query(
+    `
+      UPDATE fluvius_password_reset_tokens
+      SET used_at = NOW()
+      WHERE token_hash = $1
+        AND used_at IS NULL
+        AND expires_at > NOW()
+      RETURNING token_hash
+    `,
+    [result.row.token_hash],
+  );
+  if (!consumed.rowCount) return res.status(400).json({ error: 'token_already_used' });
+
+  const reset = await resetCwtUserPassword(result.row.id, password);
+  if (reset.status >= 300) {
+    return res.status(reset.status).json({
+      step: 'reset_password_with_token',
+      error: reset.data,
+    });
+  }
+
+  return res.json({
+    ok: true,
+    user: sanitizeResetUser(result.row),
+    chatwoot_url: CHATWOOT_PUBLIC_URL,
+  });
+});
+
+// Generate a one-use password reset link for the company administrator.
+app.post('/manager/api/clients/:id/admin/password-reset-link', async (req, res) => {
+  const id = Number(req.params.id);
+  if (!CHATWOOT_PLATFORM_TOKEN) return res.status(400).json({ error: 'CHATWOOT_PLATFORM_TOKEN is not configured' });
+
+  const { rows } = await pool.query('SELECT * FROM fluvius_clients WHERE id = $1', [id]);
+  if (!rows.length) return res.status(404).json({ error: 'client not found' });
+
+  const client = rows[0];
+  if (!client.chatwoot_account_id) return res.status(400).json({ error: 'client is missing chatwoot account' });
+
+  let userId = client.chatwoot_user_id || null;
+  if (!userId && client.chatwoot_user_email) {
+    userId = await getCwtUserIdByEmail(client.chatwoot_user_email);
+    if (userId) await pool.query('UPDATE fluvius_clients SET chatwoot_user_id = $1 WHERE id = $2', [userId, id]);
+  }
+
+  if (!userId) return res.status(404).json({ error: 'client admin user not found' });
+
+  const membership = await pool.query(
+    `SELECT users.id, users.name, users.email, account_users.role
+     FROM account_users
+     INNER JOIN users ON users.id = account_users.user_id
+     WHERE account_users.account_id = $1
+       AND users.id = $2
+     LIMIT 1`,
+    [client.chatwoot_account_id, userId],
+  );
+  if (!membership.rowCount) return res.status(404).json({ error: 'client admin user is not linked to this account' });
+
+  const link = await createPasswordResetLink({
+    clientId: id,
+    accountId: client.chatwoot_account_id,
+    userId,
+  });
+
+  return res.json({
+    ...link,
+    user: {
+      id: userId,
+      name: membership.rows[0].name || client.name,
+      email: membership.rows[0].email || client.chatwoot_user_email || client.email,
+      role_label: 'Administrador',
+    },
+    chatwoot_url: CHATWOOT_PUBLIC_URL,
+  });
+});
+
+// Generate a one-use password reset link for a company agent.
+app.post('/manager/api/clients/:id/agents/:userId/password-reset-link', async (req, res) => {
+  const id = Number(req.params.id);
+  const userId = Number(req.params.userId);
+  if (!userId) return res.status(400).json({ error: 'userId is required' });
+  if (!CHATWOOT_PLATFORM_TOKEN) return res.status(400).json({ error: 'CHATWOOT_PLATFORM_TOKEN is not configured' });
+
+  const { rows } = await pool.query('SELECT * FROM fluvius_clients WHERE id = $1', [id]);
+  if (!rows.length) return res.status(404).json({ error: 'client not found' });
+
+  const client = rows[0];
+  if (!client.chatwoot_account_id) return res.status(400).json({ error: 'client is missing chatwoot account' });
+
+  const membership = await pool.query(
+    `SELECT users.id, users.name, users.email, account_users.role
+     FROM account_users
+     INNER JOIN users ON users.id = account_users.user_id
+     WHERE account_users.account_id = $1
+       AND users.id = $2
+     LIMIT 1`,
+    [client.chatwoot_account_id, userId],
+  );
+  if (!membership.rowCount) return res.status(404).json({ error: 'agent not found for this client' });
+
+  const link = await createPasswordResetLink({
+    clientId: id,
+    accountId: client.chatwoot_account_id,
+    userId,
+  });
+
+  return res.json({
+    ...link,
+    user: {
+      id: userId,
+      name: membership.rows[0].name,
+      email: membership.rows[0].email,
+      role_label: 'Agente',
+    },
+    chatwoot_url: CHATWOOT_PUBLIC_URL,
+  });
 });
 
 // Reset the company administrator password and return the new temporary password once.

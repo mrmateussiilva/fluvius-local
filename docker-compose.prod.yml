@@ -236,6 +236,7 @@ services:
       PORT: 4000
       NODE_ENV: production
       INTERNAL_CHAT_ALLOWED_ORIGINS: ${INTERNAL_CHAT_ALLOWED_ORIGINS}
+      INTERNAL_CHAT_PUBLIC_URL: ${INTERNAL_CHAT_PUBLIC_URL}
       POSTGRES_HOST: postgres
       POSTGRES_PORT: 5432
       POSTGRES_DATABASE: ${CHATWOOT_POSTGRES_DB}
@@ -251,6 +252,9 @@ services:
       CHATWOOT_USER_ACCESS_TOKEN: ${CHATWOOT_USER_ACCESS_TOKEN:-}
       CHATWOOT_PLATFORM_TOKEN: ${CHATWOOT_PLATFORM_TOKEN:-}
       MANAGER_ADMIN_TOKEN: ${MANAGER_ADMIN_TOKEN}
+      TRIAGE_BOT_URL: http://triage-bot:4100
+      TRIAGE_ADMIN_TOKEN: ${TRIAGE_ADMIN_TOKEN:-${TRIAGE_WEBHOOK_SECRET:-}}
+      TRIAGE_WEBHOOK_SECRET: ${TRIAGE_WEBHOOK_SECRET:-}
       CRM_AI_ENABLED: ${CRM_AI_ENABLED:-false}
       CRM_AI_MODEL: ${CRM_AI_MODEL:-gemini-2.0-flash}
       CRM_AI_CONFIDENCE_THRESHOLD: ${CRM_AI_CONFIDENCE_THRESHOLD:-0.7}
@@ -261,11 +265,6 @@ services:
       EVOLUTION_HISTORY_AUTO_IMPORT_INTERVAL_SECONDS: ${EVOLUTION_HISTORY_AUTO_IMPORT_INTERVAL_SECONDS:-10}
       EVOLUTION_HISTORY_AUTO_IMPORT_LIMIT: ${EVOLUTION_HISTORY_AUTO_IMPORT_LIMIT:-20}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
-      TRIAGE_BOT_ENABLED: ${TRIAGE_BOT_ENABLED:-false}
-      TRIAGE_BOT_INTERVAL_SECONDS: ${TRIAGE_BOT_INTERVAL_SECONDS:-20}
-      TRIAGE_BOT_LIMIT: ${TRIAGE_BOT_LIMIT:-10}
-      TRIAGE_BOT_NEW_CONVERSATION_WINDOW_HOURS: ${TRIAGE_BOT_NEW_CONVERSATION_WINDOW_HOURS:-24}
-      TRIAGE_BOT_OPTIONS: ${TRIAGE_BOT_OPTIONS:-}
     volumes:
       - internal_chat_uploads:/app/public/uploads
     healthcheck:
@@ -274,6 +273,37 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
+
+  triage-bot:
+    image: ${TRIAGE_BOT_IMAGE:-fluvius-triage-bot:local}
+    build:
+      context: ./triage-bot
+    container_name: fluvius-triage-bot
+    restart: unless-stopped
+    depends_on:
+      chatwoot:
+        condition: service_healthy
+    environment:
+      PORT: 4100
+      TRIAGE_DATABASE_PATH: /data/triage-bot.sqlite3
+      CHATWOOT_BASE_URL: http://chatwoot:3000
+      CHATWOOT_ACCOUNT_ID: ${TRIAGE_CHATWOOT_ACCOUNT_ID:-${CHATWOOT_ACCOUNT_ID:-1}}
+      CHATWOOT_API_TOKEN: ${TRIAGE_CHATWOOT_API_TOKEN:-${CHATWOOT_USER_ACCESS_TOKEN:-}}
+      TRIAGE_WEBHOOK_SECRET: ${TRIAGE_WEBHOOK_SECRET:-}
+      TRIAGE_ADMIN_TOKEN: ${TRIAGE_ADMIN_TOKEN:-${TRIAGE_WEBHOOK_SECRET:-}}
+      TRIAGE_DEFAULT_ENABLED: ${TRIAGE_DEFAULT_ENABLED:-false}
+      TRIAGE_FINANCE_TEAM_ID: ${TRIAGE_FINANCE_TEAM_ID:-}
+      TRIAGE_SUPPORT_TEAM_ID: ${TRIAGE_SUPPORT_TEAM_ID:-}
+      TRIAGE_SALES_TEAM_ID: ${TRIAGE_SALES_TEAM_ID:-}
+      TRIAGE_HUMAN_TEAM_ID: ${TRIAGE_HUMAN_TEAM_ID:-}
+    volumes:
+      - triage_bot_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:4100/health >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
 volumes:
   postgres_data:
@@ -284,3 +314,4 @@ volumes:
   chatwoot_public_uploads:
   evolution_instances:
   internal_chat_uploads:
+  triage_bot_data:

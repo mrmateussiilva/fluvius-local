@@ -549,6 +549,19 @@
   </div>
 </div>
 
+<!-- Password Reset Link Modal -->
+<div class="modal-overlay hidden" id="passwordResetModal">
+  <div class="modal">
+    <h2>Link de redefinição</h2>
+    <p>Envie este link para o usuário definir a própria senha. O link é único e expira em 24 horas.</p>
+    <div id="passwordResetContent" style="background:var(--surface2);border-radius:8px;padding:16px;margin-bottom:20px;font-size:13px;line-height:2;word-break:break-word"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="document.getElementById('passwordResetModal').classList.add('hidden')">Fechar</button>
+      <button class="btn btn-primary" onclick="copyPasswordResetLink()">Copiar link</button>
+    </div>
+  </div>
+</div>
+
 <!-- Health Modal -->
 <div class="modal-overlay hidden" id="healthModal">
   <div class="modal">
@@ -844,6 +857,7 @@
         <div class="company-actions">
           ${primaryAction}
           <button class="btn btn-ghost btn-sm" onclick="openCompany(${c.id})">Ver empresa</button>
+          ${c.chatwoot_account_id ? `<button class="btn btn-ghost btn-sm" onclick="generateClientAdminPasswordResetLink(${c.id}, '${escapeAttr(c.chatwoot_user_email || c.email || 'admin')}', this)">Link senha admin</button>` : ''}
           <a class="btn btn-ghost btn-sm" href="${chatwootUrl}" target="_blank" style="text-decoration:none">Fluvius</a>
           <a class="btn btn-ghost btn-sm" href="${link}" target="_blank" style="text-decoration:none">Onboarding</a>
           <button class="btn btn-ghost btn-sm" onclick="copyLink('${link}', this)">Copiar onboarding</button>
@@ -909,12 +923,24 @@
         <a class="btn btn-ghost btn-sm" href="${onboardLink}" target="_blank" style="text-decoration:none">Abrir onboarding WhatsApp</a>
         <button class="btn btn-ghost btn-sm" onclick="copyCompanyAccess(${c.id})">Copiar acesso</button>
         <button class="btn btn-ghost btn-sm" onclick="renameCompanyChannel(${c.id}, '${escapeAttr(channelName)}', this)">Renomear conexão</button>
-        <button class="btn btn-ghost btn-sm" onclick="resetClientAdminPassword(${c.id}, '${escapeAttr(c.chatwoot_user_email || c.email || 'admin')}', this)">Redefinir senha do admin</button>
+        <button class="btn btn-ghost btn-sm" onclick="generateClientAdminPasswordResetLink(${c.id}, '${escapeAttr(c.chatwoot_user_email || c.email || 'admin')}', this)">Gerar link de senha do admin</button>
         <button class="btn btn-ghost btn-sm" onclick="openAgentsModal(${c.id}, '${escapeAttr(c.name)}')">Adicionar agentes</button>
         <button class="btn btn-ghost btn-sm" onclick="importHistory(${c.id}, '${escapeAttr(c.name)}', this)">Importar histórico</button>
       </div>
       <h3 style="font-size:14px;margin:18px 0 8px">Agentes da empresa</h3>
       ${renderAgents(c.id, c.agents || [])}
+      <section class="crm-panel">
+        <div class="crm-panel-head">
+          <div>
+            <h3>Bot de triagem inicial</h3>
+            <p>Configuração por empresa para responder o primeiro contato, aplicar labels e encaminhar para times.</p>
+          </div>
+          <button class="btn btn-ghost btn-sm" onclick="loadCompanyTriageBot(${c.id})">Atualizar bot</button>
+        </div>
+        <div id="triageBotContent">
+          <div class="loading-wrap"><span class="spinner"></span> Carregando bot...</div>
+        </div>
+      </section>
       <section class="crm-panel">
         <div class="crm-panel-head">
           <div>
@@ -934,6 +960,7 @@
         A empresa deve usar o Fluvius para atendimento e CRM. O Manager fica reservado para sua operacao privada de revenda, provisionamento, conexao WhatsApp e manutencao.
       </div>
     `;
+    loadCompanyTriageBot(c.id);
     loadCompanyCrm(c.id);
   }
 
@@ -973,7 +1000,7 @@
             <span style="color:var(--muted)">${agent.email}</span>
             <div style="display:flex;align-items:center;gap:8px;justify-content:flex-end;flex-wrap:wrap">
               <span class="badge badge-unknown">${agent.role_label}</span>
-              <button class="btn btn-ghost btn-sm" onclick="resetAgentPassword(${clientId}, ${agent.id}, '${escapeAttr(agent.email)}', this)">Redefinir senha</button>
+              <button class="btn btn-ghost btn-sm" onclick="generateAgentPasswordResetLink(${clientId}, ${agent.id}, '${escapeAttr(agent.email)}', this)">Gerar link de senha</button>
             </div>
           </div>
         `).join('')}
@@ -999,6 +1026,93 @@
   function formatCrmDate(value) {
     if (!value) return 'Sem atividade';
     return new Date(value).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+  }
+
+  async function loadCompanyTriageBot(clientId) {
+    const content = document.getElementById('triageBotContent');
+    if (!content) return;
+    content.innerHTML = `<div class="loading-wrap"><span class="spinner"></span> Carregando bot...</div>`;
+    try {
+      const r = await apiFetch(`${API}/clients/${clientId}/triage-bot`);
+      const data = await readJsonResponse(r);
+      if (!r.ok) {
+        content.innerHTML = `<div style="color:var(--red)">${readableError(data)}</div>`;
+        return;
+      }
+      content.innerHTML = renderTriageBotForm(clientId, data);
+    } catch (e) {
+      content.innerHTML = `<div style="color:var(--red)">Erro: ${e.message}</div>`;
+    }
+  }
+
+  function renderTriageBotForm(clientId, config) {
+    const status = config.enabled
+      ? '<span class="badge badge-open">Ativo</span>'
+      : '<span class="badge badge-close">Desativado</span>';
+    const webhookStatus = config.webhook?.registered
+      ? '<span class="badge badge-open">Registrado</span>'
+      : '<span class="badge badge-close">Não registrado</span>';
+    const signatureStatus = config.webhook?.secret_configured
+      ? '<span class="badge badge-open">Assinado</span>'
+      : '<span class="badge badge-close">Sem assinatura</span>';
+    return `
+      <div class="detail-grid" style="margin-bottom:14px">
+        <div class="detail-box"><span>Status</span><strong>${status}</strong></div>
+        <div class="detail-box"><span>Conta Fluvius</span><strong>${config.chatwoot_account_id || config.account_id}</strong></div>
+        <div class="detail-box"><span>Webhook</span><strong>${webhookStatus}</strong></div>
+        <div class="detail-box"><span>Segurança</span><strong>${signatureStatus}</strong></div>
+        <div class="detail-box"><span>URL interna</span><code>${escapeHtml(config.webhook_url || 'http://triage-bot:4100/webhook/chatwoot')}</code></div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-bottom:14px">
+        <label style="display:flex;align-items:center;gap:8px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px">
+          <input type="checkbox" id="triageEnabledInput" ${config.enabled ? 'checked' : ''} />
+          <span>Ativar bot nesta empresa</span>
+        </label>
+        <div class="detail-box"><span>Labels aplicadas</span><strong>financeiro, suporte, comercial, humano, triagem_concluida</strong></div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px">
+        <div class="form-group"><label>Time Financeiro ID</label><input id="triageFinanceTeamInput" value="${escapeAttr(config.finance_team_id || '')}" placeholder="opcional" /></div>
+        <div class="form-group"><label>Time Suporte ID</label><input id="triageSupportTeamInput" value="${escapeAttr(config.support_team_id || '')}" placeholder="opcional" /></div>
+        <div class="form-group"><label>Time Comercial ID</label><input id="triageSalesTeamInput" value="${escapeAttr(config.sales_team_id || '')}" placeholder="opcional" /></div>
+        <div class="form-group"><label>Time Humano ID</label><input id="triageHumanTeamInput" value="${escapeAttr(config.human_team_id || '')}" placeholder="opcional" /></div>
+      </div>
+      <div class="company-actions" style="margin-top:12px">
+        <button class="btn btn-primary btn-sm" onclick="saveCompanyTriageBot(${clientId}, this)">Salvar bot</button>
+      </div>
+      <div style="margin-top:10px;color:var(--muted);font-size:12px;line-height:1.5">
+        Ao ativar, o Manager registra o webhook assinado desta conta automaticamente. Desativado, o bot ignora os webhooks desta empresa.
+      </div>
+    `;
+  }
+
+  async function saveCompanyTriageBot(clientId, btn) {
+    const original = btn?.innerHTML || 'Salvar bot';
+    if (btn) { btn.disabled = true; btn.innerHTML = `<span class="spinner"></span>`; }
+    const payload = {
+      enabled: document.getElementById('triageEnabledInput')?.checked || false,
+      finance_team_id: document.getElementById('triageFinanceTeamInput')?.value.trim() || '',
+      support_team_id: document.getElementById('triageSupportTeamInput')?.value.trim() || '',
+      sales_team_id: document.getElementById('triageSalesTeamInput')?.value.trim() || '',
+      human_team_id: document.getElementById('triageHumanTeamInput')?.value.trim() || '',
+    };
+    try {
+      const r = await apiFetch(`${API}/clients/${clientId}/triage-bot`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await readJsonResponse(r);
+      if (!r.ok) {
+        toast(readableError(data), 'error');
+        return;
+      }
+      document.getElementById('triageBotContent').innerHTML = renderTriageBotForm(clientId, data);
+      toast(payload.enabled ? 'Bot de triagem ativado.' : 'Bot de triagem desativado.');
+    } catch (e) {
+      toast(`Erro: ${e.message}`, 'error');
+    } finally {
+      if (btn) { btn.disabled = false; btn.innerHTML = original; }
+    }
   }
 
   async function loadCompanyCrm(clientId) {
@@ -1188,20 +1302,42 @@
     }
   }
 
-  async function resetClientAdminPassword(clientId, email, btn) {
-    if (!confirm(`Gerar uma nova senha temporária para o administrador ${email}? A senha anterior deixará de funcionar.`)) return;
+  let _lastPasswordResetInfo = null;
+
+  function showPasswordResetLink(data, title = 'Link de redefinição') {
+    _lastPasswordResetInfo = data;
+    const modal = document.getElementById('passwordResetModal');
+    modal.querySelector('h2').textContent = title;
+    document.getElementById('passwordResetContent').innerHTML = `
+      <div><strong>Usuário:</strong> ${escapeHtml(data.user?.name || '-')}</div>
+      <div><strong>Login:</strong> ${escapeHtml(data.user?.email || '-')}</div>
+      <div><strong>Validade:</strong> ${data.expires_in_hours || 24} horas</div>
+      <div><strong>Link:</strong> <a href="${escapeAttr(data.reset_url)}" target="_blank" style="color:var(--accent)">${escapeHtml(data.reset_url)}</a></div>
+    `;
+    modal.classList.add('priority');
+    modal.classList.remove('hidden');
+  }
+
+  function copyPasswordResetLink() {
+    if (!_lastPasswordResetInfo?.reset_url) return;
+    navigator.clipboard.writeText(_lastPasswordResetInfo.reset_url);
+    toast('Link de redefinição copiado!');
+  }
+
+  async function generateClientAdminPasswordResetLink(clientId, email, btn) {
+    if (!confirm(`Gerar um link para o administrador ${email} definir uma nova senha? Links antigos deste usuário serão invalidados.`)) return;
     const original = btn.innerHTML;
     btn.innerHTML = `<span class="spinner"></span>`;
     btn.disabled = true;
     try {
-      const r = await apiFetch(`${API}/clients/${clientId}/admin/reset-password`, { method: 'POST' });
+      const r = await apiFetch(`${API}/clients/${clientId}/admin/password-reset-link`, { method: 'POST' });
       const data = await r.json();
       if (!r.ok) {
         toast(readableError(data), 'error');
         return;
       }
-      showAgentCredentials([data], 'Senha do administrador');
-      toast('Senha temporária do admin gerada.');
+      showPasswordResetLink(data, 'Senha do administrador');
+      toast('Link de redefinição gerado.');
     } catch (e) {
       toast(`Erro: ${e.message}`, 'error');
     } finally {
@@ -1210,20 +1346,20 @@
     }
   }
 
-  async function resetAgentPassword(clientId, userId, email, btn) {
-    if (!confirm(`Gerar uma nova senha temporária para ${email}? A senha anterior deixará de funcionar.`)) return;
+  async function generateAgentPasswordResetLink(clientId, userId, email, btn) {
+    if (!confirm(`Gerar um link para ${email} definir uma nova senha? Links antigos deste usuário serão invalidados.`)) return;
     const original = btn.innerHTML;
     btn.innerHTML = `<span class="spinner"></span>`;
     btn.disabled = true;
     try {
-      const r = await apiFetch(`${API}/clients/${clientId}/agents/${userId}/reset-password`, { method: 'POST' });
+      const r = await apiFetch(`${API}/clients/${clientId}/agents/${userId}/password-reset-link`, { method: 'POST' });
       const data = await r.json();
       if (!r.ok) {
         toast(readableError(data), 'error');
         return;
       }
-      showAgentCredentials([data], 'Senha do agente');
-      toast('Senha temporária gerada.');
+      showPasswordResetLink(data, 'Senha do agente');
+      toast('Link de redefinição gerado.');
     } catch (e) {
       toast(`Erro: ${e.message}`, 'error');
     } finally {
