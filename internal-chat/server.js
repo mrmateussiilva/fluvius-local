@@ -30,11 +30,20 @@ const CRM_AI_AUTO_LIMIT = Math.min(Math.max(Number(process.env.CRM_AI_AUTO_LIMIT
 const EVOLUTION_HISTORY_AUTO_IMPORT_ENABLED = String(process.env.EVOLUTION_HISTORY_AUTO_IMPORT_ENABLED || 'false') === 'true';
 const EVOLUTION_HISTORY_AUTO_IMPORT_INTERVAL_SECONDS = Math.max(Number(process.env.EVOLUTION_HISTORY_AUTO_IMPORT_INTERVAL_SECONDS || 10), 5);
 const EVOLUTION_HISTORY_AUTO_IMPORT_LIMIT = Math.min(Math.max(Number(process.env.EVOLUTION_HISTORY_AUTO_IMPORT_LIMIT || 20), 1), 100);
+const EVOLUTION_CHATWOOT_DIRECT_DB_IMPORT_ENABLED = String(process.env.EVOLUTION_CHATWOOT_DIRECT_DB_IMPORT_ENABLED || 'false') === 'true';
 const TRIAGE_BOT_ENABLED = String(process.env.TRIAGE_BOT_ENABLED || 'false') === 'true';
 const TRIAGE_BOT_INTERVAL_SECONDS = Math.max(Number(process.env.TRIAGE_BOT_INTERVAL_SECONDS || 20), 10);
 const TRIAGE_BOT_LIMIT = Math.min(Math.max(Number(process.env.TRIAGE_BOT_LIMIT || 10), 1), 50);
 const TRIAGE_BOT_NEW_CONVERSATION_WINDOW_HOURS = Math.min(Math.max(Number(process.env.TRIAGE_BOT_NEW_CONVERSATION_WINDOW_HOURS || 24), 1), 720);
 const TRIAGE_BOT_OPTIONS_RAW = String(process.env.TRIAGE_BOT_OPTIONS || '');
+
+function directEvolutionImportDisabledPayload() {
+  return {
+    error: 'evolution_chatwoot_direct_db_import_disabled',
+    message:
+      'Importar mensagens da Evolution pelo internal-chat está desabilitado: esse fluxo escreve direto no banco do Chatwoot e pula callbacks/realtime do Rails.',
+  };
+}
 
 function assertValidInternalUrl(name, value) {
   let parsed;
@@ -1818,7 +1827,7 @@ async function cleanupProvisioning(created) {
   return cleanup;
 }
 
-async function enableEvolutionHistorySync(instanceName, accountId, userToken) {
+async function enableEvolutionHistorySync(instanceName, accountId, userToken, nameInbox = null) {
   const settings = await evoFetch(`/settings/set/${instanceName}`, {
     method: 'POST',
     body: JSON.stringify({
@@ -1834,7 +1843,7 @@ async function enableEvolutionHistorySync(instanceName, accountId, userToken) {
 
   const chatwoot = await evoFetch(`/chatwoot/set/${instanceName}`, {
     method: 'POST',
-    body: JSON.stringify(evolutionChatwootPayload(accountId, userToken)),
+    body: JSON.stringify(evolutionChatwootPayload(accountId, userToken, nameInbox)),
   });
 
   return { settings, chatwoot };
@@ -1844,8 +1853,8 @@ function expectedInboxWebhookUrl(instanceName) {
   return `${EVOLUTION_URL}/chatwoot/webhook/${instanceName}`;
 }
 
-function evolutionChatwootPayload(accountId, userToken) {
-  return {
+function evolutionChatwootPayload(accountId, userToken, nameInbox = null) {
+  const payload = {
     enabled: true,
     accountId: String(accountId),
     token: userToken,
@@ -1858,6 +1867,9 @@ function evolutionChatwootPayload(accountId, userToken) {
     importMessages: true,
     daysLimitImportMessages: 365,
   };
+  const inboxName = String(nameInbox || '').trim();
+  if (inboxName) payload.nameInbox = inboxName;
+  return payload;
 }
 
 async function setClientIntegrationState(clientId, status, error = null, repaired = false) {
@@ -1942,7 +1954,11 @@ async function repairClientIntegration(client) {
 
   const link = await evoFetch(`/chatwoot/set/${client.instance_name}`, {
     method: 'POST',
-    body: JSON.stringify(evolutionChatwootPayload(client.chatwoot_account_id, userToken)),
+    body: JSON.stringify(evolutionChatwootPayload(
+      client.chatwoot_account_id,
+      userToken,
+      client.channel_display_name,
+    )),
   });
   if (link.status < 300) actions.push('evolution_chatwoot_link_updated');
   else errors.push({ step: 'evolution_chatwoot_link', status: link.status, error: link.data });
@@ -2011,10 +2027,12 @@ async function clientIntegrationStatus(client) {
   if (link.status < 300) {
     const data = Array.isArray(link.data) ? link.data[0] : link.data;
     const url = data?.url || data?.chatwootUrl || data?.chatwoot_url || '';
+    const chatwootLinkOk = (!url || url === CHATWOOT_URL)
+      && (!data?.nameInbox || data.nameInbox === client.channel_display_name);
     result.chatwoot_link = {
-      ok: !url || url === CHATWOOT_URL,
-      status: 'ok',
-      details: data,
+      ok: chatwootLinkOk,
+      status: chatwootLinkOk ? 'ok' : 'mismatch',
+      details: { ...data, expected_nameInbox: client.channel_display_name },
     };
   } else if (link.status !== 404) {
     result.chatwoot_link = { ok: false, status: link.status, details: link.data };
@@ -2033,9 +2051,10 @@ async function clientIntegrationStatus(client) {
   );
   result.media_probe.details = { pending_media_messages: pendingMedia.rows[0]?.count || 0 };
 
-  const ok = result.evolution_instance.ok && result.inbox_webhook.ok && result.history_import.ok;
+  const ok = result.evolution_instance.ok && result.chatwoot_link.ok && result.inbox_webhook.ok && result.history_import.ok;
   await setClientIntegrationState(client.id, ok ? 'ok' : 'error', ok ? null : JSON.stringify({
     evolution_instance: result.evolution_instance,
+    chatwoot_link: result.chatwoot_link,
     inbox_webhook: result.inbox_webhook,
   }));
 
@@ -2473,6 +2492,12 @@ async function ensureCwtThreadForRemoteJid({
 }
 
 async function importEvolutionHistoryForClient(client, options = {}) {
+  if (!EVOLUTION_CHATWOOT_DIRECT_DB_IMPORT_ENABLED) {
+    const error = new Error(directEvolutionImportDisabledPayload().message);
+    error.code = 'EVOLUTION_CHATWOOT_DIRECT_DB_IMPORT_DISABLED';
+    throw error;
+  }
+
   if (!client.instance_name || !client.chatwoot_account_id || !client.inbox_id) {
     throw new Error('client is missing instance/account/inbox');
   }
@@ -2502,7 +2527,12 @@ async function importEvolutionHistoryForClient(client, options = {}) {
   let userToken = null;
   if (syncSettings) {
     userToken = await getPlatformUserToken(userId);
-    if (userToken) await enableEvolutionHistorySync(client.instance_name, client.chatwoot_account_id, userToken);
+    if (userToken) await enableEvolutionHistorySync(
+      client.instance_name,
+      client.chatwoot_account_id,
+      userToken,
+      client.channel_display_name,
+    );
   }
 
   const [contactsResult, chatsResult, evolutionRows] = await Promise.all([
@@ -2813,7 +2843,7 @@ app.post('/manager/api/instances', async (req, res) => {
   // 3. Link Evolution → Fluvius
   const link = await evoFetch(`/chatwoot/set/${name}`, {
     method: 'POST',
-    body: JSON.stringify(evolutionChatwootPayload(CHATWOOT_ACCOUNT_ID, CHATWOOT_API_TOKEN)),
+    body: JSON.stringify(evolutionChatwootPayload(CHATWOOT_ACCOUNT_ID, CHATWOOT_API_TOKEN, name)),
   });
   if (link.status >= 300) return res.status(link.status).json({ step: 'link_chatwoot', error: link.data });
 
@@ -2948,10 +2978,26 @@ app.patch('/manager/api/clients/:id/channel-name', async (req, res) => {
     [channelDisplayName, id],
   );
 
+  const chatwootLink = await evoFetch(`/chatwoot/set/${client.instance_name}`, {
+    method: 'POST',
+    body: JSON.stringify(evolutionChatwootPayload(
+      client.chatwoot_account_id,
+      userToken,
+      channelDisplayName,
+    )),
+  });
+  if (chatwootLink.status >= 300) {
+    return res.status(chatwootLink.status).json({
+      step: 'update_evolution_chatwoot_link',
+      error: chatwootLink.data,
+    });
+  }
+
   res.json({
     ...updated.rows[0],
     chatwoot_url: CHATWOOT_PUBLIC_URL,
     inbox_name: inbox.rows[0].name,
+    chatwoot_link: chatwootLink.data,
   });
 });
 
@@ -3224,7 +3270,7 @@ app.post('/manager/api/clients', async (req, res) => {
     // STEP 6: Link Evolution to Fluvius using the user's access token.
     const link = await evoFetch(`/chatwoot/set/${instanceName}`, {
       method: 'POST',
-      body: JSON.stringify(evolutionChatwootPayload(accountId, userToken)),
+      body: JSON.stringify(evolutionChatwootPayload(accountId, userToken, channelDisplayName)),
     });
     if (link.status >= 300) {
       const cleanup = await cleanupProvisioning(created);
@@ -3232,7 +3278,7 @@ app.post('/manager/api/clients', async (req, res) => {
       return res.status(err.status).json(err.body);
     }
 
-    const historySync = await enableEvolutionHistorySync(instanceName, accountId, userToken);
+    const historySync = await enableEvolutionHistorySync(instanceName, accountId, userToken, channelDisplayName);
     if (historySync.settings.status >= 300 || historySync.chatwoot.status >= 300) {
       const cleanup = await cleanupProvisioning(created);
       return res.status(500).json({
@@ -3519,6 +3565,10 @@ app.post('/manager/api/clients/:id/integration/repair', async (req, res) => {
 });
 
 app.post('/manager/api/clients/:id/import-history', async (req, res) => {
+  if (!EVOLUTION_CHATWOOT_DIRECT_DB_IMPORT_ENABLED) {
+    return res.status(410).json(directEvolutionImportDisabledPayload());
+  }
+
   const id = Number(req.params.id);
   const { rows } = await pool.query('SELECT * FROM fluvius_clients WHERE id = $1', [id]);
   if (!rows.length) return res.status(404).json({ error: 'client not found' });
@@ -3804,6 +3854,11 @@ async function runEvolutionHistoryAutoImport() {
 
 function startEvolutionHistoryAutoImport() {
   if (!EVOLUTION_HISTORY_AUTO_IMPORT_ENABLED) return;
+  if (!EVOLUTION_CHATWOOT_DIRECT_DB_IMPORT_ENABLED) {
+    console.warn('[evolution-import] automatic import disabled: direct Chatwoot DB writes are blocked');
+    return;
+  }
+
   const intervalMs = EVOLUTION_HISTORY_AUTO_IMPORT_INTERVAL_SECONDS * 1000;
   console.log(`[evolution-import] automatic import enabled every ${EVOLUTION_HISTORY_AUTO_IMPORT_INTERVAL_SECONDS}s`);
   setTimeout(runEvolutionHistoryAutoImport, 5000);
