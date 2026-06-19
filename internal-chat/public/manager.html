@@ -1046,6 +1046,8 @@
   }
 
   function renderTriageBotForm(clientId, config) {
+    const options = triageOptionsForForm(config);
+    const labels = [...new Set([...options.map(option => option.label).filter(Boolean), 'triagem_concluida'])].join(', ');
     const status = config.enabled
       ? '<span class="badge badge-open">Ativo</span>'
       : '<span class="badge badge-close">Desativado</span>';
@@ -1068,13 +1070,18 @@
           <input type="checkbox" id="triageEnabledInput" ${config.enabled ? 'checked' : ''} />
           <span>Ativar bot nesta empresa</span>
         </label>
-        <div class="detail-box"><span>Labels aplicadas</span><strong>financeiro, suporte, comercial, humano, triagem_concluida</strong></div>
+        <div class="detail-box"><span>Labels aplicadas</span><strong>${escapeHtml(labels)}</strong></div>
       </div>
-      <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px">
-        <div class="form-group"><label>Time Financeiro ID</label><input id="triageFinanceTeamInput" value="${escapeAttr(config.finance_team_id || '')}" placeholder="opcional" /></div>
-        <div class="form-group"><label>Time Suporte ID</label><input id="triageSupportTeamInput" value="${escapeAttr(config.support_team_id || '')}" placeholder="opcional" /></div>
-        <div class="form-group"><label>Time Comercial ID</label><input id="triageSalesTeamInput" value="${escapeAttr(config.sales_team_id || '')}" placeholder="opcional" /></div>
-        <div class="form-group"><label>Time Humano ID</label><input id="triageHumanTeamInput" value="${escapeAttr(config.human_team_id || '')}" placeholder="opcional" /></div>
+      <div class="form-group">
+        <label>Mensagem inicial</label>
+        <textarea id="triageGreetingInput" rows="3" placeholder="Texto enviado antes das opções">${escapeHtml(config.greeting_text || 'Olá! 👋\nAntes de te encaminhar, me diz com quem você deseja falar:')}</textarea>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin:14px 0 8px">
+        <strong>Opções do menu</strong>
+        <button class="btn btn-ghost btn-sm" onclick="addTriageOption()">Adicionar opção</button>
+      </div>
+      <div id="triageOptionRows" style="display:grid;gap:10px;overflow-x:auto">
+        ${renderTriageOptionRows(options)}
       </div>
       <div class="company-actions" style="margin-top:12px">
         <button class="btn btn-primary btn-sm" onclick="saveCompanyTriageBot(${clientId}, this)">Salvar bot</button>
@@ -1085,15 +1092,84 @@
     `;
   }
 
+  function triageOptionsForForm(config = {}) {
+    const fallback = [
+      { key: '1', text: 'Financeiro', label: 'financeiro', team_id: config.finance_team_id || '', confirmation_text: 'Perfeito, vou te encaminhar para Financeiro.' },
+      { key: '2', text: 'Suporte', label: 'suporte', team_id: config.support_team_id || '', confirmation_text: 'Perfeito, vou te encaminhar para Suporte.' },
+      { key: '3', text: 'Comercial', label: 'comercial', team_id: config.sales_team_id || '', confirmation_text: 'Perfeito, vou te encaminhar para Comercial.' },
+      { key: '4', text: 'Falar com atendente', label: 'humano', team_id: config.human_team_id || '', confirmation_text: 'Vou te encaminhar para um atendente.' },
+    ];
+    const source = Array.isArray(config.options) && config.options.length ? config.options : fallback;
+    return source.slice(0, 6).map((option, index) => ({
+      key: String(option.key || index + 1),
+      text: String(option.text || option.label || ''),
+      label: String(option.label || '').toLowerCase(),
+      team_id: String(option.team_id || ''),
+      confirmation_text: String(option.confirmation_text || ''),
+    }));
+  }
+
+  function renderTriageOptionRows(options) {
+    return options.map((option, index) => renderTriageOptionRow(option, index)).join('');
+  }
+
+  function renderTriageOptionRow(option = {}, index = 0) {
+    return `
+      <div class="triage-option-row" style="display:grid;grid-template-columns:64px minmax(140px,1.2fr) minmax(110px,1fr) 110px minmax(180px,1.4fr) auto;gap:8px;align-items:end;min-width:760px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px">
+        <div class="form-group" style="margin:0"><label>Número</label><input class="triage-option-key" value="${escapeAttr(option.key || index + 1)}" maxlength="8" /></div>
+        <div class="form-group" style="margin:0"><label>Texto</label><input class="triage-option-text" value="${escapeAttr(option.text || '')}" placeholder="Ex: Financeiro" /></div>
+        <div class="form-group" style="margin:0"><label>Label</label><input class="triage-option-label" value="${escapeAttr(option.label || '')}" placeholder="financeiro" /></div>
+        <div class="form-group" style="margin:0"><label>Time ID</label><input class="triage-option-team" value="${escapeAttr(option.team_id || '')}" placeholder="opcional" /></div>
+        <div class="form-group" style="margin:0"><label>Confirmação</label><input class="triage-option-confirmation" value="${escapeAttr(option.confirmation_text || '')}" placeholder="Perfeito, vou te encaminhar..." /></div>
+        <button class="btn btn-ghost btn-sm" onclick="removeTriageOption(this)">Remover</button>
+      </div>
+    `;
+  }
+
+  function addTriageOption() {
+    const container = document.getElementById('triageOptionRows');
+    if (!container) return;
+    const rows = [...container.querySelectorAll('.triage-option-row')];
+    if (rows.length >= 6) {
+      toast('O bot aceita no máximo 6 opções.', 'error');
+      return;
+    }
+    const used = new Set(rows.map(row => row.querySelector('.triage-option-key')?.value.trim()).filter(Boolean));
+    let key = 1;
+    while (used.has(String(key))) key += 1;
+    container.insertAdjacentHTML('beforeend', renderTriageOptionRow({ key: String(key), text: '', label: '', team_id: '', confirmation_text: '' }, rows.length));
+  }
+
+  function removeTriageOption(btn) {
+    btn?.closest('.triage-option-row')?.remove();
+  }
+
+  function collectTriageOptions() {
+    const rows = [...document.querySelectorAll('#triageOptionRows .triage-option-row')];
+    return rows.slice(0, 6).map((row, index) => {
+      const key = row.querySelector('.triage-option-key')?.value.trim() || String(index + 1);
+      const text = row.querySelector('.triage-option-text')?.value.trim() || '';
+      const label = row.querySelector('.triage-option-label')?.value.trim().toLowerCase() || '';
+      const teamId = row.querySelector('.triage-option-team')?.value.trim() || '';
+      const confirmation = row.querySelector('.triage-option-confirmation')?.value.trim() || '';
+      return { key, text, label, team_id: teamId, confirmation_text: confirmation };
+    }).filter(option => option.key && option.text && option.label);
+  }
+
   async function saveCompanyTriageBot(clientId, btn) {
     const original = btn?.innerHTML || 'Salvar bot';
     if (btn) { btn.disabled = true; btn.innerHTML = `<span class="spinner"></span>`; }
+    const options = collectTriageOptions();
+    if (!options.length) {
+      toast('Adicione pelo menos uma opção com número, texto e label.', 'error');
+      if (btn) { btn.disabled = false; btn.innerHTML = original; }
+      return;
+    }
     const payload = {
       enabled: document.getElementById('triageEnabledInput')?.checked || false,
-      finance_team_id: document.getElementById('triageFinanceTeamInput')?.value.trim() || '',
-      support_team_id: document.getElementById('triageSupportTeamInput')?.value.trim() || '',
-      sales_team_id: document.getElementById('triageSalesTeamInput')?.value.trim() || '',
-      human_team_id: document.getElementById('triageHumanTeamInput')?.value.trim() || '',
+      greeting_text: document.getElementById('triageGreetingInput')?.value.trim() || '',
+      invalid_behavior: 'route_to_human',
+      options,
     };
     try {
       const r = await apiFetch(`${API}/clients/${clientId}/triage-bot`, {

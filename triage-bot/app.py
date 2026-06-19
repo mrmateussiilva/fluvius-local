@@ -20,56 +20,49 @@ TRIAGE_WEBHOOK_SECRET = os.getenv("TRIAGE_WEBHOOK_SECRET", "")
 TRIAGE_ADMIN_TOKEN = os.getenv("TRIAGE_ADMIN_TOKEN", TRIAGE_WEBHOOK_SECRET)
 TRIAGE_DEFAULT_ENABLED = os.getenv("TRIAGE_DEFAULT_ENABLED", "false").lower() == "true"
 
-MENU_TEXT = "\n".join(
+DEFAULT_GREETING_TEXT = "\n".join(
     [
         "Olá! 👋",
         "Antes de te encaminhar, me diz com quem você deseja falar:",
-        "",
-        "1 - Financeiro",
-        "2 - Suporte",
-        "3 - Comercial",
-        "4 - Falar com atendente",
     ]
 )
 
-INVALID_SELECTION_TEXT = "\n".join(
-    [
-        "Não consegui identificar a opção.",
-        "Responda com uma das opções:",
-        "",
-        "1 - Financeiro",
-        "2 - Suporte",
-        "3 - Comercial",
-        "4 - Falar com atendente",
-    ]
-)
+INVALID_SELECTION_TEXT = "Vou te encaminhar para um atendente."
 
-OPTIONS = {
-    "1": {
-        "department": "Financeiro",
+DEFAULT_OPTIONS = [
+    {
+        "key": "1",
+        "text": "Financeiro",
         "label": "financeiro",
         "team_id": os.getenv("TRIAGE_FINANCE_TEAM_ID", ""),
         "team_aliases": ["financeiro", "finance"],
+        "confirmation_text": "Perfeito, vou te encaminhar para Financeiro.",
     },
-    "2": {
-        "department": "Suporte",
+    {
+        "key": "2",
+        "text": "Suporte",
         "label": "suporte",
         "team_id": os.getenv("TRIAGE_SUPPORT_TEAM_ID", ""),
         "team_aliases": ["suporte", "support"],
+        "confirmation_text": "Perfeito, vou te encaminhar para Suporte.",
     },
-    "3": {
-        "department": "Comercial",
+    {
+        "key": "3",
+        "text": "Comercial",
         "label": "comercial",
         "team_id": os.getenv("TRIAGE_SALES_TEAM_ID", ""),
         "team_aliases": ["comercial", "vendas", "sales"],
+        "confirmation_text": "Perfeito, vou te encaminhar para Comercial.",
     },
-    "4": {
-        "department": "um atendente",
+    {
+        "key": "4",
+        "text": "Falar com atendente",
         "label": "humano",
         "team_id": os.getenv("TRIAGE_HUMAN_TEAM_ID", ""),
         "team_aliases": ["humano", "atendente", "atendimento"],
+        "confirmation_text": "Vou te encaminhar para um atendente.",
     },
-}
+]
 
 COMPLETED_LABEL = "triagem_concluida"
 LABEL_COLORS = {
@@ -88,6 +81,12 @@ label_cache = {}
 
 def utc_now():
     return datetime.now(timezone.utc).isoformat()
+
+
+def ensure_column(conn, table, column, definition):
+    columns = {row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+    if column not in columns:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
 
 def ensure_database():
@@ -121,18 +120,84 @@ def ensure_database():
             )
             """
         )
+        ensure_column(conn, "triage_account_configs", "greeting_text", "TEXT")
+        ensure_column(conn, "triage_account_configs", "invalid_behavior", "TEXT")
+        ensure_column(conn, "triage_account_configs", "options_json", "TEXT")
         conn.commit()
+
+
+def default_options():
+    return json.loads(json.dumps(DEFAULT_OPTIONS))
+
+
+def legacy_options_from_team_ids(config):
+    options = default_options()
+    options[0]["team_id"] = config.get("finance_team_id") or ""
+    options[1]["team_id"] = config.get("support_team_id") or ""
+    options[2]["team_id"] = config.get("sales_team_id") or ""
+    options[3]["team_id"] = config.get("human_team_id") or ""
+    return options
+
+
+def sanitize_options(value, fallback=None):
+    raw_options = value if isinstance(value, list) else fallback or default_options()
+    options = []
+    used_keys = set()
+    for index, item in enumerate(raw_options[:6], start=1):
+        if not isinstance(item, dict):
+            continue
+        key = str(item.get("key") or index).strip()[:8]
+        text = str(item.get("text") or item.get("title") or item.get("department") or "").strip()[:80]
+        label = str(item.get("label") or "").strip().lower()[:60]
+        team_id = str(item.get("team_id") or "").strip()[:24]
+        confirmation_text = str(item.get("confirmation_text") or "").strip()[:240]
+        if not key or not text or not label or key in used_keys:
+            continue
+        used_keys.add(key)
+        if not confirmation_text:
+            confirmation_text = f"Perfeito, vou te encaminhar para {text}."
+        options.append(
+            {
+                "key": key,
+                "text": text,
+                "label": label,
+                "team_id": team_id,
+                "team_aliases": item.get("team_aliases") if isinstance(item.get("team_aliases"), list) else [label, text.lower()],
+                "confirmation_text": confirmation_text,
+            }
+        )
+    return options or default_options()
+
+
+def parse_options_json(value, fallback=None):
+    if not value:
+        return sanitize_options(fallback)
+    try:
+        parsed = json.loads(value)
+    except (TypeError, json.JSONDecodeError):
+        return sanitize_options(fallback)
+    return sanitize_options(parsed, fallback=fallback)
+
+
+def menu_text(config):
+    lines = [str(config.get("greeting_text") or DEFAULT_GREETING_TEXT).strip(), ""]
+    lines.extend(f"{option['key']} - {option['text']}" for option in config.get("options") or default_options())
+    return "\n".join(lines).strip()
 
 
 def account_config_defaults(account_id):
     enabled = TRIAGE_DEFAULT_ENABLED and CHATWOOT_ACCOUNT_ID and int(account_id) == CHATWOOT_ACCOUNT_ID
+    options = default_options()
     return {
         "account_id": int(account_id),
         "enabled": bool(enabled),
-        "finance_team_id": OPTIONS["1"]["team_id"],
-        "support_team_id": OPTIONS["2"]["team_id"],
-        "sales_team_id": OPTIONS["3"]["team_id"],
-        "human_team_id": OPTIONS["4"]["team_id"],
+        "greeting_text": DEFAULT_GREETING_TEXT,
+        "invalid_behavior": "route_to_human",
+        "options": options,
+        "finance_team_id": options[0]["team_id"],
+        "support_team_id": options[1]["team_id"],
+        "sales_team_id": options[2]["team_id"],
+        "human_team_id": options[3]["team_id"],
         "created_at": None,
         "updated_at": None,
     }
@@ -141,13 +206,23 @@ def account_config_defaults(account_id):
 def row_to_account_config(row, account_id):
     if not row:
         return account_config_defaults(account_id)
-    return {
-        "account_id": int(row[0]),
-        "enabled": bool(row[1]),
+    legacy = {
         "finance_team_id": row[2] or "",
         "support_team_id": row[3] or "",
         "sales_team_id": row[4] or "",
         "human_team_id": row[5] or "",
+    }
+    options = parse_options_json(row[10] if len(row) > 10 else "", fallback=legacy_options_from_team_ids(legacy))
+    return {
+        "account_id": int(row[0]),
+        "enabled": bool(row[1]),
+        "finance_team_id": legacy["finance_team_id"],
+        "support_team_id": legacy["support_team_id"],
+        "sales_team_id": legacy["sales_team_id"],
+        "human_team_id": legacy["human_team_id"],
+        "greeting_text": row[8] or DEFAULT_GREETING_TEXT,
+        "invalid_behavior": row[9] or "route_to_human",
+        "options": options,
         "created_at": row[6],
         "updated_at": row[7],
     }
@@ -157,7 +232,18 @@ def get_account_config(account_id):
     with sqlite3.connect(DATABASE_PATH) as conn:
         row = conn.execute(
             """
-            SELECT account_id, enabled, finance_team_id, support_team_id, sales_team_id, human_team_id, created_at, updated_at
+            SELECT
+              account_id,
+              enabled,
+              finance_team_id,
+              support_team_id,
+              sales_team_id,
+              human_team_id,
+              created_at,
+              updated_at,
+              greeting_text,
+              invalid_behavior,
+              options_json
             FROM triage_account_configs
             WHERE account_id = ?
             """,
@@ -169,24 +255,31 @@ def get_account_config(account_id):
 def save_account_config(account_id, config):
     now = utc_now()
     enabled = 1 if bool(config.get("enabled")) else 0
+    options = sanitize_options(config.get("options"), fallback=legacy_options_from_team_ids(config))
     values = {
-        "finance_team_id": str(config.get("finance_team_id") or "").strip(),
-        "support_team_id": str(config.get("support_team_id") or "").strip(),
-        "sales_team_id": str(config.get("sales_team_id") or "").strip(),
-        "human_team_id": str(config.get("human_team_id") or "").strip(),
+        "finance_team_id": str(config.get("finance_team_id") or options[0].get("team_id") or "").strip(),
+        "support_team_id": str(config.get("support_team_id") or (options[1].get("team_id") if len(options) > 1 else "") or "").strip(),
+        "sales_team_id": str(config.get("sales_team_id") or (options[2].get("team_id") if len(options) > 2 else "") or "").strip(),
+        "human_team_id": str(config.get("human_team_id") or next((option.get("team_id") for option in options if option.get("label") == "humano"), "") or "").strip(),
+        "greeting_text": str(config.get("greeting_text") or DEFAULT_GREETING_TEXT).strip()[:1000],
+        "invalid_behavior": "route_to_human",
+        "options_json": json.dumps(options, ensure_ascii=False),
     }
     with db_lock, sqlite3.connect(DATABASE_PATH) as conn:
         conn.execute(
             """
             INSERT INTO triage_account_configs
-              (account_id, enabled, finance_team_id, support_team_id, sales_team_id, human_team_id, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+              (account_id, enabled, finance_team_id, support_team_id, sales_team_id, human_team_id, created_at, updated_at, greeting_text, invalid_behavior, options_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(account_id) DO UPDATE SET
               enabled = excluded.enabled,
               finance_team_id = excluded.finance_team_id,
               support_team_id = excluded.support_team_id,
               sales_team_id = excluded.sales_team_id,
               human_team_id = excluded.human_team_id,
+              greeting_text = excluded.greeting_text,
+              invalid_behavior = excluded.invalid_behavior,
+              options_json = excluded.options_json,
               updated_at = excluded.updated_at
             """,
             (
@@ -198,6 +291,9 @@ def save_account_config(account_id, config):
                 values["human_team_id"],
                 now,
                 now,
+                values["greeting_text"],
+                values["invalid_behavior"],
+                values["options_json"],
             ),
         )
         conn.commit()
@@ -206,12 +302,28 @@ def save_account_config(account_id, config):
 
 
 def options_for_config(config):
-    options = json.loads(json.dumps(OPTIONS))
-    options["1"]["team_id"] = config.get("finance_team_id") or ""
-    options["2"]["team_id"] = config.get("support_team_id") or ""
-    options["3"]["team_id"] = config.get("sales_team_id") or ""
-    options["4"]["team_id"] = config.get("human_team_id") or ""
-    return options
+    return {option["key"]: option for option in config.get("options") or default_options()}
+
+
+def default_options_map():
+    return {option["key"]: option for option in default_options()}
+
+
+def human_option(config):
+    options = config.get("options") or default_options()
+    for option in options:
+        label = str(option.get("label") or "").lower()
+        text = str(option.get("text") or "").lower()
+        if label == "humano" or "atendente" in text or "humano" in text:
+            return option
+    return {
+        "key": "4",
+        "text": "Falar com atendente",
+        "label": "humano",
+        "team_id": config.get("human_team_id") or "",
+        "team_aliases": ["humano", "atendente", "atendimento"],
+        "confirmation_text": INVALID_SELECTION_TEXT,
+    }
 
 
 def db_row_to_dict(row):
@@ -476,13 +588,32 @@ def is_agent_or_bot_message(message):
 
 
 def clean_selection(content, options=None):
-    options = options or OPTIONS
+    options = options or default_options_map()
     value = str(content or "").strip().lower()
     if not value:
         return ""
     if value[0] in options:
         return value[0]
     return ""
+
+
+def route_to_human(account_id, conversation_id, current_labels, config):
+    option = human_option(config)
+    try:
+        assign_team_if_exists(account_id, conversation_id, option)
+    except Exception as error:
+        print(f"[triage-bot] human team assignment skipped: {error}", flush=True)
+
+    label = option.get("label") or "humano"
+    send_message(account_id, conversation_id, option.get("confirmation_text") or INVALID_SELECTION_TEXT)
+    add_labels(account_id, conversation_id, current_labels, [label, COMPLETED_LABEL])
+    complete_state(account_id, conversation_id, option.get("text") or "Falar com atendente")
+    return {
+        "action": "invalid_selection_routed_to_human",
+        "conversation_id": conversation_id,
+        "selected_department": option.get("text") or "Falar com atendente",
+        "label": label,
+    }
 
 
 def parse_webhook(data):
@@ -556,7 +687,7 @@ def process_webhook(data):
 
     if created:
         try:
-            send_message(account_id, conversation_id, MENU_TEXT)
+            send_message(account_id, conversation_id, menu_text(config))
         except Exception:
             delete_state(account_id, conversation_id)
             raise
@@ -565,22 +696,21 @@ def process_webhook(data):
     selection = clean_selection(message.get("content"), options)
     if not selection:
         increment_attempts(account_id, conversation_id)
-        send_message(account_id, conversation_id, INVALID_SELECTION_TEXT)
-        return {"action": "invalid_selection", "conversation_id": conversation_id}
+        return route_to_human(account_id, conversation_id, current_labels, config)
 
     option = options[selection]
     try:
         assign_team_if_exists(account_id, conversation_id, option)
     except Exception as error:
         print(f"[triage-bot] team assignment skipped: {error}", flush=True)
-    send_message(account_id, conversation_id, f"Perfeito, vou te encaminhar para {option['department']}.")
+    send_message(account_id, conversation_id, option.get("confirmation_text") or f"Perfeito, vou te encaminhar para {option['text']}.")
     add_labels(account_id, conversation_id, current_labels, [option["label"], COMPLETED_LABEL])
-    complete_state(account_id, conversation_id, option["department"])
+    complete_state(account_id, conversation_id, option["text"])
 
     return {
         "action": "triage_completed",
         "conversation_id": conversation_id,
-        "selected_department": option["department"],
+        "selected_department": option["text"],
         "label": option["label"],
     }
 

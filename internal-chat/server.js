@@ -1663,6 +1663,32 @@ async function ensureTriageWebhook(accountId) {
   };
 }
 
+function sanitizeManagerTriageOptions(options) {
+  const source = Array.isArray(options) ? options : [];
+  const usedKeys = new Set();
+  return source.slice(0, 6).map((item, index) => {
+    const key = String(item?.key || index + 1).trim().slice(0, 8);
+    const text = String(item?.text || item?.title || item?.department || '').trim().slice(0, 80);
+    const label = String(item?.label || '').trim().toLowerCase().slice(0, 60);
+    const teamId = String(item?.team_id || '').trim().slice(0, 24);
+    const confirmationText = String(item?.confirmation_text || '').trim().slice(0, 240);
+    if (!key || !text || !label || usedKeys.has(key)) return null;
+    usedKeys.add(key);
+    return {
+      key,
+      text,
+      label,
+      team_id: teamId,
+      confirmation_text: confirmationText || `Perfeito, vou te encaminhar para ${text}.`,
+    };
+  }).filter(Boolean);
+}
+
+function teamIdByLabel(options, label, fallback = '') {
+  const option = options.find(item => String(item.label || '').toLowerCase() === label);
+  return String(option?.team_id || fallback || '').trim();
+}
+
 // Uses Fluvius Platform API token for account/user provisioning
 async function platformFetch(path, options = {}) {
   try {
@@ -3141,12 +3167,16 @@ app.patch('/manager/api/clients/:id/triage-bot', async (req, res) => {
   const client = rows[0];
   if (!client.chatwoot_account_id) return res.status(400).json({ error: 'client is missing chatwoot account' });
 
+  const options = sanitizeManagerTriageOptions(req.body?.options);
   const payload = {
     enabled: Boolean(req.body?.enabled),
-    finance_team_id: String(req.body?.finance_team_id || '').trim(),
-    support_team_id: String(req.body?.support_team_id || '').trim(),
-    sales_team_id: String(req.body?.sales_team_id || '').trim(),
-    human_team_id: String(req.body?.human_team_id || '').trim(),
+    greeting_text: String(req.body?.greeting_text || '').trim(),
+    invalid_behavior: 'route_to_human',
+    options,
+    finance_team_id: teamIdByLabel(options, 'financeiro', req.body?.finance_team_id),
+    support_team_id: teamIdByLabel(options, 'suporte', req.body?.support_team_id),
+    sales_team_id: teamIdByLabel(options, 'comercial', req.body?.sales_team_id),
+    human_team_id: teamIdByLabel(options, 'humano', req.body?.human_team_id),
   };
 
   let webhook = await triageWebhookStatus(client.chatwoot_account_id);
