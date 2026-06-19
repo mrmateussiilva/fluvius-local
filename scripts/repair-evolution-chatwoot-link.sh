@@ -7,6 +7,7 @@ COMPOSE_FILE="${COMPOSE_FILE:-$VPS_DIR/docker-compose.prod.yml}"
 CHATWOOT_INTERNAL_URL="${CHATWOOT_INTERNAL_URL:-http://chatwoot:3000}"
 EVOLUTION_INTERNAL_URL="${EVOLUTION_INTERNAL_URL:-http://evolution:8080}"
 EVOLUTION_HOST_URL="${EVOLUTION_HOST_URL:-http://127.0.0.1:8080}"
+MANAGER_INTERNAL_URL="${MANAGER_INTERNAL_URL:-http://127.0.0.1:4000}"
 WEBHOOK_TIMEOUT="${WEBHOOK_TIMEOUT:-30}"
 INSTANCE_FILTER="${1:-}"
 
@@ -99,6 +100,7 @@ CHATWOOT_POSTGRES_DB="$(get_env_var CHATWOOT_POSTGRES_DB chatwoot)"
 EVOLUTION_API_KEY="$(get_env_var EVOLUTION_API_KEY)"
 CHATWOOT_ACCOUNT_ID="$(get_env_var CHATWOOT_ACCOUNT_ID 1)"
 CHATWOOT_USER_ACCESS_TOKEN="$(get_env_var CHATWOOT_USER_ACCESS_TOKEN)"
+MANAGER_ADMIN_TOKEN="$(get_env_var MANAGER_ADMIN_TOKEN)"
 
 if [ -z "$EVOLUTION_API_KEY" ]; then
   echo "ERRO: EVOLUTION_API_KEY vazio no .env." >&2
@@ -131,6 +133,7 @@ clients="$(
     -F $'\t' \
     -v ON_ERROR_STOP=1 \
     -c "SELECT
+          id,
           instance_name,
           COALESCE(chatwoot_account_id::text, ''),
           COALESCE(chatwoot_user_id::text, ''),
@@ -176,6 +179,32 @@ puts "WEBHOOK_TIMEOUT=#{config.value}"
 '
 }
 
+manager_repair_client() {
+  local client_id="$1"
+  local response_file
+  local status
+  local curl_args=(-sS -o)
+
+  response_file="$(mktemp)"
+  curl_args+=("$response_file" -w '%{http_code}' -X POST)
+  if [ -n "$MANAGER_ADMIN_TOKEN" ]; then
+    curl_args+=(-H "Authorization: Bearer $MANAGER_ADMIN_TOKEN")
+  fi
+  curl_args+=("$MANAGER_INTERNAL_URL/manager/api/clients/$client_id/integration/repair")
+
+  status="$(curl "${curl_args[@]}" || true)"
+  if [ "$status" -ge 200 ] 2>/dev/null && [ "$status" -lt 300 ]; then
+    sed 's/^/  /' "$response_file" || true
+    rm -f "$response_file"
+    return 0
+  fi
+
+  echo "  AVISO: Manager repair indisponivel ou falhou (HTTP ${status:-curl_error}); usando fallback." >&2
+  sed 's/^/  /' "$response_file" >&2 || true
+  rm -f "$response_file"
+  return 1
+}
+
 update_inbox_webhook() {
   local inbox_id="$1"
   local webhook_url="$2"
@@ -199,6 +228,8 @@ puts "inbox=#{inbox.id} webhook_url=#{channel.webhook_url}"
 }
 
 repair_instance() {
+  local client_id="$1"
+  shift
   local instance_name="$1"
   local account_id="$2"
   local user_id="$3"
@@ -214,6 +245,12 @@ repair_instance() {
   account_id="${account_id:-$CHATWOOT_ACCOUNT_ID}"
 
   echo ">>> Instancia: $instance_name"
+
+  if manager_repair_client "$client_id"; then
+    echo "  Reparo via Manager concluido."
+    echo ""
+    return 0
+  fi
 
   if [ -n "$user_id" ] || [ -n "$user_email" ]; then
     user_token="$(get_user_token "$user_id" "$user_email")"
@@ -253,8 +290,8 @@ repair_instance() {
 set_webhook_timeout
 echo ""
 
-while IFS=$'\t' read -r instance_name account_id user_id user_email inbox_id; do
-  repair_instance "$instance_name" "$account_id" "$user_id" "$user_email" "$inbox_id"
+while IFS=$'\t' read -r client_id instance_name account_id user_id user_email inbox_id; do
+  repair_instance "$client_id" "$instance_name" "$account_id" "$user_id" "$user_email" "$inbox_id"
 done <<< "$clients"
 
 echo "Reparo concluido. Envie uma mensagem de teste e acompanhe:"

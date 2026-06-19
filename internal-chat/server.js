@@ -71,6 +71,10 @@ const CLIENT_PUBLIC_FIELDS = `
   chatwoot_account_id,
   chatwoot_user_id,
   chatwoot_user_email,
+  integration_status,
+  integration_last_checked_at,
+  integration_last_error,
+  integration_repaired_at,
   created_at,
   updated_at
 `;
@@ -315,7 +319,11 @@ async function migrate() {
       ADD COLUMN IF NOT EXISTS chatwoot_user_id INTEGER,
       ADD COLUMN IF NOT EXISTS chatwoot_user_email TEXT,
       ADD COLUMN IF NOT EXISTS chatwoot_temp_password TEXT,
-      ADD COLUMN IF NOT EXISTS channel_display_name TEXT;
+      ADD COLUMN IF NOT EXISTS channel_display_name TEXT,
+      ADD COLUMN IF NOT EXISTS integration_status TEXT NOT NULL DEFAULT 'pending',
+      ADD COLUMN IF NOT EXISTS integration_last_checked_at TIMESTAMP,
+      ADD COLUMN IF NOT EXISTS integration_last_error TEXT,
+      ADD COLUMN IF NOT EXISTS integration_repaired_at TIMESTAMP;
   `);
 }
 
@@ -1505,9 +1513,13 @@ app.get('/manager/api/session', (_req, res) => {
 
 async function evoFetch(path, options = {}) {
   try {
+    const headers = { apikey: EVOLUTION_API_KEY, ...(options.headers || {}) };
+    if (options.body && !headers['Content-Type'] && !(options.body instanceof FormData)) {
+      headers['Content-Type'] = 'application/json';
+    }
     const res = await fetch(`${EVOLUTION_URL}${path}`, {
       ...options,
-      headers: { apikey: EVOLUTION_API_KEY, 'Content-Type': 'application/json', ...(options.headers || {}) },
+      headers,
     });
     const text = await res.text();
     try { return { status: res.status, data: JSON.parse(text) }; } catch { return { status: res.status, data: text }; }
@@ -1518,9 +1530,13 @@ async function evoFetch(path, options = {}) {
 
 async function cwtFetch(path, options = {}) {
   try {
+    const headers = { api_access_token: CHATWOOT_API_TOKEN, ...(options.headers || {}) };
+    if (options.body && !headers['Content-Type'] && !(options.body instanceof FormData)) {
+      headers['Content-Type'] = 'application/json';
+    }
     const res = await fetch(`${CHATWOOT_URL}${path}`, {
       ...options,
-      headers: { api_access_token: CHATWOOT_API_TOKEN, 'Content-Type': 'application/json', ...(options.headers || {}) },
+      headers,
     });
     const text = await res.text();
     try { return { status: res.status, data: JSON.parse(text) }; } catch { return { status: res.status, data: text }; }
@@ -1532,9 +1548,13 @@ async function cwtFetch(path, options = {}) {
 // Uses Fluvius Platform API token for account/user provisioning
 async function platformFetch(path, options = {}) {
   try {
+    const headers = { api_access_token: CHATWOOT_PLATFORM_TOKEN, ...(options.headers || {}) };
+    if (options.body && !headers['Content-Type'] && !(options.body instanceof FormData)) {
+      headers['Content-Type'] = 'application/json';
+    }
     const res = await fetch(`${CHATWOOT_URL}${path}`, {
       ...options,
-      headers: { api_access_token: CHATWOOT_PLATFORM_TOKEN, 'Content-Type': 'application/json', ...(options.headers || {}) },
+      headers,
     });
     const text = await res.text();
     try { return { status: res.status, data: JSON.parse(text) }; } catch { return { status: res.status, data: text }; }
@@ -1546,9 +1566,13 @@ async function platformFetch(path, options = {}) {
 // Uses a specific user's access token for a given Fluvius account
 async function cwtAccountFetch(path, userToken, options = {}) {
   try {
+    const headers = { api_access_token: userToken, ...(options.headers || {}) };
+    if (options.body && !headers['Content-Type'] && !(options.body instanceof FormData)) {
+      headers['Content-Type'] = 'application/json';
+    }
     const res = await fetch(`${CHATWOOT_URL}${path}`, {
       ...options,
-      headers: { api_access_token: userToken, 'Content-Type': 'application/json', ...(options.headers || {}) },
+      headers,
     });
     const text = await res.text();
     try { return { status: res.status, data: JSON.parse(text) }; } catch { return { status: res.status, data: text }; }
@@ -1810,22 +1834,212 @@ async function enableEvolutionHistorySync(instanceName, accountId, userToken) {
 
   const chatwoot = await evoFetch(`/chatwoot/set/${instanceName}`, {
     method: 'POST',
-    body: JSON.stringify({
-      enabled: true,
-      accountId: String(accountId),
-      token: userToken,
-      url: CHATWOOT_URL,
-      signMsg: true,
-      signDelimiter: '\\n',
-      reopenConversation: true,
-      conversationPending: false,
-      importContacts: true,
-      importMessages: true,
-      daysLimitImportMessages: 365,
-    }),
+    body: JSON.stringify(evolutionChatwootPayload(accountId, userToken)),
   });
 
   return { settings, chatwoot };
+}
+
+function expectedInboxWebhookUrl(instanceName) {
+  return `${EVOLUTION_URL}/chatwoot/webhook/${instanceName}`;
+}
+
+function evolutionChatwootPayload(accountId, userToken) {
+  return {
+    enabled: true,
+    accountId: String(accountId),
+    token: userToken,
+    url: CHATWOOT_URL,
+    signMsg: true,
+    signDelimiter: '\\n',
+    reopenConversation: true,
+    conversationPending: false,
+    importContacts: true,
+    importMessages: true,
+    daysLimitImportMessages: 365,
+  };
+}
+
+async function setClientIntegrationState(clientId, status, error = null, repaired = false) {
+  await pool.query(
+    `UPDATE fluvius_clients
+     SET integration_status = $2,
+         integration_last_checked_at = NOW(),
+         integration_last_error = $3,
+         integration_repaired_at = CASE WHEN $4 THEN NOW() ELSE integration_repaired_at END,
+         updated_at = NOW()
+     WHERE id = $1`,
+    [clientId, status, error ? String(error).slice(0, 2000) : null, repaired],
+  );
+}
+
+async function clientTokenForIntegration(client) {
+  let userId = client.chatwoot_user_id || null;
+  if (!userId && client.chatwoot_user_email) {
+    userId = await getCwtUserIdByEmail(client.chatwoot_user_email);
+    if (userId) {
+      await pool.query('UPDATE fluvius_clients SET chatwoot_user_id = $1, updated_at = NOW() WHERE id = $2', [userId, client.id]);
+    }
+  }
+  if (!userId) return null;
+  return getPlatformUserToken(userId);
+}
+
+async function updateClientInboxWebhook(client, userToken, actions = []) {
+  if (!client.chatwoot_account_id || !client.inbox_id) {
+    return { ok: false, status: 400, details: 'client is missing account or inbox' };
+  }
+
+  const webhookUrl = expectedInboxWebhookUrl(client.instance_name);
+  const response = await cwtAccountFetch(
+    `/api/v1/accounts/${client.chatwoot_account_id}/inboxes/${client.inbox_id}`,
+    userToken,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({ channel: { webhook_url: webhookUrl } }),
+    },
+  );
+
+  if (response.status < 300) actions.push('inbox_webhook_updated');
+  return {
+    ok: response.status < 300,
+    status: response.status,
+    details: response.status < 300 ? { webhook_url: webhookUrl } : response.data,
+  };
+}
+
+async function repairClientIntegration(client) {
+  const actions = [];
+  const errors = [];
+
+  if (!client.instance_name || !client.chatwoot_account_id || !client.inbox_id) {
+    const message = 'client is missing instance/account/inbox';
+    await setClientIntegrationState(client.id, 'error', message);
+    return { repaired: false, actions, errors: [message] };
+  }
+
+  const userToken = await clientTokenForIntegration(client);
+  if (!userToken) {
+    const message = 'client admin token not available';
+    await setClientIntegrationState(client.id, 'error', message);
+    return { repaired: false, actions, errors: [message] };
+  }
+
+  const settings = await evoFetch(`/settings/set/${client.instance_name}`, {
+    method: 'POST',
+    body: JSON.stringify({
+      rejectCall: false,
+      msgCall: '',
+      groupsIgnore: false,
+      alwaysOnline: false,
+      readMessages: false,
+      readStatus: false,
+      syncFullHistory: true,
+    }),
+  });
+  if (settings.status < 300) actions.push('evolution_settings_updated');
+  else errors.push({ step: 'evolution_settings', status: settings.status, error: settings.data });
+
+  const link = await evoFetch(`/chatwoot/set/${client.instance_name}`, {
+    method: 'POST',
+    body: JSON.stringify(evolutionChatwootPayload(client.chatwoot_account_id, userToken)),
+  });
+  if (link.status < 300) actions.push('evolution_chatwoot_link_updated');
+  else errors.push({ step: 'evolution_chatwoot_link', status: link.status, error: link.data });
+
+  const webhook = await updateClientInboxWebhook(client, userToken, actions);
+  if (!webhook.ok) errors.push({ step: 'inbox_webhook', status: webhook.status, error: webhook.details });
+
+  const status = errors.length ? 'error' : 'ok';
+  await setClientIntegrationState(client.id, status, errors.length ? JSON.stringify(errors) : null, !errors.length);
+
+  return {
+    repaired: !errors.length,
+    actions,
+    errors,
+  };
+}
+
+async function clientIntegrationStatus(client) {
+  const result = {
+    client_id: client.id,
+    instance_name: client.instance_name,
+    account_id: client.chatwoot_account_id,
+    inbox_id: client.inbox_id,
+    integration_status: client.integration_status || 'pending',
+    integration_last_checked_at: client.integration_last_checked_at || null,
+    integration_last_error: client.integration_last_error || null,
+    evolution_instance: { ok: false, status: 404, details: null },
+    chatwoot_link: { ok: false, status: 'unknown', details: null },
+    inbox_webhook: { ok: false, status: 404, details: null },
+    history_import: { ok: true, status: 'ready', details: null },
+    media_probe: { ok: true, status: 'ready', details: null },
+  };
+
+  if (!client.instance_name || !client.chatwoot_account_id || !client.inbox_id) {
+    result.history_import = { ok: false, status: 400, details: 'client is missing instance/account/inbox' };
+    result.media_probe = { ok: false, status: 400, details: 'client is missing instance/account/inbox' };
+    await setClientIntegrationState(client.id, 'error', result.history_import.details);
+    return result;
+  }
+
+  const instance = await evolutionPool.query('SELECT id, name FROM "Instance" WHERE name = $1 LIMIT 1', [client.instance_name]);
+  if (instance.rowCount) {
+    result.evolution_instance = { ok: true, status: 'found', details: instance.rows[0] };
+  }
+
+  const inbox = await pool.query(
+    `SELECT inboxes.id, channel_api.webhook_url
+     FROM inboxes
+     INNER JOIN channel_api ON channel_api.id = inboxes.channel_id AND inboxes.channel_type = 'Channel::Api'
+     WHERE inboxes.id = $1
+       AND inboxes.account_id = $2
+     LIMIT 1`,
+    [client.inbox_id, client.chatwoot_account_id],
+  );
+  const expectedWebhook = expectedInboxWebhookUrl(client.instance_name);
+  if (inbox.rowCount) {
+    const webhookUrl = inbox.rows[0].webhook_url || '';
+    result.inbox_webhook = {
+      ok: webhookUrl === expectedWebhook,
+      status: webhookUrl === expectedWebhook ? 'ok' : 'mismatch',
+      details: { webhook_url: webhookUrl, expected_webhook_url: expectedWebhook },
+    };
+  }
+
+  const link = await evoFetch(`/chatwoot/find/${client.instance_name}`);
+  if (link.status < 300) {
+    const data = Array.isArray(link.data) ? link.data[0] : link.data;
+    const url = data?.url || data?.chatwootUrl || data?.chatwoot_url || '';
+    result.chatwoot_link = {
+      ok: !url || url === CHATWOOT_URL,
+      status: 'ok',
+      details: data,
+    };
+  } else if (link.status !== 404) {
+    result.chatwoot_link = { ok: false, status: link.status, details: link.data };
+  } else {
+    result.chatwoot_link = { ok: false, status: 'unknown', details: 'Evolution did not expose chatwoot/find for this instance' };
+  }
+
+  const pendingMedia = await evolutionPool.query(
+    `SELECT COUNT(*)::int AS count
+     FROM "Message" m
+     INNER JOIN "Instance" i ON i.id = m."instanceId"
+     WHERE i.name = $1
+       AND (m."chatwootMessageId" IS NULL OR m."chatwootMessageId" = 0)
+       AND m."messageType" IN ('imageMessage', 'videoMessage', 'audioMessage', 'documentMessage', 'stickerMessage')`,
+    [client.instance_name],
+  );
+  result.media_probe.details = { pending_media_messages: pendingMedia.rows[0]?.count || 0 };
+
+  const ok = result.evolution_instance.ok && result.inbox_webhook.ok && result.history_import.ok;
+  await setClientIntegrationState(client.id, ok ? 'ok' : 'error', ok ? null : JSON.stringify({
+    evolution_instance: result.evolution_instance,
+    inbox_webhook: result.inbox_webhook,
+  }));
+
+  return result;
 }
 
 async function getCwtUserIdByEmail(email) {
@@ -1995,6 +2209,116 @@ function evolutionMessageContent(row) {
   return `_<${type || 'Unknown Message'}>_`;
 }
 
+function mediaKindFromMessageType(type) {
+  if (type === 'imageMessage') return 'image';
+  if (type === 'videoMessage') return 'video';
+  if (type === 'audioMessage') return 'audio';
+  if (type === 'stickerMessage') return 'image';
+  if (type === 'documentMessage') return 'file';
+  return null;
+}
+
+function mediaNodeForMessage(message, type) {
+  if (!message || !type) return {};
+  return message[type] || {};
+}
+
+function extensionFromMime(mime) {
+  const value = String(mime || '').split(';')[0].trim().toLowerCase();
+  const known = {
+    'image/jpeg': 'jpg',
+    'image/png': 'png',
+    'image/webp': 'webp',
+    'video/mp4': 'mp4',
+    'audio/ogg': 'ogg',
+    'audio/mpeg': 'mp3',
+    'application/pdf': 'pdf',
+  };
+  return known[value] || value.split('/')[1]?.replace(/[^a-z0-9]/g, '').slice(0, 12) || 'bin';
+}
+
+function evolutionMediaInfo(row) {
+  const kind = mediaKindFromMessageType(row.messageType);
+  if (!kind) return null;
+
+  const message = safeJsonParse(row.message);
+  const node = mediaNodeForMessage(message, row.messageType);
+  const mime = String(node.mimetype || node.mimeType || '').split(';')[0] || 'application/octet-stream';
+  const fallbackName = `${String(row.wa_id || row.id || Date.now()).replace(/[^A-Za-z0-9_.-]/g, '-')}.${extensionFromMime(mime)}`;
+  const name = String(node.fileName || node.title || fallbackName).slice(0, 180);
+
+  return {
+    kind,
+    mime,
+    name,
+    caption: String(node.caption || '').trim(),
+  };
+}
+
+function parseEvolutionBase64Media(data) {
+  const candidates = [
+    data?.base64,
+    data?.data?.base64,
+    data?.message?.base64,
+    data?.media?.base64,
+  ].filter(Boolean);
+  const raw = String(candidates[0] || '').trim();
+  if (!raw) return null;
+  const match = raw.match(/^data:([^;]+);base64,(.+)$/);
+  return {
+    base64: match ? match[2] : raw,
+    mime: match ? match[1] : (data?.mimetype || data?.mimeType || data?.data?.mimetype || ''),
+    name: data?.fileName || data?.filename || data?.data?.fileName || '',
+  };
+}
+
+async function downloadEvolutionMedia(instanceName, row) {
+  const key = safeJsonParse(row.key);
+  if (!instanceName || !key?.id) return null;
+
+  const response = await evoFetch(`/chat/getBase64FromMediaMessage/${instanceName}`, {
+    method: 'POST',
+    body: JSON.stringify({
+      message: { key },
+      convertToMp4: false,
+    }),
+  });
+
+  if (response.status >= 300) return null;
+  return parseEvolutionBase64Media(response.data);
+}
+
+function chatwootMessageIdFromResponse(data) {
+  return Number(data?.id || data?.message?.id || data?.payload?.id || data?.data?.id || 0) || null;
+}
+
+async function createChatwootMessageViaApi({ client, userToken, conversation, content, messageType, media }) {
+  const form = new FormData();
+  form.append('content', content || '');
+  form.append('message_type', messageType);
+  form.append('private', 'false');
+
+  if (media?.base64) {
+    const bytes = Buffer.from(media.base64, 'base64');
+    const blob = new Blob([bytes], { type: media.mime || 'application/octet-stream' });
+    form.append('attachments[]', blob, media.name || 'arquivo');
+  }
+
+  const response = await cwtAccountFetch(
+    `/api/v1/accounts/${client.chatwoot_account_id}/conversations/${conversation.display_id || conversation.id}/messages`,
+    userToken,
+    {
+      method: 'POST',
+      body: form,
+    },
+  );
+
+  return {
+    response,
+    messageId: response.status < 300 ? chatwootMessageIdFromResponse(response.data) : null,
+  };
+}
+
 function evolutionRemoteJid(key = {}) {
   return key.remoteJidAlt || key.remoteJid || key.remotejidalt || key.remotejid || '';
 }
@@ -2119,7 +2443,7 @@ async function ensureCwtThreadForRemoteJid({
   }
 
   let conversation = await pool.query(
-    'SELECT id, contact_id, contact_inbox_id FROM conversations WHERE account_id = $1 AND inbox_id = $2 AND contact_inbox_id = $3 LIMIT 1',
+    'SELECT id, display_id, contact_id, contact_inbox_id FROM conversations WHERE account_id = $1 AND inbox_id = $2 AND contact_inbox_id = $3 LIMIT 1',
     [client.chatwoot_account_id, client.inbox_id, contactInbox.rows[0].id],
   );
 
@@ -2130,7 +2454,7 @@ async function ensureCwtThreadForRemoteJid({
           (account_id, inbox_id, status, created_at, updated_at, contact_id, contact_inbox_id, additional_attributes, custom_attributes, last_activity_at, identifier)
         VALUES
           ($1, $2, 0, $3, $3, $4, $5, '{}', '{}', $3, $6)
-        RETURNING id, contact_id, contact_inbox_id
+        RETURNING id, display_id, contact_id, contact_inbox_id
       `,
       [client.chatwoot_account_id, client.inbox_id, createdDate, contact.rows[0].id, contactInbox.rows[0].id, remoteJid],
     );
@@ -2139,6 +2463,7 @@ async function ensureCwtThreadForRemoteJid({
 
   const conversationData = {
     id: conversation.rows[0].id,
+    display_id: conversation.rows[0].display_id || conversation.rows[0].id,
     contact_id: conversation.rows[0].contact_id || contact.rows[0].id,
     contact_inbox_source_id: contactInbox.rows[0].source_id,
   };
@@ -2174,8 +2499,9 @@ async function importEvolutionHistoryForClient(client, options = {}) {
   }
   if (!userId) throw new Error(`No Fluvius user found for account ${client.chatwoot_account_id}`);
 
+  let userToken = null;
   if (syncSettings) {
-    const userToken = await getPlatformUserToken(userId);
+    userToken = await getPlatformUserToken(userId);
     if (userToken) await enableEvolutionHistorySync(client.instance_name, client.chatwoot_account_id, userToken);
   }
 
@@ -2249,6 +2575,8 @@ async function importEvolutionHistoryForClient(client, options = {}) {
     messages_imported: 0,
     messages_relinked: 0,
     messages_skipped: 0,
+    media_imported: 0,
+    media_pending: 0,
   };
   const conversationCache = new Map();
   const seenRemoteJids = new Set();
@@ -2345,6 +2673,55 @@ async function importEvolutionHistoryForClient(client, options = {}) {
     const senderType = fromMe ? 'User' : 'Contact';
     const senderId = fromMe ? userId : conversation.contact_id;
     const messageType = fromMe ? 1 : 0;
+    const mediaInfo = evolutionMediaInfo(row);
+
+    if (mediaInfo && !fromMe) {
+      const downloadedMedia = await downloadEvolutionMedia(client.instance_name, row);
+      if (!downloadedMedia?.base64) {
+        stats.media_pending += 1;
+        continue;
+      }
+
+      userToken ||= await getPlatformUserToken(userId);
+      if (!userToken) {
+        stats.media_pending += 1;
+        continue;
+      }
+
+      const apiMessage = await createChatwootMessageViaApi({
+        client,
+        userToken,
+        conversation,
+        content,
+        messageType: fromMe ? 'outgoing' : 'incoming',
+        media: {
+          base64: downloadedMedia.base64,
+          mime: downloadedMedia.mime || mediaInfo.mime,
+          name: downloadedMedia.name || mediaInfo.name,
+        },
+      });
+
+      if (!apiMessage.messageId) {
+        stats.media_pending += 1;
+        continue;
+      }
+
+      await pool.query(
+        'UPDATE messages SET source_id = $1, updated_at = GREATEST(updated_at, $2) WHERE id = $3 AND account_id = $4',
+        [sourceId, createdAt, apiMessage.messageId, client.chatwoot_account_id],
+      );
+
+      await updateEvolutionMessageChatwootLink(row, {
+        messageId: apiMessage.messageId,
+        inboxId: client.inbox_id,
+        conversationId: conversation.id,
+        contactInboxSourceId: conversation.contact_inbox_source_id,
+      });
+
+      stats.messages_imported += 1;
+      stats.media_imported += 1;
+      continue;
+    }
 
     const message = await pool.query(
       `
@@ -2433,26 +2810,20 @@ app.post('/manager/api/instances', async (req, res) => {
   });
   if (cwt.status >= 300) return res.status(cwt.status).json({ step: 'create_inbox', error: cwt.data });
 
-  const inboxToken = cwt.data?.channel_id || cwt.data?.id || '';
-  const accessToken = cwt.data?.inbox_identifier || cwt.data?.channel?.identifier || '';
-
   // 3. Link Evolution → Fluvius
   const link = await evoFetch(`/chatwoot/set/${name}`, {
     method: 'POST',
-    body: JSON.stringify({
-      enabled: true,
-      accountId: CHATWOOT_ACCOUNT_ID,
-      token: CHATWOOT_API_TOKEN,
-      url: CHATWOOT_URL,
-      signMsg: true,
-      signDelimiter: '\\n',
-      reopenConversation: true,
-      conversationPending: false,
-    }),
+    body: JSON.stringify(evolutionChatwootPayload(CHATWOOT_ACCOUNT_ID, CHATWOOT_API_TOKEN)),
   });
   if (link.status >= 300) return res.status(link.status).json({ step: 'link_chatwoot', error: link.data });
 
-  res.json({ instance: evo.data, inbox: cwt.data, link: link.data });
+  const webhook = await cwtFetch(`/api/v1/accounts/${CHATWOOT_ACCOUNT_ID}/inboxes/${cwt.data?.id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ channel: { webhook_url: expectedInboxWebhookUrl(name) } }),
+  });
+  if (webhook.status >= 300) return res.status(webhook.status).json({ step: 'update_inbox_webhook', error: webhook.data });
+
+  res.json({ instance: evo.data, inbox: cwt.data, link: link.data, webhook: webhook.data });
 });
 
 // Delete instance
@@ -2853,19 +3224,7 @@ app.post('/manager/api/clients', async (req, res) => {
     // STEP 6: Link Evolution to Fluvius using the user's access token.
     const link = await evoFetch(`/chatwoot/set/${instanceName}`, {
       method: 'POST',
-      body: JSON.stringify({
-        enabled: true,
-        accountId: String(accountId),
-        token: userToken,
-        url: CHATWOOT_URL,
-        signMsg: true,
-        signDelimiter: '\\n',
-        reopenConversation: true,
-        conversationPending: false,
-        importContacts: true,
-        importMessages: true,
-        daysLimitImportMessages: 365,
-      }),
+      body: JSON.stringify(evolutionChatwootPayload(accountId, userToken)),
     });
     if (link.status >= 300) {
       const cleanup = await cleanupProvisioning(created);
@@ -2884,7 +3243,7 @@ app.post('/manager/api/clients', async (req, res) => {
     }
 
     // STEP 7: Update inbox webhook so Fluvius replies go back to Evolution.
-    const evolutionWebhookUrl = `${EVOLUTION_URL}/chatwoot/webhook/${instanceName}`;
+    const evolutionWebhookUrl = expectedInboxWebhookUrl(instanceName);
     const webhook = await cwtAccountFetch(`/api/v1/accounts/${accountId}/inboxes/${inboxId}`, userToken, {
       method: 'PATCH',
       body: JSON.stringify({ channel: { webhook_url: evolutionWebhookUrl } }),
@@ -2898,8 +3257,8 @@ app.post('/manager/api/clients', async (req, res) => {
     // STEP 8: Save to DB. Password is intentionally not persisted.
     const { rows } = await pool.query(
       `INSERT INTO fluvius_clients
-        (name, email, token, instance_name, channel_display_name, inbox_id, inbox_token, status, chatwoot_account_id, chatwoot_user_id, chatwoot_user_email)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', $8, $9, $10)
+        (name, email, token, instance_name, channel_display_name, inbox_id, inbox_token, status, chatwoot_account_id, chatwoot_user_id, chatwoot_user_email, integration_status, integration_last_checked_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', $8, $9, $10, 'ok', NOW())
        RETURNING ${CLIENT_PUBLIC_FIELDS}`,
       [name, email, onboardToken, instanceName, channelDisplayName, inboxId, inboxToken, accountId, userId, email],
     );
@@ -3120,12 +3479,52 @@ app.post('/manager/api/clients/:id/agents/:userId/reset-password', async (req, r
   });
 });
 
+app.get('/manager/api/clients/:id/integration/status', async (req, res) => {
+  const id = Number(req.params.id);
+  const { rows } = await pool.query('SELECT * FROM fluvius_clients WHERE id = $1', [id]);
+  if (!rows.length) return res.status(404).json({ error: 'client not found' });
+
+  try {
+    const status = await clientIntegrationStatus(rows[0]);
+    return res.json(status);
+  } catch (err) {
+    await setClientIntegrationState(id, 'error', err.message);
+    return res.status(500).json({
+      step: 'integration_status',
+      error: err.message,
+    });
+  }
+});
+
+app.post('/manager/api/clients/:id/integration/repair', async (req, res) => {
+  const id = Number(req.params.id);
+  const { rows } = await pool.query('SELECT * FROM fluvius_clients WHERE id = $1', [id]);
+  if (!rows.length) return res.status(404).json({ error: 'client not found' });
+
+  try {
+    const repair = await repairClientIntegration(rows[0]);
+    const fresh = await pool.query('SELECT * FROM fluvius_clients WHERE id = $1', [id]);
+    const statusAfter = fresh.rowCount ? await clientIntegrationStatus(fresh.rows[0]) : null;
+    return res.status(repair.repaired ? 200 : 500).json({
+      ...repair,
+      status_after: statusAfter,
+    });
+  } catch (err) {
+    await setClientIntegrationState(id, 'error', err.message);
+    return res.status(500).json({
+      step: 'integration_repair',
+      error: err.message,
+    });
+  }
+});
+
 app.post('/manager/api/clients/:id/import-history', async (req, res) => {
   const id = Number(req.params.id);
   const { rows } = await pool.query('SELECT * FROM fluvius_clients WHERE id = $1', [id]);
   if (!rows.length) return res.status(404).json({ error: 'client not found' });
 
   try {
+    await repairClientIntegration(rows[0]);
     const result = await importEvolutionHistoryForClient(rows[0]);
     return res.json(result);
   } catch (err) {
@@ -3387,9 +3786,9 @@ async function runEvolutionHistoryAutoImport() {
           ensureAllThreads: false,
           pendingLimit: EVOLUTION_HISTORY_AUTO_IMPORT_LIMIT,
         });
-        if (result.messages_found || result.messages_imported || result.messages_relinked || result.messages_skipped) {
+        if (result.messages_found || result.messages_imported || result.messages_relinked || result.messages_skipped || result.media_pending) {
           console.log(
-            `[evolution-import] client=${client.id} instance=${client.instance_name} found=${result.messages_found} imported=${result.messages_imported} relinked=${result.messages_relinked} skipped=${result.messages_skipped}`,
+            `[evolution-import] client=${client.id} instance=${client.instance_name} found=${result.messages_found} imported=${result.messages_imported} relinked=${result.messages_relinked} skipped=${result.messages_skipped} media_imported=${result.media_imported || 0} media_pending=${result.media_pending || 0}`,
           );
         }
       } catch (error) {

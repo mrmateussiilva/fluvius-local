@@ -359,6 +359,18 @@ docker compose logs -f internal-chat
 
 Procure por linhas com `[evolution-import]`.
 
+O Manager tambem expoe endpoints operacionais para diagnostico e reparo por cliente:
+
+```bash
+curl -H "Authorization: Bearer $MANAGER_ADMIN_TOKEN" \
+  http://127.0.0.1:4000/manager/api/clients/<id>/integration/status
+
+curl -X POST -H "Authorization: Bearer $MANAGER_ADMIN_TOKEN" \
+  http://127.0.0.1:4000/manager/api/clients/<id>/integration/repair
+```
+
+O importador tenta recuperar midias recebidas via Evolution e criar mensagens com anexo no Fluvius. Se a Evolution ainda nao disponibilizar o binario, a mensagem fica pendente e aparece nos logs como `media_pending`, para nova tentativa no proximo ciclo.
+
 ## Reaplicar marca Fluvius
 
 Se o container ou as configuracoes do Fluvius forem recriados, rode:

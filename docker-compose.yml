@@ -62,6 +62,9 @@ services:
       RAILS_ENV: production
       NODE_ENV: production
 
+      RAILS_MAX_THREADS: 20
+      WEB_CONCURRENCY: 2
+
       SECRET_KEY_BASE: ${CHATWOOT_SECRET_KEY_BASE}
 
       FRONTEND_URL: ${CHATWOOT_FRONTEND_URL}
@@ -116,6 +119,8 @@ services:
     environment:
       RAILS_ENV: production
       NODE_ENV: production
+
+      RAILS_MAX_THREADS: 20
 
       SECRET_KEY_BASE: ${CHATWOOT_SECRET_KEY_BASE}
 
@@ -179,6 +184,7 @@ services:
       CONFIG_SESSION_PHONE_CLIENT: ${EVOLUTION_SESSION_PHONE_CLIENT}
 
       CHATWOOT_ENABLED: "true"
+      CHATWOOT_IMPORT_DATABASE_CONNECTION_URI: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${CHATWOOT_POSTGRES_DB}?sslmode=disable
 
   internal-chat:
     image: node:22-alpine
