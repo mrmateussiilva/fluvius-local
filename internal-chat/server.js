@@ -17,9 +17,6 @@ const EVOLUTION_API_KEY = String(process.env.EVOLUTION_API_KEY || '');
 const CHATWOOT_URL = String(process.env.CHATWOOT_FRONTEND_URL || 'http://chatwoot:3000');
 const CHATWOOT_PUBLIC_URL = String(process.env.CHATWOOT_PUBLIC_URL || process.env.CHATWOOT_FRONTEND_URL || 'http://localhost:3000');
 const INTERNAL_CHAT_PUBLIC_URL = String(process.env.INTERNAL_CHAT_PUBLIC_URL || 'http://localhost:4000');
-const TRIAGE_BOT_URL = String(process.env.TRIAGE_BOT_URL || 'http://triage-bot:4100').replace(/\/$/, '');
-const TRIAGE_ADMIN_TOKEN = String(process.env.TRIAGE_ADMIN_TOKEN || process.env.TRIAGE_WEBHOOK_SECRET || '');
-const TRIAGE_WEBHOOK_SECRET = String(process.env.TRIAGE_WEBHOOK_SECRET || TRIAGE_ADMIN_TOKEN || '');
 const CHATWOOT_API_TOKEN = String(process.env.CHATWOOT_USER_ACCESS_TOKEN || '');
 const CHATWOOT_PLATFORM_TOKEN = String(process.env.CHATWOOT_PLATFORM_TOKEN || '');
 const CHATWOOT_ACCOUNT_ID = String(process.env.CHATWOOT_ACCOUNT_ID || '1');
@@ -354,6 +351,28 @@ async function migrate() {
 
     CREATE INDEX IF NOT EXISTS index_fluvius_password_reset_tokens_expires_at
       ON fluvius_password_reset_tokens(expires_at);
+
+    CREATE TABLE IF NOT EXISTS fluvius_client_inboxes (
+      id                   BIGSERIAL PRIMARY KEY,
+      client_id            BIGINT NOT NULL REFERENCES fluvius_clients(id) ON DELETE CASCADE,
+      label                TEXT NOT NULL,
+      instance_name        TEXT NOT NULL UNIQUE,
+      channel_display_name TEXT NOT NULL,
+      inbox_id             INTEGER,
+      inbox_token          TEXT,
+      phone                TEXT,
+      token                TEXT UNIQUE NOT NULL,
+      status               TEXT NOT NULL DEFAULT 'pending',
+      integration_status   TEXT NOT NULL DEFAULT 'pending',
+      integration_last_checked_at TIMESTAMP,
+      integration_last_error TEXT,
+      integration_repaired_at TIMESTAMP,
+      created_at           TIMESTAMP NOT NULL DEFAULT NOW(),
+      updated_at           TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS index_fluvius_client_inboxes_client_id
+      ON fluvius_client_inboxes(client_id);
   `);
 }
 
@@ -1575,120 +1594,6 @@ async function cwtFetch(path, options = {}) {
   }
 }
 
-async function triageBotFetch(path, options = {}) {
-  try {
-    const headers = { 'X-Triage-Admin-Token': TRIAGE_ADMIN_TOKEN, ...(options.headers || {}) };
-    if (options.body && !headers['Content-Type'] && !(options.body instanceof FormData)) {
-      headers['Content-Type'] = 'application/json';
-    }
-    const res = await fetch(`${TRIAGE_BOT_URL}${path}`, {
-      ...options,
-      headers,
-    });
-    const text = await res.text();
-    try { return { status: res.status, data: JSON.parse(text) }; } catch { return { status: res.status, data: text }; }
-  } catch (err) {
-    return { status: 503, data: { error: 'Network/Fetch Error', details: err.message } };
-  }
-}
-
-async function triageWebhookStatus(accountId) {
-  const url = `${TRIAGE_BOT_URL}/webhook/chatwoot`;
-  const { rows } = await pool.query(
-    `
-      SELECT id, url, subscriptions, secret
-      FROM webhooks
-      WHERE account_id = $1
-        AND url = $2
-      LIMIT 1
-    `,
-    [accountId, url],
-  );
-  const row = rows[0] || null;
-  return {
-    registered: Boolean(row),
-    id: row?.id || null,
-    url,
-    secret_configured: Boolean(row?.secret),
-  };
-}
-
-async function ensureTriageWebhook(accountId) {
-  if (!TRIAGE_WEBHOOK_SECRET) throw new Error('TRIAGE_WEBHOOK_SECRET is not configured');
-  const url = `${TRIAGE_BOT_URL}/webhook/chatwoot`;
-  const subscriptions = ['message_created'];
-  const existing = await pool.query(
-    'SELECT id FROM webhooks WHERE account_id = $1 AND url = $2 LIMIT 1',
-    [accountId, url],
-  );
-
-  if (existing.rowCount) {
-    const { rows } = await pool.query(
-      `
-        UPDATE webhooks
-        SET name = $1,
-            webhook_type = 0,
-            subscriptions = $2::jsonb,
-            secret = $3,
-            updated_at = NOW()
-        WHERE id = $4
-        RETURNING id, url, subscriptions, secret
-      `,
-      ['Fluvius triage bot', JSON.stringify(subscriptions), TRIAGE_WEBHOOK_SECRET, existing.rows[0].id],
-    );
-    return {
-      registered: true,
-      id: rows[0].id,
-      url: rows[0].url,
-      secret_configured: Boolean(rows[0].secret),
-    };
-  }
-
-  const { rows } = await pool.query(
-    `
-      INSERT INTO webhooks
-        (account_id, url, name, webhook_type, subscriptions, secret, created_at, updated_at)
-      VALUES
-        ($1, $2, $3, 0, $4::jsonb, $5, NOW(), NOW())
-      RETURNING id, url, subscriptions, secret
-    `,
-    [accountId, url, 'Fluvius triage bot', JSON.stringify(subscriptions), TRIAGE_WEBHOOK_SECRET],
-  );
-
-  return {
-    registered: true,
-    id: rows[0].id,
-    url: rows[0].url,
-    secret_configured: Boolean(rows[0].secret),
-  };
-}
-
-function sanitizeManagerTriageOptions(options) {
-  const source = Array.isArray(options) ? options : [];
-  const usedKeys = new Set();
-  return source.slice(0, 6).map((item, index) => {
-    const key = String(item?.key || index + 1).trim().slice(0, 8);
-    const text = String(item?.text || item?.title || item?.department || '').trim().slice(0, 80);
-    const label = String(item?.label || '').trim().toLowerCase().slice(0, 60);
-    const teamId = String(item?.team_id || '').trim().slice(0, 24);
-    const confirmationText = String(item?.confirmation_text || '').trim().slice(0, 240);
-    if (!key || !text || !label || usedKeys.has(key)) return null;
-    usedKeys.add(key);
-    return {
-      key,
-      text,
-      label,
-      team_id: teamId,
-      confirmation_text: confirmationText || `Perfeito, vou te encaminhar para ${text}.`,
-    };
-  }).filter(Boolean);
-}
-
-function teamIdByLabel(options, label, fallback = '') {
-  const option = options.find(item => String(item.label || '').toLowerCase() === label);
-  return String(option?.team_id || fallback || '').trim();
-}
-
 // Uses Fluvius Platform API token for account/user provisioning
 async function platformFetch(path, options = {}) {
   try {
@@ -2007,9 +1912,10 @@ function evolutionChatwootPayload(accountId, userToken, nameInbox = null) {
   return payload;
 }
 
-async function setClientIntegrationState(clientId, status, error = null, repaired = false) {
+async function setClientIntegrationState(clientId, status, error = null, repaired = false, isExtraInbox = false) {
+  const table = isExtraInbox ? 'fluvius_client_inboxes' : 'fluvius_clients';
   await pool.query(
-    `UPDATE fluvius_clients
+    `UPDATE ${table}
      SET integration_status = $2,
          integration_last_checked_at = NOW(),
          integration_last_error = $3,
@@ -2055,20 +1961,20 @@ async function updateClientInboxWebhook(client, userToken, actions = []) {
   };
 }
 
-async function repairClientIntegration(client) {
+async function repairClientIntegration(client, isExtraInbox = false) {
   const actions = [];
   const errors = [];
 
   if (!client.instance_name || !client.chatwoot_account_id || !client.inbox_id) {
     const message = 'client is missing instance/account/inbox';
-    await setClientIntegrationState(client.id, 'error', message);
+    await setClientIntegrationState(client.id, 'error', message, false, isExtraInbox);
     return { repaired: false, actions, errors: [message] };
   }
 
   const userToken = await clientTokenForIntegration(client);
   if (!userToken) {
     const message = 'client admin token not available';
-    await setClientIntegrationState(client.id, 'error', message);
+    await setClientIntegrationState(client.id, 'error', message, false, isExtraInbox);
     return { repaired: false, actions, errors: [message] };
   }
 
@@ -2102,7 +2008,7 @@ async function repairClientIntegration(client) {
   if (!webhook.ok) errors.push({ step: 'inbox_webhook', status: webhook.status, error: webhook.details });
 
   const status = errors.length ? 'error' : 'ok';
-  await setClientIntegrationState(client.id, status, errors.length ? JSON.stringify(errors) : null, !errors.length);
+  await setClientIntegrationState(client.id, status, errors.length ? JSON.stringify(errors) : null, !errors.length, isExtraInbox);
 
   return {
     repaired: !errors.length,
@@ -2111,7 +2017,7 @@ async function repairClientIntegration(client) {
   };
 }
 
-async function clientIntegrationStatus(client) {
+async function clientIntegrationStatus(client, isExtraInbox = false) {
   const result = {
     client_id: client.id,
     instance_name: client.instance_name,
@@ -2130,7 +2036,7 @@ async function clientIntegrationStatus(client) {
   if (!client.instance_name || !client.chatwoot_account_id || !client.inbox_id) {
     result.history_import = { ok: false, status: 400, details: 'client is missing instance/account/inbox' };
     result.media_probe = { ok: false, status: 400, details: 'client is missing instance/account/inbox' };
-    await setClientIntegrationState(client.id, 'error', result.history_import.details);
+    await setClientIntegrationState(client.id, 'error', result.history_import.details, false, isExtraInbox);
     return result;
   }
 
@@ -2191,7 +2097,7 @@ async function clientIntegrationStatus(client) {
     evolution_instance: result.evolution_instance,
     chatwoot_link: result.chatwoot_link,
     inbox_webhook: result.inbox_webhook,
-  }));
+  }), false, isExtraInbox);
 
   return result;
 }
@@ -3136,73 +3042,6 @@ app.get('/manager/api/clients/:id', async (req, res) => {
   });
 });
 
-app.get('/manager/api/clients/:id/triage-bot', async (req, res) => {
-  const id = Number(req.params.id);
-  if (!TRIAGE_ADMIN_TOKEN) return res.status(400).json({ error: 'TRIAGE_ADMIN_TOKEN is not configured' });
-
-  const { rows } = await pool.query(`SELECT ${CLIENT_PUBLIC_FIELDS} FROM fluvius_clients WHERE id = $1`, [id]);
-  if (!rows.length) return res.status(404).json({ error: 'client not found' });
-  const client = rows[0];
-  if (!client.chatwoot_account_id) return res.status(400).json({ error: 'client is missing chatwoot account' });
-
-  const result = await triageBotFetch(`/admin/accounts/${client.chatwoot_account_id}/config`);
-  if (result.status >= 300) return res.status(result.status).json(result.data);
-  const webhook = await triageWebhookStatus(client.chatwoot_account_id);
-
-  return res.json({
-    ...result.data,
-    client_id: id,
-    chatwoot_account_id: client.chatwoot_account_id,
-    webhook,
-    webhook_url: webhook.url,
-  });
-});
-
-app.patch('/manager/api/clients/:id/triage-bot', async (req, res) => {
-  const id = Number(req.params.id);
-  if (!TRIAGE_ADMIN_TOKEN) return res.status(400).json({ error: 'TRIAGE_ADMIN_TOKEN is not configured' });
-
-  const { rows } = await pool.query(`SELECT ${CLIENT_PUBLIC_FIELDS} FROM fluvius_clients WHERE id = $1`, [id]);
-  if (!rows.length) return res.status(404).json({ error: 'client not found' });
-  const client = rows[0];
-  if (!client.chatwoot_account_id) return res.status(400).json({ error: 'client is missing chatwoot account' });
-
-  const options = sanitizeManagerTriageOptions(req.body?.options);
-  const payload = {
-    enabled: Boolean(req.body?.enabled),
-    greeting_text: String(req.body?.greeting_text || '').trim(),
-    invalid_behavior: 'route_to_human',
-    options,
-    finance_team_id: teamIdByLabel(options, 'financeiro', req.body?.finance_team_id),
-    support_team_id: teamIdByLabel(options, 'suporte', req.body?.support_team_id),
-    sales_team_id: teamIdByLabel(options, 'comercial', req.body?.sales_team_id),
-    human_team_id: teamIdByLabel(options, 'humano', req.body?.human_team_id),
-  };
-
-  let webhook = await triageWebhookStatus(client.chatwoot_account_id);
-  if (payload.enabled) {
-    try {
-      webhook = await ensureTriageWebhook(client.chatwoot_account_id);
-    } catch (error) {
-      return res.status(500).json({ error: 'ensure_triage_webhook_failed', details: error.message });
-    }
-  }
-
-  const result = await triageBotFetch(`/admin/accounts/${client.chatwoot_account_id}/config`, {
-    method: 'PUT',
-    body: JSON.stringify(payload),
-  });
-  if (result.status >= 300) return res.status(result.status).json(result.data);
-
-  return res.json({
-    ...result.data,
-    client_id: id,
-    chatwoot_account_id: client.chatwoot_account_id,
-    webhook,
-    webhook_url: webhook.url,
-  });
-});
-
 // Rename the visible WhatsApp channel/inbox name for manager operations.
 app.patch('/manager/api/clients/:id/channel-name', async (req, res) => {
   const id = Number(req.params.id);
@@ -4014,6 +3853,194 @@ app.post('/manager/api/clients/:id/import-history', async (req, res) => {
   }
 });
 
+// ─── Extra Inboxes Management ───────────────────────────────────────────────────
+
+// Add an extra inbox to an existing client
+app.post('/manager/api/clients/:id/inboxes', async (req, res) => {
+  const id = Number(req.params.id);
+  if (isNaN(id)) return res.status(400).json({ error: 'invalid client id' });
+  const label = String(req.body.label || '').trim();
+  if (!label) return res.status(400).json({ error: 'label is required' });
+
+  try {
+    const { rows } = await pool.query('SELECT * FROM fluvius_clients WHERE id = $1', [id]);
+    if (!rows.length) return res.status(404).json({ error: 'client not found' });
+    const client = rows[0];
+
+    if (!client.chatwoot_account_id) {
+      return res.status(400).json({ error: 'client missing chatwoot account' });
+    }
+
+    const userToken = await clientTokenForIntegration(client);
+    if (!userToken) return res.status(500).json({ error: 'could not get admin token for client' });
+
+    const onboardToken = randomBytes(24).toString('base64url');
+    const instanceName = `fluvius-${client.name.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').slice(0, 20)}-${label.toLowerCase().replace(/[^a-z0-9]/g, '-').slice(0, 10)}-${Date.now().toString(36)}`;
+    const channelDisplayName = `${client.name} - ${label}`.slice(0, 80);
+    const created = {};
+
+    // 1. Create Evolution instance
+    const evo = await evoFetch('/instance/create', {
+      method: 'POST',
+      body: JSON.stringify({ instanceName, integration: 'WHATSAPP-BAILEYS' }),
+    });
+    if (evo.status >= 300) {
+      return res.status(evo.status).json(provisioningError('create_instance', evo).body);
+    }
+    created.instanceName = instanceName;
+
+    // 2. Create Fluvius inbox
+    const cwt = await cwtAccountFetch(`/api/v1/accounts/${client.chatwoot_account_id}/inboxes`, userToken, {
+      method: 'POST',
+      body: JSON.stringify({ name: channelDisplayName, channel: { type: 'api', webhook_url: '' } }),
+    });
+    if (cwt.status >= 300) {
+      await evoFetch(`/instance/delete/${instanceName}`, { method: 'DELETE' });
+      return res.status(cwt.status).json(provisioningError('create_inbox', cwt).body);
+    }
+    
+    const inboxId = cwt.data?.id || null;
+    const inboxToken = cwt.data?.inbox_identifier || '';
+    if (!inboxId || !inboxToken) throw new Error('Fluvius inbox response missing id/inbox_identifier');
+
+    // 3. Link Evolution to Chatwoot
+    const link = await evoFetch(`/chatwoot/set/${instanceName}`, {
+      method: 'POST',
+      body: JSON.stringify(evolutionChatwootPayload(client.chatwoot_account_id, userToken, channelDisplayName)),
+    });
+
+    const historySync = await enableEvolutionHistorySync(instanceName, client.chatwoot_account_id, userToken, channelDisplayName);
+    
+    // 4. Update inbox webhook
+    const evolutionWebhookUrl = expectedInboxWebhookUrl(instanceName);
+    const webhook = await cwtAccountFetch(`/api/v1/accounts/${client.chatwoot_account_id}/inboxes/${inboxId}`, userToken, {
+      method: 'PATCH',
+      body: JSON.stringify({ channel: { webhook_url: evolutionWebhookUrl } }),
+    });
+
+    // 5. Save to DB
+    const insert = await pool.query(
+      `INSERT INTO fluvius_client_inboxes
+        (client_id, label, instance_name, channel_display_name, inbox_id, inbox_token, token, status, integration_status, integration_last_checked_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', 'ok', NOW())
+       RETURNING *`,
+      [id, label, instanceName, channelDisplayName, inboxId, inboxToken, onboardToken]
+    );
+
+    res.json(insert.rows[0]);
+  } catch (err) {
+    if (created.instanceName) {
+      await evoFetch(`/instance/delete/${created.instanceName}`, { method: 'DELETE' });
+    }
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// List extra inboxes
+app.get('/manager/api/clients/:id/inboxes', async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (isNaN(id)) return res.status(400).json({ error: 'invalid id' });
+    const { rows } = await pool.query('SELECT * FROM fluvius_client_inboxes WHERE client_id = $1 ORDER BY created_at ASC', [id]);
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Delete extra inbox
+app.delete('/manager/api/clients/:id/inboxes/:inboxId', async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const inboxId = Number(req.params.inboxId);
+    if (isNaN(id) || isNaN(inboxId)) return res.status(400).json({ error: 'invalid id' });
+    
+    const { rows } = await pool.query('SELECT * FROM fluvius_client_inboxes WHERE id = $1 AND client_id = $2', [inboxId, id]);
+    if (!rows.length) return res.status(404).json({ error: 'not found' });
+    const extraInbox = rows[0];
+
+  const cleanup = {};
+  if (extraInbox.instance_name) {
+    const evo = await evoFetch(`/instance/delete/${extraInbox.instance_name}`, { method: 'DELETE' });
+    cleanup.evolution = evo.status < 300 || evo.status === 404 ? 'deleted' : { status: evo.status, error: evo.data };
+  }
+  
+  if (extraInbox.inbox_id) {
+    const clientRows = await pool.query('SELECT * FROM fluvius_clients WHERE id = $1', [id]);
+    const client = clientRows.rows[0];
+    const userToken = await clientTokenForIntegration(client);
+    if (userToken) {
+      const cwt = await cwtAccountFetch(`/api/v1/accounts/${client.chatwoot_account_id}/inboxes/${extraInbox.inbox_id}`, userToken, { method: 'DELETE' });
+      cleanup.chatwoot_inbox = cwt.status < 300 || cwt.status === 404 ? 'deleted' : { status: cwt.status, error: cwt.data };
+    }
+  }
+
+    await pool.query('DELETE FROM fluvius_client_inboxes WHERE id = $1', [inboxId]);
+    res.json({ ok: true, cleanup });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/manager/api/clients/:id/inboxes/:inboxId/integration/status', async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const inboxId = Number(req.params.inboxId);
+    if (isNaN(id) || isNaN(inboxId)) return res.status(400).json({ error: 'invalid id' });
+
+    const { rows } = await pool.query('SELECT * FROM fluvius_client_inboxes WHERE id = $1 AND client_id = $2', [inboxId, id]);
+    if (!rows.length) return res.status(404).json({ error: 'inbox not found' });
+  
+  const clientRows = await pool.query('SELECT chatwoot_account_id FROM fluvius_clients WHERE id = $1', [id]);
+  const clientData = clientRows.rows[0];
+
+  const adaptedClient = {
+    id: rows[0].id,
+    instance_name: rows[0].instance_name,
+    chatwoot_account_id: clientData.chatwoot_account_id,
+    inbox_id: rows[0].inbox_id,
+    channel_display_name: rows[0].channel_display_name,
+    integration_status: rows[0].integration_status,
+    integration_last_checked_at: rows[0].integration_last_checked_at,
+    integration_last_error: rows[0].integration_last_error
+  };
+
+    const status = await clientIntegrationStatus(adaptedClient, true);
+    res.json(status);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/manager/api/clients/:id/inboxes/:inboxId/integration/repair', async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const inboxId = Number(req.params.inboxId);
+    if (isNaN(id) || isNaN(inboxId)) return res.status(400).json({ error: 'invalid id' });
+
+    const { rows } = await pool.query('SELECT * FROM fluvius_client_inboxes WHERE id = $1 AND client_id = $2', [inboxId, id]);
+    if (!rows.length) return res.status(404).json({ error: 'inbox not found' });
+  
+  const clientRows = await pool.query('SELECT chatwoot_account_id, chatwoot_user_id, chatwoot_user_email FROM fluvius_clients WHERE id = $1', [id]);
+  const clientData = clientRows.rows[0];
+
+  const adaptedClient = {
+    id: rows[0].id,
+    instance_name: rows[0].instance_name,
+    chatwoot_account_id: clientData.chatwoot_account_id,
+    inbox_id: rows[0].inbox_id,
+    channel_display_name: rows[0].channel_display_name,
+    chatwoot_user_id: clientData.chatwoot_user_id,
+    chatwoot_user_email: clientData.chatwoot_user_email
+  };
+
+    const repair = await repairClientIntegration(adaptedClient, true);
+    res.json(repair);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Delete client + Evolution instance
 app.delete('/manager/api/clients/:id', async (req, res) => {
   const id = Number(req.params.id);
@@ -4036,8 +4063,13 @@ app.delete('/manager/api/clients/:id', async (req, res) => {
 // ─── Client Onboarding Routes ─────────────────────────────────────────────────
 
 async function getClientByToken(token) {
-  const { rows } = await pool.query('SELECT * FROM fluvius_clients WHERE token = $1', [token]);
-  return rows[0] || null;
+  const { rows } = await pool.query("SELECT *, 'main' as token_type FROM fluvius_clients WHERE token = $1", [token]);
+  if (rows.length) return rows[0];
+
+  const extraRows = await pool.query("SELECT *, 'extra' as token_type, channel_display_name as name FROM fluvius_client_inboxes WHERE token = $1", [token]);
+  if (extraRows.rows.length) return extraRows.rows[0];
+
+  return null;
 }
 
 // Onboarding page
@@ -4086,10 +4118,17 @@ app.get('/onboard/:token/status', async (req, res) => {
   const state = (data?.instance?.state || data?.state || '').toLowerCase();
   const phone = data?.instance?.profileName || data?.instance?.wuid?.replace('@s.whatsapp.net','') || '';
   if (state === 'open' && client.status !== 'connected') {
-    await pool.query(
-      'UPDATE fluvius_clients SET status=$1, phone=$2, updated_at=NOW() WHERE token=$3',
-      ['connected', phone || client.phone, req.params.token],
-    );
+    if (client.token_type === 'extra') {
+      await pool.query(
+        'UPDATE fluvius_client_inboxes SET status=$1, phone=$2, updated_at=NOW() WHERE token=$3',
+        ['connected', phone || client.phone, req.params.token],
+      );
+    } else {
+      await pool.query(
+        'UPDATE fluvius_clients SET status=$1, phone=$2, updated_at=NOW() WHERE token=$3',
+        ['connected', phone || client.phone, req.params.token],
+      );
+    }
   }
   res.json({ state, phone });
 });
@@ -4432,9 +4471,9 @@ async function runTriageBot() {
       for (const conversation of greetings) {
         try {
           await greetTriageConversation(client, conversation);
-          console.log(`[triage-bot] greeted client=${client.id} conversation=${conversation.display_id}`);
+          console.log(`[triage-polling] greeted client=${client.id} conversation=${conversation.display_id}`);
         } catch (error) {
-          console.warn(`[triage-bot] greeting failed client=${client.id} conversation=${conversation.display_id}: ${error.message}`);
+          console.warn(`[triage-polling] greeting failed client=${client.id} conversation=${conversation.display_id}: ${error.message}`);
         }
       }
 
@@ -4442,14 +4481,14 @@ async function runTriageBot() {
       for (const conversation of replies) {
         try {
           const result = await routeTriageConversation(client, conversation);
-          console.log(`[triage-bot] reply client=${client.id} conversation=${conversation.display_id} routed=${result.routed}`);
+          console.log(`[triage-polling] reply client=${client.id} conversation=${conversation.display_id} routed=${result.routed}`);
         } catch (error) {
-          console.warn(`[triage-bot] routing failed client=${client.id} conversation=${conversation.display_id}: ${error.message}`);
+          console.warn(`[triage-polling] routing failed client=${client.id} conversation=${conversation.display_id}: ${error.message}`);
         }
       }
     }
   } catch (error) {
-    console.warn(`[triage-bot] run failed: ${error.message}`);
+    console.warn(`[triage-polling] run failed: ${error.message}`);
   } finally {
     triageBotRunning = false;
   }
@@ -4457,7 +4496,7 @@ async function runTriageBot() {
 
 function startTriageBot() {
   if (!TRIAGE_BOT_ENABLED) return;
-  console.log(`[triage-bot] enabled every ${TRIAGE_BOT_INTERVAL_SECONDS}s`);
+  console.log(`[triage-polling] enabled every ${TRIAGE_BOT_INTERVAL_SECONDS}s`);
   setTimeout(runTriageBot, 10000);
   setInterval(runTriageBot, TRIAGE_BOT_INTERVAL_SECONDS * 1000);
 }

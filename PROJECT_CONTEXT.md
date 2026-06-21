@@ -268,13 +268,13 @@ docker compose -f docker-compose.prod.yml logs -f chatwoot internal-chat evoluti
 
 ## Integração n8n
 
-O workflow de triagem inicial está em:
+O workflow simples de teste está em:
 
 ```text
 n8n-workflows/chatwoot-events-starter.json
 ```
 
-Esse workflow recebe webhooks do Chatwoot, processa apenas mensagens públicas incoming e executa a triagem inicial com as opções Comercial, Financeiro e Suporte. O estado é salvo em `custom_attributes` da conversa com chaves `fluvius_triage_*`, e o roteamento aplica labels `triagem-comercial`, `triagem-financeiro` ou `triagem-suporte`.
+Esse workflow recebe webhooks do Chatwoot, processa apenas `message_created` de mensagens públicas incoming e responde `hello world` na mesma conversa usando a API pública do Chatwoot.
 
 O workflow chama a API pública do Chatwoot diretamente. No n8n, crie/associe uma credencial `Header Auth` chamada `Fluvius Chatwoot API` com header `api_access_token`.
 
@@ -283,15 +283,9 @@ Variáveis esperadas:
 - No ambiente do n8n: `CHATWOOT_BASE_URL` ou `FLUVIUS_CHATWOOT_BASE_URL`, apontando para o domínio público do Fluvius.
 - No ambiente que registra o webhook: `N8N_WEBHOOK_URL`, apontando para `https://<dominio-n8n>/webhook/fluvius-events`.
 
-Eventos enviados ao n8n:
+Evento enviado ao n8n:
 
-- `conversation_created`
-- `conversation_updated`
-- `conversation_status_changed`
 - `message_created`
-- `message_updated`
-- `contact_created`
-- `contact_updated`
 
 Registre o webhook somente depois de ativar o workflow no n8n, para evitar erro 404 nas entregas do Chatwoot.
 

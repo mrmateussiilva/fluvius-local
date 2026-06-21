@@ -606,6 +606,22 @@
   </div>
 </div>
 
+<!-- Add Inbox Modal -->
+<div class="modal-overlay hidden" id="addInboxModal">
+  <div class="modal">
+    <h2>Adicionar Conexão WhatsApp</h2>
+    <p>Cria um novo número/inbox no Chatwoot para a mesma empresa.</p>
+    <div class="form-group">
+      <label>Nome do canal / Setor</label>
+      <input type="text" id="inboxLabelInput" placeholder="Ex: Suporte, Vendas, WhatsApp 2" />
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeAddInboxModal()">Cancelar</button>
+      <button class="btn btn-primary" id="btnAddInbox" onclick="addCompanyInbox()">Adicionar Conexão</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast-container" id="toasts"></div>
 
 <script>
@@ -927,20 +943,17 @@
         <button class="btn btn-ghost btn-sm" onclick="openAgentsModal(${c.id}, '${escapeAttr(c.name)}')">Adicionar agentes</button>
         <button class="btn btn-ghost btn-sm" onclick="importHistory(${c.id}, '${escapeAttr(c.name)}', this)">Importar histórico</button>
       </div>
-      <h3 style="font-size:14px;margin:18px 0 8px">Agentes da empresa</h3>
+
+      <div style="display:flex;align-items:center;justify-content:space-between;margin:24px 0 12px">
+        <h3 style="font-size:14px;margin:0">Conexões WhatsApp Extras</h3>
+        <button class="btn btn-ghost btn-sm" onclick="openAddInboxModal(${c.id})">+ Adicionar conexão</button>
+      </div>
+      <div id="companyInboxesContent">
+        <div class="loading-wrap"><span class="spinner"></span> Carregando conexões...</div>
+      </div>
+
+      <h3 style="font-size:14px;margin:24px 0 8px">Agentes da empresa</h3>
       ${renderAgents(c.id, c.agents || [])}
-      <section class="crm-panel">
-        <div class="crm-panel-head">
-          <div>
-            <h3>Bot de triagem inicial</h3>
-            <p>Configuração por empresa para responder o primeiro contato, aplicar labels e encaminhar para times.</p>
-          </div>
-          <button class="btn btn-ghost btn-sm" onclick="loadCompanyTriageBot(${c.id})">Atualizar bot</button>
-        </div>
-        <div id="triageBotContent">
-          <div class="loading-wrap"><span class="spinner"></span> Carregando bot...</div>
-        </div>
-      </section>
       <section class="crm-panel">
         <div class="crm-panel-head">
           <div>
@@ -960,7 +973,7 @@
         A empresa deve usar o Fluvius para atendimento e CRM. O Manager fica reservado para sua operacao privada de revenda, provisionamento, conexao WhatsApp e manutencao.
       </div>
     `;
-    loadCompanyTriageBot(c.id);
+    loadCompanyInboxes(c.id);
     loadCompanyCrm(c.id);
   }
 
@@ -988,6 +1001,117 @@
         `).join('')}
       </div>
     `;
+  }
+
+  let currentInboxClientId = null;
+
+  function openAddInboxModal(clientId) {
+    currentInboxClientId = clientId;
+    document.getElementById('addInboxModal').classList.remove('hidden');
+    document.getElementById('inboxLabelInput').focus();
+  }
+
+  function closeAddInboxModal() {
+    currentInboxClientId = null;
+    document.getElementById('addInboxModal').classList.add('hidden');
+    document.getElementById('inboxLabelInput').value = '';
+  }
+
+  async function addCompanyInbox() {
+    if (!currentInboxClientId) return;
+    const label = document.getElementById('inboxLabelInput').value.trim();
+    if (!label) return toast('Nome do canal é obrigatório', 'error');
+
+    const btn = document.getElementById('btnAddInbox');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Adicionando...';
+    try {
+      const r = await apiFetch(`${API}/clients/${currentInboxClientId}/inboxes`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ label })
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(readableError(data));
+      
+      toast('Conexão extra criada com sucesso');
+      const clientId = currentInboxClientId;
+      closeAddInboxModal();
+      loadCompanyInboxes(clientId);
+    } catch (e) {
+      toast(`Erro: ${e.message}`, 'error');
+    } finally {
+      btn.innerHTML = 'Adicionar Conexão';
+      btn.disabled = false;
+    }
+  }
+
+  async function loadCompanyInboxes(clientId) {
+    const wrap = document.getElementById('companyInboxesContent');
+    if (!wrap) return;
+    try {
+      const r = await apiFetch(`${API}/clients/${clientId}/inboxes`);
+      const inboxes = await r.json();
+      if (!inboxes.length) {
+        wrap.innerHTML = '<div class="detail-box"><span>Nenhuma conexão extra</span><strong>Esta empresa usa apenas a conexão principal.</strong></div>';
+        return;
+      }
+      
+      wrap.innerHTML = `
+        <div class="agent-list">
+          ${inboxes.map(inbox => {
+            const onboardLink = `${CHAT_BASE}/onboard/${inbox.token}`;
+            return `
+            <div class="agent-row">
+              <div>
+                <strong>${escapeHtml(inbox.channel_display_name)}</strong>
+                <span style="color:var(--muted);display:block;margin-top:4px">${inbox.phone || 'Aguardando conexão'} • ${statusBadge(inbox.status)}</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;justify-content:flex-end;flex-wrap:wrap">
+                <a class="btn btn-ghost btn-sm" href="${onboardLink}" target="_blank" style="text-decoration:none">Onboarding</a>
+                <button class="btn btn-ghost btn-sm" onclick="copyLink('${onboardLink}', this)">Copiar link</button>
+                <button class="btn btn-ghost btn-sm" onclick="repairCompanyInbox(${clientId}, ${inbox.id}, this)">Reparar</button>
+                <button class="btn btn-danger" onclick="deleteCompanyInbox(${clientId}, ${inbox.id}, '${escapeAttr(inbox.channel_display_name)}')">Remover</button>
+              </div>
+            </div>
+            `;
+          }).join('')}
+        </div>
+      `;
+    } catch (e) {
+      wrap.innerHTML = `<div style="color:var(--red)">Erro ao carregar conexões extras: ${e.message}</div>`;
+    }
+  }
+
+  async function repairCompanyInbox(clientId, inboxId, btn) {
+    const oldHtml = btn.innerHTML;
+    btn.innerHTML = '<span class="spinner"></span>';
+    btn.disabled = true;
+    try {
+      const r = await apiFetch(`${API}/clients/${clientId}/inboxes/${inboxId}/integration/repair`, { method: 'POST' });
+      const data = await r.json();
+      if (!r.ok) throw new Error(readableError(data));
+      toast('Conexão reparada com sucesso');
+    } catch (e) {
+      toast(`Erro: ${e.message}`, 'error');
+    } finally {
+      btn.innerHTML = oldHtml;
+      btn.disabled = false;
+      loadCompanyInboxes(clientId);
+    }
+  }
+
+  async function deleteCompanyInbox(clientId, inboxId, name) {
+    if (!confirm(`Tem certeza que deseja remover a conexão "${name}"? Essa ação não pode ser desfeita.`)) return;
+    try {
+      const r = await apiFetch(`${API}/clients/${clientId}/inboxes/${inboxId}`, { method: 'DELETE' });
+      const data = await r.json();
+      if (!r.ok) throw new Error(readableError(data));
+      toast('Conexão removida');
+      loadCompanyInboxes(clientId);
+    } catch (e) {
+      toast(`Erro: ${e.message}`, 'error');
+    }
   }
 
   function renderAgents(clientId, agents) {
@@ -1026,169 +1150,6 @@
   function formatCrmDate(value) {
     if (!value) return 'Sem atividade';
     return new Date(value).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
-  }
-
-  async function loadCompanyTriageBot(clientId) {
-    const content = document.getElementById('triageBotContent');
-    if (!content) return;
-    content.innerHTML = `<div class="loading-wrap"><span class="spinner"></span> Carregando bot...</div>`;
-    try {
-      const r = await apiFetch(`${API}/clients/${clientId}/triage-bot`);
-      const data = await readJsonResponse(r);
-      if (!r.ok) {
-        content.innerHTML = `<div style="color:var(--red)">${readableError(data)}</div>`;
-        return;
-      }
-      content.innerHTML = renderTriageBotForm(clientId, data);
-    } catch (e) {
-      content.innerHTML = `<div style="color:var(--red)">Erro: ${e.message}</div>`;
-    }
-  }
-
-  function renderTriageBotForm(clientId, config) {
-    const options = triageOptionsForForm(config);
-    const labels = [...new Set([...options.map(option => option.label).filter(Boolean), 'triagem_concluida'])].join(', ');
-    const status = config.enabled
-      ? '<span class="badge badge-open">Ativo</span>'
-      : '<span class="badge badge-close">Desativado</span>';
-    const webhookStatus = config.webhook?.registered
-      ? '<span class="badge badge-open">Registrado</span>'
-      : '<span class="badge badge-close">Não registrado</span>';
-    const signatureStatus = config.webhook?.secret_configured
-      ? '<span class="badge badge-open">Assinado</span>'
-      : '<span class="badge badge-close">Sem assinatura</span>';
-    return `
-      <div class="detail-grid" style="margin-bottom:14px">
-        <div class="detail-box"><span>Status</span><strong>${status}</strong></div>
-        <div class="detail-box"><span>Conta Fluvius</span><strong>${config.chatwoot_account_id || config.account_id}</strong></div>
-        <div class="detail-box"><span>Webhook</span><strong>${webhookStatus}</strong></div>
-        <div class="detail-box"><span>Segurança</span><strong>${signatureStatus}</strong></div>
-        <div class="detail-box"><span>URL interna</span><code>${escapeHtml(config.webhook_url || 'http://triage-bot:4100/webhook/chatwoot')}</code></div>
-      </div>
-      <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-bottom:14px">
-        <label style="display:flex;align-items:center;gap:8px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px">
-          <input type="checkbox" id="triageEnabledInput" ${config.enabled ? 'checked' : ''} />
-          <span>Ativar bot nesta empresa</span>
-        </label>
-        <div class="detail-box"><span>Labels aplicadas</span><strong>${escapeHtml(labels)}</strong></div>
-      </div>
-      <div class="form-group">
-        <label>Mensagem inicial</label>
-        <textarea id="triageGreetingInput" rows="3" placeholder="Texto enviado antes das opções">${escapeHtml(config.greeting_text || 'Olá! 👋\nAntes de te encaminhar, me diz com quem você deseja falar:')}</textarea>
-      </div>
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin:14px 0 8px">
-        <strong>Opções do menu</strong>
-        <button class="btn btn-ghost btn-sm" onclick="addTriageOption()">Adicionar opção</button>
-      </div>
-      <div id="triageOptionRows" style="display:grid;gap:10px;overflow-x:auto">
-        ${renderTriageOptionRows(options)}
-      </div>
-      <div class="company-actions" style="margin-top:12px">
-        <button class="btn btn-primary btn-sm" onclick="saveCompanyTriageBot(${clientId}, this)">Salvar bot</button>
-      </div>
-      <div style="margin-top:10px;color:var(--muted);font-size:12px;line-height:1.5">
-        Ao ativar, o Manager registra o webhook assinado desta conta automaticamente. Desativado, o bot ignora os webhooks desta empresa.
-      </div>
-    `;
-  }
-
-  function triageOptionsForForm(config = {}) {
-    const fallback = [
-      { key: '1', text: 'Financeiro', label: 'financeiro', team_id: config.finance_team_id || '', confirmation_text: 'Perfeito, vou te encaminhar para Financeiro.' },
-      { key: '2', text: 'Suporte', label: 'suporte', team_id: config.support_team_id || '', confirmation_text: 'Perfeito, vou te encaminhar para Suporte.' },
-      { key: '3', text: 'Comercial', label: 'comercial', team_id: config.sales_team_id || '', confirmation_text: 'Perfeito, vou te encaminhar para Comercial.' },
-      { key: '4', text: 'Falar com atendente', label: 'humano', team_id: config.human_team_id || '', confirmation_text: 'Vou te encaminhar para um atendente.' },
-    ];
-    const source = Array.isArray(config.options) && config.options.length ? config.options : fallback;
-    return source.slice(0, 6).map((option, index) => ({
-      key: String(option.key || index + 1),
-      text: String(option.text || option.label || ''),
-      label: String(option.label || '').toLowerCase(),
-      team_id: String(option.team_id || ''),
-      confirmation_text: String(option.confirmation_text || ''),
-    }));
-  }
-
-  function renderTriageOptionRows(options) {
-    return options.map((option, index) => renderTriageOptionRow(option, index)).join('');
-  }
-
-  function renderTriageOptionRow(option = {}, index = 0) {
-    return `
-      <div class="triage-option-row" style="display:grid;grid-template-columns:64px minmax(140px,1.2fr) minmax(110px,1fr) 110px minmax(180px,1.4fr) auto;gap:8px;align-items:end;min-width:760px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px">
-        <div class="form-group" style="margin:0"><label>Número</label><input class="triage-option-key" value="${escapeAttr(option.key || index + 1)}" maxlength="8" /></div>
-        <div class="form-group" style="margin:0"><label>Texto</label><input class="triage-option-text" value="${escapeAttr(option.text || '')}" placeholder="Ex: Financeiro" /></div>
-        <div class="form-group" style="margin:0"><label>Label</label><input class="triage-option-label" value="${escapeAttr(option.label || '')}" placeholder="financeiro" /></div>
-        <div class="form-group" style="margin:0"><label>Time ID</label><input class="triage-option-team" value="${escapeAttr(option.team_id || '')}" placeholder="opcional" /></div>
-        <div class="form-group" style="margin:0"><label>Confirmação</label><input class="triage-option-confirmation" value="${escapeAttr(option.confirmation_text || '')}" placeholder="Perfeito, vou te encaminhar..." /></div>
-        <button class="btn btn-ghost btn-sm" onclick="removeTriageOption(this)">Remover</button>
-      </div>
-    `;
-  }
-
-  function addTriageOption() {
-    const container = document.getElementById('triageOptionRows');
-    if (!container) return;
-    const rows = [...container.querySelectorAll('.triage-option-row')];
-    if (rows.length >= 6) {
-      toast('O bot aceita no máximo 6 opções.', 'error');
-      return;
-    }
-    const used = new Set(rows.map(row => row.querySelector('.triage-option-key')?.value.trim()).filter(Boolean));
-    let key = 1;
-    while (used.has(String(key))) key += 1;
-    container.insertAdjacentHTML('beforeend', renderTriageOptionRow({ key: String(key), text: '', label: '', team_id: '', confirmation_text: '' }, rows.length));
-  }
-
-  function removeTriageOption(btn) {
-    btn?.closest('.triage-option-row')?.remove();
-  }
-
-  function collectTriageOptions() {
-    const rows = [...document.querySelectorAll('#triageOptionRows .triage-option-row')];
-    return rows.slice(0, 6).map((row, index) => {
-      const key = row.querySelector('.triage-option-key')?.value.trim() || String(index + 1);
-      const text = row.querySelector('.triage-option-text')?.value.trim() || '';
-      const label = row.querySelector('.triage-option-label')?.value.trim().toLowerCase() || '';
-      const teamId = row.querySelector('.triage-option-team')?.value.trim() || '';
-      const confirmation = row.querySelector('.triage-option-confirmation')?.value.trim() || '';
-      return { key, text, label, team_id: teamId, confirmation_text: confirmation };
-    }).filter(option => option.key && option.text && option.label);
-  }
-
-  async function saveCompanyTriageBot(clientId, btn) {
-    const original = btn?.innerHTML || 'Salvar bot';
-    if (btn) { btn.disabled = true; btn.innerHTML = `<span class="spinner"></span>`; }
-    const options = collectTriageOptions();
-    if (!options.length) {
-      toast('Adicione pelo menos uma opção com número, texto e label.', 'error');
-      if (btn) { btn.disabled = false; btn.innerHTML = original; }
-      return;
-    }
-    const payload = {
-      enabled: document.getElementById('triageEnabledInput')?.checked || false,
-      greeting_text: document.getElementById('triageGreetingInput')?.value.trim() || '',
-      invalid_behavior: 'route_to_human',
-      options,
-    };
-    try {
-      const r = await apiFetch(`${API}/clients/${clientId}/triage-bot`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      const data = await readJsonResponse(r);
-      if (!r.ok) {
-        toast(readableError(data), 'error');
-        return;
-      }
-      document.getElementById('triageBotContent').innerHTML = renderTriageBotForm(clientId, data);
-      toast(payload.enabled ? 'Bot de triagem ativado.' : 'Bot de triagem desativado.');
-    } catch (e) {
-      toast(`Erro: ${e.message}`, 'error');
-    } finally {
-      if (btn) { btn.disabled = false; btn.innerHTML = original; }
-    }
   }
 
   async function loadCompanyCrm(clientId) {

@@ -1,5 +1,5 @@
 {
-  "name": "Fluvius Chatwoot Triage",
+  "name": "Fluvius Chatwoot Hello World",
   "nodes": [
     {
       "parameters": {
@@ -13,21 +13,21 @@
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
       "position": [
-        -900,
+        -680,
         0
       ],
       "webhookId": "fluvius-events"
     },
     {
       "parameters": {
-        "jsCode": "const env = typeof $env !== 'undefined' ? $env : (typeof process !== 'undefined' ? process.env : {});\nconst CHATWOOT_BASE_URL = env.CHATWOOT_BASE_URL || env.FLUVIUS_CHATWOOT_BASE_URL || 'https://fluvius.finderbit.com.br';\n\nconst body = $json.body || $json;\nconst event = String(body.event || '').trim();\nconst message = body.message || body;\nconst conversation = body.conversation || message.conversation || {};\nconst account = body.account || conversation.account || {};\nconst messageType = message.message_type ?? body.message_type;\nconst isIncoming = messageType === 'incoming' || messageType === 0 || messageType === '0';\nconst isPrivate = Boolean(message.private ?? body.private);\nconst content = String(message.content ?? body.content ?? '').trim();\nconst accountId = Number(account.id || conversation.account_id || body.account_id || body.account?.id || 0);\nconst conversationId = Number(conversation.id || body.conversation_id || message.conversation_id || 0);\nconst messageId = Number(message.id || body.id || 0);\n\nif (event !== 'message_created') {\n  return [{ json: { action: 'ignored', reason: `ignored_event:${event || 'unknown'}` } }];\n}\n\nif (!isIncoming || isPrivate || !content || !accountId || !conversationId || !messageId) {\n  return [{\n    json: {\n      action: 'ignored',\n      reason: 'not_public_incoming_message',\n      event,\n      messageType,\n      isPrivate,\n      accountId,\n      conversationId,\n      messageId,\n    },\n  }];\n}\n\nreturn [{\n  json: {\n    action: 'process',\n    chatwootBaseUrl: CHATWOOT_BASE_URL.replace(/\\/$/, ''),\n    accountId,\n    conversationId,\n    messageId,\n    content,\n  },\n}];"
+        "jsCode": "const env = typeof $env !== 'undefined' ? $env : (typeof process !== 'undefined' ? process.env : {});\nconst chatwootBaseUrl = String(env.CHATWOOT_BASE_URL || env.FLUVIUS_CHATWOOT_BASE_URL || 'https://fluvius.finderbit.com.br').replace(/\\/$/, '');\n\nconst body = $json.body || $json;\nconst event = String(body.event || '').trim();\nconst message = body.message || body;\nconst conversation = body.conversation || message.conversation || {};\nconst account = body.account || conversation.account || {};\nconst messageType = message.message_type ?? body.message_type;\nconst isIncoming = messageType === 'incoming' || messageType === 0 || messageType === '0';\nconst isPrivate = Boolean(message.private ?? body.private);\nconst content = String(message.content ?? body.content ?? '').trim();\nconst accountId = Number(account.id || conversation.account_id || body.account_id || body.account?.id || 0);\nconst conversationId = Number(conversation.id || body.conversation_id || message.conversation_id || 0);\nconst messageId = Number(message.id || body.id || 0);\n\nif (event !== 'message_created') {\n  return [{ json: { action: 'ignored', reason: `ignored_event:${event || 'unknown'}` } }];\n}\n\nif (!isIncoming || isPrivate || !content || !accountId || !conversationId || !messageId) {\n  return [{\n    json: {\n      action: 'ignored',\n      reason: 'not_public_incoming_message',\n      event,\n      messageType,\n      isPrivate,\n      accountId,\n      conversationId,\n      messageId,\n    },\n  }];\n}\n\nreturn [{\n  json: {\n    action: 'send_hello_world',\n    chatwootBaseUrl,\n    accountId,\n    conversationId,\n    messageId,\n    content,\n    replyText: 'hello world',\n  },\n}];"
       },
       "id": "114b6cab-389f-4533-87ff-57fd05f33714",
       "name": "Prepare Incoming",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -680,
+        -440,
         0
       ]
     },
@@ -46,7 +46,7 @@
                 "conditions": [
                   {
                     "leftValue": "={{ $json.action }}",
-                    "rightValue": "process",
+                    "rightValue": "send_hello_world",
                     "operator": {
                       "type": "string",
                       "operation": "equals"
@@ -56,7 +56,7 @@
                 "combinator": "and"
               },
               "renameOutput": true,
-              "outputKey": "process"
+              "outputKey": "send"
             },
             {
               "conditions": {
@@ -85,157 +85,13 @@
         },
         "options": {}
       },
-      "id": "ac70c0de-3576-4137-8a89-cdf5fd9c6a73",
+      "id": "c8cfe0ce-2606-48f0-85e4-7a61f8b605b4",
       "name": "Route Incoming",
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3.2,
       "position": [
-        -460,
+        -180,
         0
-      ]
-    },
-    {
-      "parameters": {
-        "url": "={{ $json.chatwootBaseUrl + '/api/v1/accounts/' + $json.accountId + '/conversations/' + $json.conversationId }}",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
-        "options": {}
-      },
-      "id": "040b26d0-2556-47f0-b684-581929bf3efe",
-      "name": "Fetch Conversation",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        -220,
-        -120
-      ],
-      "credentials": {
-        "httpHeaderAuth": {
-          "id": "REPLACE_WITH_N8N_CREDENTIAL_ID",
-          "name": "Fluvius Chatwoot API"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "jsCode": "const input = $('Prepare Incoming').first().json;\nconst response = $json.payload || $json.data || $json;\nconst conversation = response.conversation || response;\nconst attrs = conversation.custom_attributes || {};\nconst currentLabels = Array.isArray(conversation.labels) ? conversation.labels : [];\nconst lastIncomingId = String(attrs.fluvius_triage_last_incoming_id || '');\n\nconst options = [\n  { key: '1', label: 'Comercial', slug: 'comercial' },\n  { key: '2', label: 'Financeiro', slug: 'financeiro' },\n  { key: '3', label: 'Suporte', slug: 'suporte' },\n];\nconst menu = [\n  'Olá! Para direcionar seu atendimento, escolha uma opção:',\n  '',\n  ...options.map(option => `${option.key} - ${option.label}`),\n  '',\n  'Digite apenas o número da opção desejada.',\n].join('\\n');\n\nconst base = {\n  chatwootBaseUrl: input.chatwootBaseUrl,\n  accountId: input.accountId,\n  conversationId: input.conversationId,\n  messageId: input.messageId,\n  content: input.content,\n};\n\nif (lastIncomingId === String(input.messageId)) {\n  return [{ json: { ...base, action: 'ignored', reason: 'duplicate_message' } }];\n}\n\nif (attrs.fluvius_triage_state === 'routed') {\n  return [{ json: { ...base, action: 'ignored', reason: 'already_routed' } }];\n}\n\nif (!attrs.fluvius_triage_state) {\n  return [{\n    json: {\n      ...base,\n      action: 'greet',\n      replyText: menu,\n      customAttributes: {\n        ...attrs,\n        fluvius_triage_state: 'waiting',\n        fluvius_triage_greeted_at: new Date().toISOString(),\n        fluvius_triage_last_incoming_id: String(input.messageId),\n      },\n    },\n  }];\n}\n\nconst choice = input.content.match(/^\\s*([1-3])\\s*$/)?.[1] || '';\nconst selected = options.find(option => option.key === choice);\n\nif (!selected) {\n  return [{\n    json: {\n      ...base,\n      action: 'invalid',\n      replyText: menu,\n      customAttributes: {\n        ...attrs,\n        fluvius_triage_state: 'waiting',\n        fluvius_triage_last_incoming_id: String(input.messageId),\n        fluvius_triage_last_invalid_at: new Date().toISOString(),\n      },\n    },\n  }];\n}\n\nconst label = `triagem-${selected.slug}`;\nconst labels = [...new Set([...currentLabels, label])];\nreturn [{\n  json: {\n    ...base,\n    action: 'route',\n    selectedOption: selected.key,\n    selectedLabel: selected.label,\n    triageLabel: label,\n    labels,\n    replyText: `Perfeito, vou direcionar seu atendimento para ${selected.label}.`,\n    customAttributes: {\n      ...attrs,\n      fluvius_triage_state: 'routed',\n      fluvius_triage_option: selected.key,\n      fluvius_triage_label: selected.label,\n      fluvius_triage_last_incoming_id: String(input.messageId),\n      fluvius_triage_routed_at: new Date().toISOString(),\n    },\n  },\n}];"
-      },
-      "id": "8b2fbf3f-a0fa-46cd-955a-4a4e737636d3",
-      "name": "Decide Triage",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        20,
-        -120
-      ]
-    },
-    {
-      "parameters": {
-        "rules": {
-          "values": [
-            {
-              "conditions": {
-                "options": {
-                  "caseSensitive": true,
-                  "leftValue": "",
-                  "typeValidation": "strict",
-                  "version": 2
-                },
-                "conditions": [
-                  {
-                    "leftValue": "={{ $json.action }}",
-                    "rightValue": "greet",
-                    "operator": {
-                      "type": "string",
-                      "operation": "equals"
-                    }
-                  }
-                ],
-                "combinator": "and"
-              },
-              "renameOutput": true,
-              "outputKey": "greet"
-            },
-            {
-              "conditions": {
-                "options": {
-                  "caseSensitive": true,
-                  "leftValue": "",
-                  "typeValidation": "strict",
-                  "version": 2
-                },
-                "conditions": [
-                  {
-                    "leftValue": "={{ $json.action }}",
-                    "rightValue": "invalid",
-                    "operator": {
-                      "type": "string",
-                      "operation": "equals"
-                    }
-                  }
-                ],
-                "combinator": "and"
-              },
-              "renameOutput": true,
-              "outputKey": "invalid"
-            },
-            {
-              "conditions": {
-                "options": {
-                  "caseSensitive": true,
-                  "leftValue": "",
-                  "typeValidation": "strict",
-                  "version": 2
-                },
-                "conditions": [
-                  {
-                    "leftValue": "={{ $json.action }}",
-                    "rightValue": "route",
-                    "operator": {
-                      "type": "string",
-                      "operation": "equals"
-                    }
-                  }
-                ],
-                "combinator": "and"
-              },
-              "renameOutput": true,
-              "outputKey": "route"
-            },
-            {
-              "conditions": {
-                "options": {
-                  "caseSensitive": true,
-                  "leftValue": "",
-                  "typeValidation": "strict",
-                  "version": 2
-                },
-                "conditions": [
-                  {
-                    "leftValue": "={{ $json.action }}",
-                    "rightValue": "ignored",
-                    "operator": {
-                      "type": "string",
-                      "operation": "equals"
-                    }
-                  }
-                ],
-                "combinator": "and"
-              },
-              "renameOutput": true,
-              "outputKey": "ignored"
-            }
-          ]
-        },
-        "options": {}
-      },
-      "id": "811aa267-35d8-4a1a-a174-13dc956f09b9",
-      "name": "Route Triage Action",
-      "type": "n8n-nodes-base.switch",
-      "typeVersion": 3.2,
-      "position": [
-        260,
-        -120
       ]
     },
     {
@@ -250,168 +106,12 @@
         "options": {}
       },
       "id": "43715038-63ac-4b54-97a0-1d2e8e64c9b4",
-      "name": "Send Greeting Menu",
+      "name": "Send Hello World",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        520,
-        -420
-      ],
-      "credentials": {
-        "httpHeaderAuth": {
-          "id": "REPLACE_WITH_N8N_CREDENTIAL_ID",
-          "name": "Fluvius Chatwoot API"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "={{ $json.chatwootBaseUrl + '/api/v1/accounts/' + $json.accountId + '/conversations/' + $json.conversationId + '/messages' }}",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ { content: $json.replyText, message_type: 'outgoing', private: false } }}",
-        "options": {}
-      },
-      "id": "653ded91-52cd-418e-ad34-ebca30894f82",
-      "name": "Send Invalid Menu",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        520,
-        -220
-      ],
-      "credentials": {
-        "httpHeaderAuth": {
-          "id": "REPLACE_WITH_N8N_CREDENTIAL_ID",
-          "name": "Fluvius Chatwoot API"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "={{ $json.chatwootBaseUrl + '/api/v1/accounts/' + $json.accountId + '/conversations/' + $json.conversationId + '/messages' }}",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ { content: $json.replyText, message_type: 'outgoing', private: false } }}",
-        "options": {}
-      },
-      "id": "b3f274c8-6abe-45dc-9b27-0e9e95d16ca4",
-      "name": "Send Route Confirmation",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        520,
-        0
-      ],
-      "credentials": {
-        "httpHeaderAuth": {
-          "id": "REPLACE_WITH_N8N_CREDENTIAL_ID",
-          "name": "Fluvius Chatwoot API"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "={{ $('Decide Triage').first().json.chatwootBaseUrl + '/api/v1/accounts/' + $('Decide Triage').first().json.accountId + '/conversations/' + $('Decide Triage').first().json.conversationId + '/custom_attributes' }}",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ { custom_attributes: $('Decide Triage').first().json.customAttributes } }}",
-        "options": {}
-      },
-      "id": "a45df286-7d1e-4275-809e-d0aad0663fc4",
-      "name": "Save Greeting State",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        760,
-        -420
-      ],
-      "credentials": {
-        "httpHeaderAuth": {
-          "id": "REPLACE_WITH_N8N_CREDENTIAL_ID",
-          "name": "Fluvius Chatwoot API"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "={{ $('Decide Triage').first().json.chatwootBaseUrl + '/api/v1/accounts/' + $('Decide Triage').first().json.accountId + '/conversations/' + $('Decide Triage').first().json.conversationId + '/custom_attributes' }}",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ { custom_attributes: $('Decide Triage').first().json.customAttributes } }}",
-        "options": {}
-      },
-      "id": "52d50804-f407-47b4-bab0-51b985c35349",
-      "name": "Save Invalid State",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        760,
-        -220
-      ],
-      "credentials": {
-        "httpHeaderAuth": {
-          "id": "REPLACE_WITH_N8N_CREDENTIAL_ID",
-          "name": "Fluvius Chatwoot API"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "={{ $('Decide Triage').first().json.chatwootBaseUrl + '/api/v1/accounts/' + $('Decide Triage').first().json.accountId + '/conversations/' + $('Decide Triage').first().json.conversationId + '/labels' }}",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ { labels: $('Decide Triage').first().json.labels } }}",
-        "options": {}
-      },
-      "id": "a876b846-8f76-477f-8ed6-60d2ae36c274",
-      "name": "Apply Triage Label",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        760,
-        0
-      ],
-      "credentials": {
-        "httpHeaderAuth": {
-          "id": "REPLACE_WITH_N8N_CREDENTIAL_ID",
-          "name": "Fluvius Chatwoot API"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "={{ $('Decide Triage').first().json.chatwootBaseUrl + '/api/v1/accounts/' + $('Decide Triage').first().json.accountId + '/conversations/' + $('Decide Triage').first().json.conversationId + '/custom_attributes' }}",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ { custom_attributes: $('Decide Triage').first().json.customAttributes } }}",
-        "options": {}
-      },
-      "id": "018dcf8a-c100-41b1-bfc0-e04134ea77ae",
-      "name": "Save Routed State",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        1000,
-        0
+        100,
+        -100
       ],
       "credentials": {
         "httpHeaderAuth": {
@@ -423,7 +123,7 @@
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ { ok: true, action: $json.action || 'ignored', reason: $json.reason || '' } }}",
+        "responseBody": "={{ { ok: true, action: $json.action || 'sent_hello_world', reason: $json.reason || '' } }}",
         "options": {}
       },
       "id": "f0dc21bf-ce54-4d25-8ccf-5d5a25837660",
@@ -431,8 +131,8 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
       "position": [
-        1240,
-        -120
+        380,
+        0
       ]
     }
   ],
@@ -463,7 +163,7 @@
       "main": [
         [
           {
-            "node": "Fetch Conversation",
+            "node": "Send Hello World",
             "type": "main",
             "index": 0
           }
@@ -477,127 +177,7 @@
         ]
       ]
     },
-    "Fetch Conversation": {
-      "main": [
-        [
-          {
-            "node": "Decide Triage",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Decide Triage": {
-      "main": [
-        [
-          {
-            "node": "Route Triage Action",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Route Triage Action": {
-      "main": [
-        [
-          {
-            "node": "Send Greeting Menu",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Send Invalid Menu",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Send Route Confirmation",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Respond OK",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Send Greeting Menu": {
-      "main": [
-        [
-          {
-            "node": "Save Greeting State",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Send Invalid Menu": {
-      "main": [
-        [
-          {
-            "node": "Save Invalid State",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Send Route Confirmation": {
-      "main": [
-        [
-          {
-            "node": "Apply Triage Label",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Save Greeting State": {
-      "main": [
-        [
-          {
-            "node": "Respond OK",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Save Invalid State": {
-      "main": [
-        [
-          {
-            "node": "Respond OK",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Apply Triage Label": {
-      "main": [
-        [
-          {
-            "node": "Save Routed State",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Save Routed State": {
+    "Send Hello World": {
       "main": [
         [
           {
@@ -609,7 +189,13 @@
       ]
     }
   },
+  "pinData": {},
   "settings": {
     "executionOrder": "v1"
-  }
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2026-06-21T00:00:00.000Z",
+  "versionId": "hello-world"
 }

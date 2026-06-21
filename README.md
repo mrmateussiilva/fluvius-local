@@ -197,7 +197,7 @@ Esta stack usa o n8n externo:
 https://n8n.atrasado.online
 ```
 
-Workflow de triagem inicial:
+Workflow simples de teste:
 
 ```text
 n8n-workflows/chatwoot-events-starter.json
@@ -217,7 +217,7 @@ CHATWOOT_BASE_URL=https://fluvius.finderbit.com.br
 
    Também pode usar `FLUVIUS_CHATWOOT_BASE_URL`; o workflow aceita os dois nomes.
 4. Importe o workflow `n8n-workflows/chatwoot-events-starter.json`.
-5. Em cada node HTTP, selecione a credencial `Fluvius Chatwoot API`.
+5. No node HTTP `Send Hello World`, selecione a credencial `Fluvius Chatwoot API`.
 6. Ative o workflow no n8n.
 7. No ambiente onde você roda este repositório, configure o webhook público do n8n:
 
@@ -237,23 +237,11 @@ Isso registra no Fluvius o webhook:
 https://n8n.atrasado.online/webhook/fluvius-events
 ```
 
-Eventos enviados:
-
-- `conversation_created`
-- `conversation_updated`
-- `conversation_status_changed`
-- `message_created`
-- `message_updated`
-- `contact_created`
-- `contact_updated`
-
-Triagem executada pelo workflow:
+Fluxo executado:
 
 - processa apenas `message_created` de mensagens públicas incoming;
-- envia menu com `1 - Comercial`, `2 - Financeiro`, `3 - Suporte`;
-- salva estado em `custom_attributes` da conversa (`fluvius_triage_state`, timestamps e opção escolhida);
-- aplica labels `triagem-comercial`, `triagem-financeiro` ou `triagem-suporte`;
-- ignora mensagens de agentes, mensagens privadas, eventos duplicados e conversas já roteadas.
+- envia uma resposta pública `hello world` na mesma conversa;
+- ignora mensagens de agentes, mensagens privadas e eventos que não sejam `message_created`.
 
 Quando o n8n estiver ativo, mantenha o bot interno desligado:
 
@@ -268,34 +256,6 @@ Para remover:
 ```
 
 Nao registre o webhook antes de ativar o workflow no n8n, porque o Fluvius vai tentar entregar eventos e receber erro 404.
-
-## Triage bot por webhook
-
-O `triage-bot` é o serviço novo e isolado para triagem inicial via webhook oficial do Chatwoot. Ele recebe apenas `message_created`, usa API do Chatwoot para responder, aplicar labels e atribuir times, e guarda estado próprio em SQLite.
-
-A ativação/desativação e o menu do bot são configurados por empresa no Manager, dentro do detalhe da empresa em `Bot de triagem inicial`. Cada opção pode ter label, mensagem de confirmação e `Time ID` opcional.
-
-Guia completo:
-
-```text
-docs/triage-bot.md
-```
-
-Subir localmente:
-
-```bash
-docker compose up -d --build triage-bot
-```
-
-Webhook interno no Chatwoot:
-
-```text
-POST http://triage-bot:4100/webhook/chatwoot
-Header: X-Triage-Webhook-Secret
-Evento: message_created
-```
-
-Não use o workflow n8n e o `triage-bot` ao mesmo tempo para a mesma conta, e mantenha `TRIAGE_BOT_ENABLED=false` no `internal-chat`.
 
 ## Enderecos entre containers
 

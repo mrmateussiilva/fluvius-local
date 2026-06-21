@@ -17,15 +17,7 @@ docker compose exec -T chatwoot env \
     webhook = Webhook.where(account_id: account_id, url: url).first_or_initialize
     webhook.name = name if webhook.respond_to?(:name=)
     webhook.webhook_type = 'account_type' if webhook.respond_to?(:webhook_type=)
-    webhook.subscriptions = %w[
-      conversation_created
-      conversation_updated
-      conversation_status_changed
-      message_created
-      message_updated
-      contact_created
-      contact_updated
-    ]
+    webhook.subscriptions = %w[message_created]
     webhook.save!
 
     puts({ id: webhook.id, account_id: webhook.account_id, url: webhook.url, subscriptions: webhook.subscriptions }.to_json)
