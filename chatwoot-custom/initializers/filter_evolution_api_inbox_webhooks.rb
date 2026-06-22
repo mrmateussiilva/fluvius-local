@@ -59,6 +59,23 @@ module FluviusWebhookJobEnqueueFilter
   end
 end
 
+module FluviusWebhookJobEnqueueInstanceFilter
+  def enqueue(options = {})
+    url = arguments[0]
+    payload = arguments[1] || {}
+    webhook_type = arguments[2] || :account_webhook
+
+    unless FluviusEvolutionApiInboxWebhookFilter.allowed?(url, payload, webhook_type)
+      Rails.logger.info(
+        "[fluvius-webhook-filter] dropped enqueue #{FluviusEvolutionApiInboxWebhookFilter.describe(payload)} #{url}",
+      )
+      return false
+    end
+
+    super
+  end
+end
+
 module FluviusWebhookJobPerformFilter
   def perform(url, payload, webhook_type = :account_webhook, *args, **kwargs)
     unless FluviusEvolutionApiInboxWebhookFilter.allowed?(url, payload || {}, webhook_type)
@@ -75,6 +92,10 @@ end
 Rails.application.config.after_initialize do
   unless WebhookJob.singleton_class.ancestors.include?(FluviusWebhookJobEnqueueFilter)
     WebhookJob.singleton_class.prepend(FluviusWebhookJobEnqueueFilter)
+  end
+
+  unless WebhookJob.ancestors.include?(FluviusWebhookJobEnqueueInstanceFilter)
+    WebhookJob.prepend(FluviusWebhookJobEnqueueInstanceFilter)
   end
 
   unless WebhookJob.ancestors.include?(FluviusWebhookJobPerformFilter)
