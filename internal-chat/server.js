@@ -379,14 +379,16 @@ async function migrate() {
       ADD COLUMN IF NOT EXISTS chatbot_type TEXT NOT NULL DEFAULT 'triage',
       ADD COLUMN IF NOT EXISTS chatbot_welcome_message TEXT,
       ADD COLUMN IF NOT EXISTS chatbot_absence_message TEXT,
-      ADD COLUMN IF NOT EXISTS chatbot_options JSONB;
+      ADD COLUMN IF NOT EXISTS chatbot_options JSONB,
+      ADD COLUMN IF NOT EXISTS chatbot_trigger_keyword TEXT;
 
     ALTER TABLE fluvius_client_inboxes
       ADD COLUMN IF NOT EXISTS chatbot_enabled BOOLEAN NOT NULL DEFAULT FALSE,
       ADD COLUMN IF NOT EXISTS chatbot_type TEXT NOT NULL DEFAULT 'triage',
       ADD COLUMN IF NOT EXISTS chatbot_welcome_message TEXT,
       ADD COLUMN IF NOT EXISTS chatbot_absence_message TEXT,
-      ADD COLUMN IF NOT EXISTS chatbot_options JSONB;
+      ADD COLUMN IF NOT EXISTS chatbot_options JSONB,
+      ADD COLUMN IF NOT EXISTS chatbot_trigger_keyword TEXT;
   `);
 }
 
@@ -4413,7 +4415,8 @@ app.get('/client/:token/settings', async (req, res) => {
     chatbot_type: client.chatbot_type,
     chatbot_welcome_message: client.chatbot_welcome_message,
     chatbot_absence_message: client.chatbot_absence_message,
-    chatbot_options: client.chatbot_options || DEFAULT_TRIAGE_OPTIONS
+    chatbot_options: client.chatbot_options || DEFAULT_TRIAGE_OPTIONS,
+    chatbot_trigger_keyword: client.chatbot_trigger_keyword
   });
 });
 
@@ -4428,7 +4431,8 @@ app.post('/client/:token/settings', async (req, res) => {
     chatbot_type,
     chatbot_welcome_message,
     chatbot_absence_message,
-    chatbot_options
+    chatbot_options,
+    chatbot_trigger_keyword
   } = req.body;
 
   const table = client.token_type === 'extra' ? 'fluvius_client_inboxes' : 'fluvius_clients';
@@ -4440,14 +4444,16 @@ app.post('/client/:token/settings', async (req, res) => {
          chatbot_welcome_message = $3,
          chatbot_absence_message = $4,
          chatbot_options = $5::jsonb,
+         chatbot_trigger_keyword = $6,
          updated_at = NOW()
-     WHERE token = $6`,
+     WHERE token = $7`,
     [
       !!chatbot_enabled,
       chatbot_type || 'triage',
       chatbot_welcome_message || null,
       chatbot_absence_message || null,
       chatbot_options ? JSON.stringify(chatbot_options) : null,
+      chatbot_trigger_keyword ? String(chatbot_trigger_keyword).trim() : null,
       token
     ]
   );
@@ -4678,13 +4684,13 @@ let triageBotRunning = false;
 
 async function triageClients() {
   const { rows } = await pool.query(
-    `SELECT id, chatwoot_account_id, inbox_id, instance_name, name, chatbot_enabled, chatbot_type, chatbot_welcome_message, chatbot_absence_message, chatbot_options, 'main' as source_type
+    `SELECT id, chatwoot_account_id, inbox_id, instance_name, name, chatbot_enabled, chatbot_type, chatbot_welcome_message, chatbot_absence_message, chatbot_options, chatbot_trigger_keyword, 'main' as source_type
      FROM fluvius_clients
      WHERE chatwoot_account_id IS NOT NULL
        AND inbox_id IS NOT NULL
        AND chatbot_enabled = true
      UNION ALL
-     SELECT i.id, c.chatwoot_account_id, i.inbox_id, i.instance_name, i.channel_display_name as name, i.chatbot_enabled, i.chatbot_type, i.chatbot_welcome_message, i.chatbot_absence_message, i.chatbot_options, 'extra' as source_type
+     SELECT i.id, c.chatwoot_account_id, i.inbox_id, i.instance_name, i.channel_display_name as name, i.chatbot_enabled, i.chatbot_type, i.chatbot_welcome_message, i.chatbot_absence_message, i.chatbot_options, i.chatbot_trigger_keyword, 'extra' as source_type
      FROM fluvius_client_inboxes i
      INNER JOIN fluvius_clients c ON i.client_id = c.id
      WHERE c.chatwoot_account_id IS NOT NULL
@@ -4810,12 +4816,60 @@ async function routeTriageConversation(client, conversation) {
   return { routed: true, option };
 }
 
+async function resetTriageOnTriggerWord(client) {
+  const keyword = String(client.chatbot_trigger_keyword || '').trim().toLowerCase();
+  if (!keyword) return;
+
+  try {
+    const { rows } = await pool.query(
+      `SELECT
+         conversations.id,
+         conversations.display_id,
+         latest_message.content
+       FROM conversations
+       INNER JOIN LATERAL (
+         SELECT messages.id, messages.content, messages.created_at
+         FROM messages
+         WHERE messages.conversation_id = conversations.id
+           AND messages.private = false
+           AND messages.message_type = 0
+           AND messages.content IS NOT NULL
+           AND trim(messages.content) <> ''
+         ORDER BY messages.id DESC
+         LIMIT 1
+       ) latest_message ON true
+       WHERE conversations.account_id = $1
+         AND conversations.inbox_id = $2
+         AND COALESCE(conversations.custom_attributes->>'fluvius_triage_state', '') <> ''
+         AND LOWER(latest_message.content) LIKE '%' || $3 || '%'
+         AND latest_message.created_at > NOW() - INTERVAL '2 hours'
+       LIMIT 10`,
+      [client.chatwoot_account_id, client.inbox_id, keyword]
+    );
+
+    for (const row of rows) {
+      console.log(`[triage-trigger] Resetting conversation id=${row.id} display_id=${row.display_id} because keyword "${keyword}" was found in: "${row.content}"`);
+      await pool.query(
+        `UPDATE conversations
+         SET custom_attributes = custom_attributes - 'fluvius_triage_state' - 'fluvius_triage_option' - 'fluvius_triage_label' - 'fluvius_triage_greeted_at' - 'fluvius_triage_routed_at',
+             updated_at = NOW()
+         WHERE id = $1`,
+        [row.id]
+      );
+    }
+  } catch (error) {
+    console.warn(`[triage-trigger] failed for client=${client.id}: ${error.message}`);
+  }
+}
+
 async function runTriageBot() {
   if (!TRIAGE_BOT_ENABLED || triageBotRunning) return;
   triageBotRunning = true;
   try {
     const clients = await triageClients();
     for (const client of clients) {
+      await resetTriageOnTriggerWord(client);
+
       const greetings = await pendingTriageGreetings(client);
       for (const conversation of greetings) {
         try {

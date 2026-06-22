@@ -769,6 +769,12 @@
             </div>
           </div>
 
+          <div class="form-group" style="margin-top: 24px;">
+            <label class="form-label" for="txtTriggerKeyword">Frase de ativação (Gatilho)</label>
+            <input type="text" id="txtTriggerKeyword" placeholder="Ex: blizu bot, menu, voltar ao menu" style="width: 100%; padding: 12px; background: rgba(0,0,0,0.3); border: 1px solid var(--border); border-radius: 10px; color: white; font-family: inherit; font-size: 14px;" />
+            <div class="toggle-desc">Se o cliente enviar exatamente essa mensagem a qualquer momento da conversa, a triagem será reiniciada e o bot responderá novamente. Deixe em branco para desativar.</div>
+          </div>
+
           <!-- Triage Menu List -->
           <div class="form-group" style="margin-top: 24px;">
             <label class="form-label">Opções de Direcionamento (Menu)</label>
@@ -841,6 +847,7 @@
         // Chatbot Section
         document.getElementById('chkBotEnabled').checked = !!data.chatbot_enabled;
         document.getElementById('txtWelcomeMessage').value = data.chatbot_welcome_message || '';
+        document.getElementById('txtTriggerKeyword').value = data.chatbot_trigger_keyword || '';
         
         // Triage Options
         renderTriageOptions(data.chatbot_options);
@@ -944,7 +951,8 @@
         chatbot_enabled: document.getElementById('chkBotEnabled').checked,
         chatbot_type: 'triage',
         chatbot_welcome_message: document.getElementById('txtWelcomeMessage').value,
-        chatbot_options: clientConfig.chatbot_options
+        chatbot_options: clientConfig.chatbot_options,
+        chatbot_trigger_keyword: document.getElementById('txtTriggerKeyword').value
       };
 
       try {
