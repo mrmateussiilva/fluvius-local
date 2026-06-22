@@ -1,0 +1,1033 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Fluvius — Painel do Cliente</title>
+  <link rel="icon" type="image/png" href="/brand-assets/logo_thumbnail.png" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #090d16;
+      --surface: rgba(255, 255, 255, 0.03);
+      --surface-hover: rgba(255, 255, 255, 0.05);
+      --surface-solid: #151b26;
+      --border: rgba(255, 255, 255, 0.08);
+      --border-focus: #10b981;
+      --text: #f3f4f6;
+      --muted: #9ca3af;
+      --emerald: #10b981;
+      --emerald-dim: rgba(16, 185, 129, 0.1);
+      --emerald-dark: #059669;
+      --red: #ef4444;
+      --red-dim: rgba(239, 68, 68, 0.1);
+      --radius: 16px;
+      --font: 'Inter', sans-serif;
+    }
+
+    body {
+      font-family: var(--font);
+      background: radial-gradient(circle at 10% 20%, rgba(5, 46, 28, 0.3) 0%, var(--bg) 90%);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Header */
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 20px 40px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(9, 13, 22, 0.7);
+      backdrop-filter: blur(12px);
+      z-index: 10;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .brand img {
+      height: 36px;
+    }
+
+    .brand-title {
+      font-size: 18px;
+      font-weight: 800;
+      letter-spacing: 0.5px;
+      color: var(--text);
+    }
+
+    .brand-title span {
+      color: var(--emerald);
+      font-weight: 400;
+      font-size: 14px;
+      margin-left: 6px;
+      padding: 2px 8px;
+      background: var(--emerald-dim);
+      border-radius: 6px;
+    }
+
+    .nav-actions {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 12px;
+      border-radius: 20px;
+      font-size: 13px;
+      font-weight: 600;
+      background: var(--border);
+      color: var(--muted);
+      border: 1px solid var(--border);
+    }
+
+    .status-badge.connected {
+      background: var(--emerald-dim);
+      color: var(--emerald);
+      border-color: rgba(16, 185, 129, 0.2);
+    }
+
+    /* Main Layout */
+    .container {
+      display: flex;
+      flex: 1;
+      width: 100%;
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 32px 40px;
+      gap: 32px;
+    }
+
+    .config-panel {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    .preview-panel {
+      width: 320px;
+      display: flex;
+      justify-content: center;
+      position: sticky;
+      top: 100px;
+      height: fit-content;
+    }
+
+    /* Card */
+    .card {
+      background: var(--surface);
+      backdrop-filter: blur(16px);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      transition: border-color 0.2s;
+    }
+
+    .card:hover {
+      border-color: rgba(255, 255, 255, 0.12);
+    }
+
+    .card-title {
+      font-size: 18px;
+      font-weight: 700;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .card-subtitle {
+      font-size: 13px;
+      color: var(--muted);
+      margin-top: -12px;
+      margin-bottom: 18px;
+      line-height: 1.5;
+    }
+
+    /* Switch */
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 0;
+    }
+
+    .toggle-label {
+      font-weight: 600;
+      font-size: 15px;
+    }
+
+    .toggle-desc {
+      font-size: 13px;
+      color: var(--muted);
+      margin-top: 4px;
+    }
+
+    .switch {
+      position: relative;
+      display: inline-block;
+      width: 48px;
+      height: 26px;
+    }
+
+    .switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: rgba(255, 255, 255, 0.1);
+      transition: .3s;
+      border-radius: 34px;
+      border: 1px solid var(--border);
+    }
+
+    .slider:before {
+      position: absolute;
+      content: "";
+      height: 18px;
+      width: 18px;
+      left: 3px;
+      bottom: 3px;
+      background-color: white;
+      transition: .3s;
+      border-radius: 50%;
+    }
+
+    input:checked + .slider {
+      background-color: var(--emerald);
+    }
+
+    input:checked + .slider:before {
+      transform: translateX(22px);
+    }
+
+    /* Textarea & Inputs */
+    .form-group {
+      margin-bottom: 18px;
+    }
+
+    .form-label {
+      display: block;
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 8px;
+      color: var(--text);
+    }
+
+    textarea {
+      width: 100%;
+      height: 140px;
+      background: rgba(0, 0, 0, 0.2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px;
+      color: var(--text);
+      font-family: inherit;
+      font-size: 14px;
+      line-height: 1.6;
+      resize: vertical;
+      transition: border-color 0.2s;
+    }
+
+    textarea:focus {
+      outline: none;
+      border-color: var(--border-focus);
+    }
+
+    /* Tag buttons */
+    .tags-container {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .tag-btn {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.2s;
+      font-family: inherit;
+    }
+
+    .tag-btn:hover {
+      background: var(--emerald-dim);
+      border-color: var(--emerald);
+      color: var(--emerald);
+    }
+
+    /* Triage Options UI */
+    .options-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .option-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 14px;
+    }
+
+    .option-key {
+      background: var(--border);
+      width: 24px;
+      height: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .option-label-input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      color: var(--text);
+      font-size: 14px;
+      font-family: inherit;
+      font-weight: 500;
+    }
+
+    .option-label-input:focus {
+      outline: none;
+    }
+
+    .btn-delete-option {
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: var(--muted);
+      font-size: 16px;
+      padding: 4px;
+      transition: color 0.2s;
+    }
+
+    .btn-delete-option:hover {
+      color: var(--red);
+    }
+
+    .btn-add-option {
+      background: transparent;
+      border: 1px dashed var(--border);
+      color: var(--emerald);
+      width: 100%;
+      padding: 10px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 13px;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+
+    .btn-add-option:hover {
+      background: var(--emerald-dim);
+      border-color: var(--emerald);
+    }
+
+    /* Save buttons */
+    .save-bar {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 12px;
+      margin-top: 10px;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 12px 24px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      transition: all 0.2s;
+      font-family: inherit;
+    }
+
+    .btn-primary {
+      background: var(--emerald);
+      color: #052e1c;
+    }
+
+    .btn-primary:hover {
+      background: var(--emerald-dark);
+    }
+
+    .btn-outline {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--muted);
+    }
+
+    .btn-outline:hover {
+      border-color: var(--text);
+      color: var(--text);
+    }
+
+    .btn-red {
+      background: var(--red-dim);
+      border: 1px solid rgba(239, 68, 68, 0.2);
+      color: var(--red);
+    }
+
+    .btn-red:hover {
+      background: var(--red);
+      color: white;
+    }
+
+    /* Smartphone Mockup */
+    .smartphone {
+      width: 320px;
+      height: 620px;
+      background: #000;
+      border-radius: 40px;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 0 10px #1a1a1a;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+
+    /* Smartphone Notch */
+    .smartphone::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 130px;
+      height: 25px;
+      background: #000;
+      border-bottom-left-radius: 16px;
+      border-bottom-right-radius: 16px;
+      z-index: 100;
+    }
+
+    .phone-header {
+      background: #075e54;
+      padding: 30px 16px 10px;
+      color: white;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 13px;
+    }
+
+    .phone-avatar {
+      width: 32px;
+      height: 32px;
+      background: rgba(255,255,255,0.2);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      font-weight: bold;
+    }
+
+    .phone-contact {
+      flex: 1;
+    }
+
+    .phone-contact-name {
+      font-weight: 700;
+    }
+
+    .phone-contact-status {
+      font-size: 10px;
+      opacity: 0.8;
+    }
+
+    .phone-body {
+      flex: 1;
+      background: #e5ddd5 url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png') repeat;
+      padding: 16px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .chat-bubble {
+      max-width: 85%;
+      padding: 8px 12px;
+      border-radius: 8px;
+      font-size: 12.5px;
+      line-height: 1.5;
+      position: relative;
+      box-shadow: 0 1px 1px rgba(0,0,0,0.1);
+      white-space: pre-wrap;
+    }
+
+    .chat-bubble.incoming {
+      background: white;
+      align-self: flex-start;
+      color: #333;
+    }
+
+    .chat-bubble.outgoing {
+      background: #dcf8c6;
+      align-self: flex-end;
+      color: #333;
+    }
+
+    .chat-time {
+      font-size: 9px;
+      color: rgba(0,0,0,0.45);
+      text-align: right;
+      margin-top: 4px;
+    }
+
+    /* WhatsApp Onboarding inside Dashboard */
+    .onboard-container {
+      text-align: center;
+      padding: 24px;
+      display: none;
+    }
+
+    .onboard-container.visible {
+      display: block;
+    }
+
+    .qr-box {
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px;
+      width: fit-content;
+      margin: 16px auto;
+    }
+
+    .qr-box img {
+      width: 200px;
+      height: 200px;
+      border-radius: 8px;
+      border: 4px solid white;
+    }
+
+    .qr-placeholder {
+      width: 200px;
+      height: 200px;
+      border: 2px dashed var(--border);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--muted);
+      font-size: 13px;
+      margin: 0 auto;
+    }
+
+    .spinner {
+      width: 20px;
+      height: 20px;
+      border: 2px solid transparent;
+      border-top-color: var(--emerald);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      display: inline-block;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: var(--emerald);
+      color: #052e1c;
+      padding: 12px 24px;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 14px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+      display: none;
+      animation: fadeInUp 0.3s ease;
+      z-index: 1000;
+    }
+
+    @keyframes fadeInUp {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="brand">
+      <img src="/brand-assets/logo.png" alt="Fluvius" />
+      <div class="brand-title">Fluvius <span>Painel do Cliente</span></div>
+    </div>
+    <div class="nav-actions">
+      <div class="status-badge" id="globalStatusBadge">
+        <span class="spinner" style="width:10px;height:10px"></span> Carregando status...
+      </div>
+      <a href="#" id="chatwootPanelLink" target="_blank" class="btn btn-outline" style="padding: 8px 16px; font-size: 13px;">
+        Abrir Chatwoot ↗
+      </a>
+    </div>
+  </header>
+
+  <div class="container">
+    <div class="config-panel">
+
+      <!-- WhatsApp Connection Settings -->
+      <div class="card" id="connectionCard">
+        <div class="card-title">
+          <span>📱 Conexão WhatsApp</span>
+          <span id="connectionStatusBadge" class="status-badge">Carregando...</span>
+        </div>
+        <div class="card-subtitle" id="connectionSubtitle">
+          Verificando status de pareamento com os servidores do WhatsApp...
+        </div>
+
+        <!-- Disconnect View -->
+        <div id="viewConnected" style="display:none;">
+          <div style="display: flex; align-items: center; gap: 16px; margin-bottom: 16px; padding: 12px; background: rgba(255,255,255,0.02); border-radius: 8px; border: 1px solid var(--border);">
+            <div style="font-size: 24px;">✅</div>
+            <div>
+              <div style="font-weight: 600; font-size: 15px;">Dispositivo Conectado</div>
+              <div style="font-size: 13px; color: var(--muted);" id="lblConnectedPhone">Número: -</div>
+            </div>
+          </div>
+          <button class="btn btn-red" onclick="disconnectWhatsApp()">Desvincular WhatsApp</button>
+        </div>
+
+        <!-- Connect Options (QR/Pairing Code) -->
+        <div id="viewDisconnected" style="display:none;">
+          <div style="display: flex; background: rgba(255,255,255,0.02); border-radius: 8px; padding: 4px; margin-bottom: 16px;">
+            <button id="btnTabQR" onclick="switchConnTab('qr')" class="btn btn-primary" style="flex:1; padding: 8px; font-size: 13px; border-radius: 6px;">📱 QR Code</button>
+            <button id="btnTabCode" onclick="switchConnTab('code')" class="btn btn-outline" style="flex:1; padding: 8px; font-size: 13px; border-radius: 6px; border: none;">🔢 Código de Pareamento</button>
+          </div>
+
+          <!-- QR Code Sub-tab -->
+          <div id="tabContentQR" class="onboard-container visible">
+            <div class="qr-box">
+              <div class="qr-placeholder" id="qrPlaceholder">
+                <span>Clique no botão abaixo para gerar</span>
+              </div>
+              <img id="qrImg" style="display:none;" alt="QR Code WhatsApp" />
+            </div>
+            <button class="btn btn-primary" style="margin: 0 auto;" id="btnGetQR" onclick="loadQR()">📷 Gerar QR Code</button>
+          </div>
+
+          <!-- Pairing Code Sub-tab -->
+          <div id="tabContentCode" class="onboard-container">
+            <p style="font-size: 13px; color: var(--muted); margin-bottom: 12px;">Insira o número do WhatsApp com DDD para solicitar um código de pareamento de 8 dígitos.</p>
+            <div style="display: flex; gap: 8px; max-width: 320px; margin: 0 auto 16px;">
+              <input type="tel" id="phoneInput" placeholder="Ex: 11999999999" style="flex: 1; padding: 10px; background: rgba(0,0,0,0.2); border: 1px solid var(--border); border-radius: 8px; color: white; font-family: inherit; font-size: 14px;" />
+              <button class="btn btn-primary" style="padding: 10px 16px;" onclick="requestCode()">Pedir Código</button>
+            </div>
+            <div id="pairingCodeContainer" style="display:none; padding: 16px; background: var(--emerald-dim); border: 1px solid var(--emerald); border-radius: 8px; font-family: monospace; font-size: 24px; font-weight: 800; letter-spacing: 4px; color: var(--emerald); width: fit-content; margin: 0 auto;">
+              --------
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Chatbot Configurations -->
+      <div class="card">
+        <div class="card-title">🤖 Configurações do Chatbot</div>
+        <div class="card-subtitle">Ative a triagem automática para dar respostas rápidas aos clientes e direcioná-los para a equipe correta.</div>
+
+        <div class="toggle-row">
+          <div>
+            <div class="toggle-label">Ativar Chatbot</div>
+            <div class="toggle-desc">Se ativado, responderá os novos clientes de forma imediata.</div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="chkBotEnabled" onchange="updateLivePreview()" />
+            <span class="slider"></span>
+          </label>
+        </div>
+
+        <div style="margin-top: 20px;">
+          <div class="form-group">
+            <label class="form-label" for="txtWelcomeMessage">Mensagem de boas-vindas</label>
+            <textarea id="txtWelcomeMessage" oninput="updateLivePreview()" placeholder="Olá! Seja bem-vindo(a) à nossa empresa. Escolha uma opção abaixo:"></textarea>
+            <div class="tags-container">
+              <button class="tag-btn" onclick="insertTag('{client.name}')">{client.name}</button>
+              <button class="tag-btn" onclick="insertTag('{Nome da empresa}')">{Nome da empresa}</button>
+            </div>
+          </div>
+
+          <!-- Triage Menu List -->
+          <div class="form-group" style="margin-top: 24px;">
+            <label class="form-label">Opções de Direcionamento (Menu)</label>
+            <div class="options-list" id="triageOptionsList">
+              <!-- Rendered Dynamically -->
+            </div>
+            <button class="btn-add-option" onclick="addNewOption()">➕ Adicionar nova opção</button>
+          </div>
+        </div>
+
+        <div class="save-bar">
+          <button class="btn btn-primary" onclick="saveSettings()">Salvar Configurações</button>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Phone Simulator Preview -->
+    <div class="preview-panel">
+      <div class="smartphone">
+        <div class="phone-header">
+          <div class="phone-avatar">F</div>
+          <div class="phone-contact">
+            <div class="phone-contact-name" id="previewContactName">Fluvius Bot</div>
+            <div class="phone-contact-status">online</div>
+          </div>
+        </div>
+        <div class="phone-body" id="phoneChatBody">
+          <!-- Simulation -->
+          <div class="chat-bubble incoming">
+            Olá!
+            <div class="chat-time">10:42</div>
+          </div>
+          <div class="chat-bubble outgoing" id="simGreetingBubble">
+            Olá! Seja bem-vindo à nossa empresa. Como posso te ajudar hoje?
+            
+            1 - Suporte
+            2 - Comercial
+            <div class="chat-time">10:42</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast">Configurações salvas!</div>
+
+  <script>
+    const token = location.pathname.split('/client/')[1]?.split('/')[0];
+    const BASE_URL = `/client/${token}`;
+    let clientConfig = {};
+    let pollingStatus = null;
+
+    async function loadSettings() {
+      try {
+        const res = await fetch(`${BASE_URL}/settings`);
+        if (!res.ok) {
+          alert('Acesso inválido ou expirado.');
+          return;
+        }
+        const data = await res.json();
+        clientConfig = data;
+
+        document.getElementById('previewContactName').textContent = data.name;
+        document.getElementById('chatwootPanelLink').href = data.chatwootUrl;
+
+        // WhatsApp Section
+        updateConnectionUI(data.connection_state, data.phone);
+
+        // Chatbot Section
+        document.getElementById('chkBotEnabled').checked = !!data.chatbot_enabled;
+        document.getElementById('txtWelcomeMessage').value = data.chatbot_welcome_message || '';
+        
+        // Triage Options
+        renderTriageOptions(data.chatbot_options);
+        
+        updateLivePreview();
+      } catch (err) {
+        console.error('Error loading settings:', err);
+      }
+    }
+
+    function renderTriageOptions(options) {
+      const list = document.getElementById('triageOptionsList');
+      list.innerHTML = '';
+      if (!options || !options.length) return;
+
+      options.forEach((opt, index) => {
+        const item = document.createElement('div');
+        item.className = 'option-item';
+        item.innerHTML = `
+          <div class="option-key">${opt.key}</div>
+          <input type="text" class="option-label-input" value="${opt.label}" oninput="onOptionLabelChange(${index}, this.value)" placeholder="Nome da opção (ex: Suporte)" />
+          <button class="btn-delete-option" onclick="deleteOption(${index})" title="Excluir">🗑️</button>
+        `;
+        list.appendChild(item);
+      });
+    }
+
+    function onOptionLabelChange(index, value) {
+      clientConfig.chatbot_options[index].label = value;
+      updateLivePreview();
+    }
+
+    function deleteOption(index) {
+      clientConfig.chatbot_options.splice(index, 1);
+      // Re-index options keys
+      clientConfig.chatbot_options.forEach((opt, idx) => {
+        opt.key = String(idx + 1);
+      });
+      renderTriageOptions(clientConfig.chatbot_options);
+      updateLivePreview();
+    }
+
+    function addNewOption() {
+      if (!clientConfig.chatbot_options) clientConfig.chatbot_options = [];
+      const newKey = String(clientConfig.chatbot_options.length + 1);
+      clientConfig.chatbot_options.push({ key: newKey, label: '' });
+      renderTriageOptions(clientConfig.chatbot_options);
+      updateLivePreview();
+    }
+
+    function insertTag(tag) {
+      const txt = document.getElementById('txtWelcomeMessage');
+      const start = txt.selectionStart;
+      const end = txt.selectionEnd;
+      const val = txt.value;
+      txt.value = val.substring(0, start) + tag + val.substring(end);
+      txt.focus();
+      txt.selectionStart = txt.selectionEnd = start + tag.length;
+      updateLivePreview();
+    }
+
+    function updateLivePreview() {
+      const isEnabled = document.getElementById('chkBotEnabled').checked;
+      const bubble = document.getElementById('simGreetingBubble');
+
+      if (!isEnabled) {
+        bubble.style.opacity = '0.4';
+        bubble.innerHTML = '<i>Chatbot Desativado</i><div class="chat-time">--:--</div>';
+        return;
+      }
+
+      bubble.style.opacity = '1';
+      let welcome = document.getElementById('txtWelcomeMessage').value.trim();
+      if (!welcome) {
+        welcome = `Olá! Seja bem-vindo(a) à empresa ${clientConfig.name || 'nossa empresa'}.\n\nPara direcionar seu atendimento, escolha uma opção:`;
+      }
+
+      // Dynamic placeholder replacement in preview
+      welcome = welcome.replace(/\{client\.name\}/g, 'João');
+      welcome = welcome.replace(/\{Nome do cliente\}/g, 'João');
+      welcome = welcome.replace(/\{Nome da empresa\}/g, clientConfig.name || 'Empresa');
+
+      // Append menu options
+      const options = clientConfig.chatbot_options || [];
+      const menuText = options.map(opt => `${opt.key} - ${opt.label || '...'}`).join('\n');
+
+      let finalContent = welcome;
+      if (menuText) {
+        finalContent += '\n\n' + menuText;
+      }
+
+      bubble.textContent = finalContent;
+      const timeDiv = document.createElement('div');
+      timeDiv.className = 'chat-time';
+      timeDiv.textContent = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+      bubble.appendChild(timeDiv);
+    }
+
+    async function saveSettings() {
+      const payload = {
+        chatbot_enabled: document.getElementById('chkBotEnabled').checked,
+        chatbot_type: 'triage',
+        chatbot_welcome_message: document.getElementById('txtWelcomeMessage').value,
+        chatbot_options: clientConfig.chatbot_options
+      };
+
+      try {
+        const res = await fetch(`${BASE_URL}/settings`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        if (res.ok) {
+          showToast();
+        } else {
+          alert('Erro ao salvar configurações.');
+        }
+      } catch (err) {
+        alert('Erro de conexão ao salvar.');
+      }
+    }
+
+    function showToast() {
+      const t = document.getElementById('toast');
+      t.style.display = 'block';
+      setTimeout(() => { t.style.display = 'none'; }, 2500);
+    }
+
+    /* WhatsApp Connections Logic */
+    function updateConnectionUI(state, phone) {
+      const globalBadge = document.getElementById('globalStatusBadge');
+      const cardBadge = document.getElementById('connectionStatusBadge');
+      const subtitle = document.getElementById('connectionSubtitle');
+      const viewConnected = document.getElementById('viewConnected');
+      const viewDisconnected = document.getElementById('viewDisconnected');
+
+      if (state === 'open') {
+        globalBadge.className = 'status-badge connected';
+        globalBadge.textContent = '● WhatsApp Ativo';
+        cardBadge.className = 'status-badge connected';
+        cardBadge.textContent = 'Conectado';
+        subtitle.textContent = 'Seu número está pareado e pronto para receber mensagens.';
+        document.getElementById('lblConnectedPhone').textContent = `Número: +${phone}`;
+        viewConnected.style.display = 'block';
+        viewDisconnected.style.display = 'none';
+        if (pollingStatus) clearInterval(pollingStatus);
+      } else {
+        globalBadge.className = 'status-badge';
+        globalBadge.textContent = '○ WhatsApp Desconectado';
+        cardBadge.className = 'status-badge';
+        cardBadge.textContent = 'Pendente';
+        subtitle.textContent = 'Seu WhatsApp não está pareado no momento. Use o QR Code ou o Código de Pareamento abaixo para conectar.';
+        viewConnected.style.display = 'none';
+        viewDisconnected.style.display = 'block';
+      }
+    }
+
+    function switchConnTab(tab) {
+      document.getElementById('btnTabQR').className = tab === 'qr' ? 'btn btn-primary' : 'btn btn-outline';
+      document.getElementById('btnTabQR').style.border = tab === 'qr' ? 'none' : '';
+      document.getElementById('btnTabCode').className = tab === 'code' ? 'btn btn-primary' : 'btn btn-outline';
+      document.getElementById('btnTabCode').style.border = tab === 'code' ? 'none' : '';
+
+      document.getElementById('tabContentQR').className = 'onboard-container' + (tab === 'qr' ? ' visible' : '');
+      document.getElementById('tabContentCode').className = 'onboard-container' + (tab === 'code' ? ' visible' : '');
+    }
+
+    async function loadQR() {
+      const btn = document.getElementById('btnGetQR');
+      const placeholder = document.getElementById('qrPlaceholder');
+      const img = document.getElementById('qrImg');
+      
+      btn.innerHTML = `<span class="spinner"></span> Gerando...`;
+      btn.disabled = true;
+      placeholder.innerHTML = `<span class="spinner" style="width:24px;height:24px"></span><br/><span style="margin-top:8px;display:block;">Gerando QR Code...</span>`;
+
+      try {
+        const r = await fetch(`/onboard/${token}/qr`);
+        const data = await r.json();
+        const base64 = data?.base64 || data?.qrcode?.base64 || '';
+        if (base64) {
+          img.src = base64;
+          img.style.display = 'block';
+          placeholder.style.display = 'none';
+          btn.innerHTML = '↻ Gerar novo QR Code';
+          btn.disabled = false;
+          startPolling();
+        } else {
+          placeholder.innerHTML = 'Erro ao gerar QR Code. Tente novamente.';
+          btn.innerHTML = '📷 Tentar novamente';
+          btn.disabled = false;
+        }
+      } catch {
+        placeholder.innerHTML = 'Erro de rede. Tente novamente.';
+        btn.innerHTML = '📷 Tentar novamente';
+        btn.disabled = false;
+      }
+    }
+
+    async function requestCode() {
+      const phoneInput = document.getElementById('phoneInput').value.replace(/\D/g, '');
+      if (phoneInput.length < 10) {
+        alert('Digite o número com DDD.');
+        return;
+      }
+      const pairingContainer = document.getElementById('pairingCodeContainer');
+      pairingContainer.style.display = 'block';
+      pairingContainer.innerHTML = '<span class="spinner"></span>';
+
+      try {
+        const r = await fetch(`/onboard/${token}/phone`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phone: '55' + phoneInput })
+        });
+        const data = await r.json();
+        const code = data?.code || data?.pairingCode || data?.qrcode?.pairingCode || '';
+        if (code) {
+          pairingContainer.textContent = code;
+          startPolling();
+        } else {
+          pairingContainer.style.display = 'none';
+          alert('Erro ao solicitar código de pareamento.');
+        }
+      } catch {
+        pairingContainer.style.display = 'none';
+        alert('Erro de rede.');
+      }
+    }
+
+    function startPolling() {
+      if (pollingStatus) clearInterval(pollingStatus);
+      pollingStatus = setInterval(async () => {
+        try {
+          const res = await fetch(`/onboard/${token}/status`);
+          const data = await res.json();
+          if (data.state === 'open') {
+            clearInterval(pollingStatus);
+            loadSettings();
+          }
+        } catch { /* ignore */ }
+      }, 3000);
+    }
+
+    async function disconnectWhatsApp() {
+      if (!confirm('Tem certeza de que deseja desvincular o WhatsApp do sistema? Isso desconectará todas as filas.')) return;
+      try {
+        const res = await fetch(`/client/${token}/disconnect`, { method: 'POST' });
+        if (res.ok) {
+          loadSettings();
+        } else {
+          alert('Erro ao desconectar.');
+        }
+      } catch {
+        alert('Erro de rede.');
+      }
+    }
+
+    loadSettings();
+  </script>
+</body>
+</html>

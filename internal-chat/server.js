@@ -373,6 +373,20 @@ async function migrate() {
 
     CREATE INDEX IF NOT EXISTS index_fluvius_client_inboxes_client_id
       ON fluvius_client_inboxes(client_id);
+
+    ALTER TABLE fluvius_clients
+      ADD COLUMN IF NOT EXISTS chatbot_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+      ADD COLUMN IF NOT EXISTS chatbot_type TEXT NOT NULL DEFAULT 'triage',
+      ADD COLUMN IF NOT EXISTS chatbot_welcome_message TEXT,
+      ADD COLUMN IF NOT EXISTS chatbot_absence_message TEXT,
+      ADD COLUMN IF NOT EXISTS chatbot_options JSONB;
+
+    ALTER TABLE fluvius_client_inboxes
+      ADD COLUMN IF NOT EXISTS chatbot_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+      ADD COLUMN IF NOT EXISTS chatbot_type TEXT NOT NULL DEFAULT 'triage',
+      ADD COLUMN IF NOT EXISTS chatbot_welcome_message TEXT,
+      ADD COLUMN IF NOT EXISTS chatbot_absence_message TEXT,
+      ADD COLUMN IF NOT EXISTS chatbot_options JSONB;
   `);
 }
 
@@ -1669,18 +1683,38 @@ function slugifyLabel(value) {
     .slice(0, 60);
 }
 
-function triageMenuText(options = parseTriageOptions()) {
+function parseTriageOptionsForClient(client) {
+  if (client && client.chatbot_options) {
+    try {
+      const parsed = typeof client.chatbot_options === 'string' ? JSON.parse(client.chatbot_options) : client.chatbot_options;
+      if (Array.isArray(parsed)) return parsed;
+    } catch (e) {
+      console.warn('Failed to parse client.chatbot_options:', e.message);
+    }
+  }
+  return parseTriageOptions();
+}
+
+function triageMenuText(client) {
+  const options = parseTriageOptionsForClient(client);
   return options.map(option => `${option.key} - ${option.label}`).join('\n');
 }
 
-function triageGreetingForClient(client) {
-  const companyName = String(client.name || client.channel_display_name || 'nossa empresa').trim();
+function triageGreetingForClient(client, contactName = 'Cliente') {
+  if (client && client.chatbot_welcome_message) {
+    let msg = client.chatbot_welcome_message;
+    msg = msg.replace(/\{client\.name\}/g, contactName);
+    msg = msg.replace(/\{Nome do cliente\}/g, contactName);
+    msg = msg.replace(/\{Nome da empresa\}/g, client.name || '');
+    return msg;
+  }
+  const companyName = String(client.name || 'nossa empresa').trim();
   return [
     `Olá, seja bem-vindo(a) à empresa ${companyName}!`,
     '',
     'Para direcionar seu atendimento, escolha uma opção:',
     '',
-    triageMenuText(),
+    triageMenuText(client),
     '',
     'Digite apenas o número da opção desejada.',
   ].join('\n');
@@ -1690,13 +1724,13 @@ function triageConfirmationText(option) {
   return `Perfeito, vou direcionar seu atendimento para ${option.label}.`;
 }
 
-function triageInvalidOptionText() {
+function triageInvalidOptionText(client) {
   return [
     'Não consegui identificar a opção.',
     '',
     'Digite apenas um dos números abaixo:',
     '',
-    triageMenuText(),
+    triageMenuText(client),
   ].join('\n');
 }
 
@@ -4326,6 +4360,120 @@ app.get('/onboard/:token/status', async (req, res) => {
   res.json({ state, phone });
 });
 
+// ─── Client Dashboard Routes ──────────────────────────────────────────────────
+
+// Serve client dashboard page
+app.get('/client/:token', (_req, res) => {
+  res.sendFile('client_dashboard.html', { root: 'public' });
+});
+
+// Get client settings
+app.get('/client/:token/settings', async (req, res) => {
+  const token = req.params.token;
+  const client = await getClientByToken(token);
+  if (!client) return res.status(404).json({ error: 'Link inválido ou expirado' });
+
+  let connectionState = 'close';
+  let phone = client.phone || '';
+  try {
+    const { data } = await evoFetch(`/instance/connectionState/${client.instance_name}`);
+    connectionState = (data?.instance?.state || data?.state || 'close').toLowerCase();
+    if (data?.instance?.wuid) {
+      phone = data.instance.wuid.replace('@s.whatsapp.net', '');
+    }
+  } catch (e) {
+    console.error('Failed to get connection state:', e.message);
+  }
+
+  // Update DB status if it doesn't match the current Evolution connection state
+  if (connectionState === 'open' && client.status !== 'connected') {
+    const table = client.token_type === 'extra' ? 'fluvius_client_inboxes' : 'fluvius_clients';
+    await pool.query(
+      `UPDATE ${table} SET status=$1, phone=$2, updated_at=NOW() WHERE token=$3`,
+      ['connected', phone, token]
+    );
+  } else if (connectionState !== 'open' && client.status === 'connected') {
+    const table = client.token_type === 'extra' ? 'fluvius_client_inboxes' : 'fluvius_clients';
+    await pool.query(
+      `UPDATE ${table} SET status=$1, updated_at=NOW() WHERE token=$2`,
+      ['pending', token]
+    );
+  }
+
+  const chatwootUrl = process.env.CHATWOOT_PUBLIC_URL || process.env.CHATWOOT_FRONTEND_URL || 'http://localhost:3000';
+
+  res.json({
+    name: client.name,
+    instance_name: client.instance_name,
+    phone: phone || client.phone,
+    connection_state: connectionState,
+    status: connectionState === 'open' ? 'connected' : 'pending',
+    chatwootUrl,
+    chatbot_enabled: client.chatbot_enabled,
+    chatbot_type: client.chatbot_type,
+    chatbot_welcome_message: client.chatbot_welcome_message,
+    chatbot_absence_message: client.chatbot_absence_message,
+    chatbot_options: client.chatbot_options || DEFAULT_TRIAGE_OPTIONS
+  });
+});
+
+// Update client settings
+app.post('/client/:token/settings', async (req, res) => {
+  const token = req.params.token;
+  const client = await getClientByToken(token);
+  if (!client) return res.status(404).json({ error: 'Link inválido' });
+
+  const {
+    chatbot_enabled,
+    chatbot_type,
+    chatbot_welcome_message,
+    chatbot_absence_message,
+    chatbot_options
+  } = req.body;
+
+  const table = client.token_type === 'extra' ? 'fluvius_client_inboxes' : 'fluvius_clients';
+
+  await pool.query(
+    `UPDATE ${table}
+     SET chatbot_enabled = $1,
+         chatbot_type = $2,
+         chatbot_welcome_message = $3,
+         chatbot_absence_message = $4,
+         chatbot_options = $5::jsonb,
+         updated_at = NOW()
+     WHERE token = $6`,
+    [
+      !!chatbot_enabled,
+      chatbot_type || 'triage',
+      chatbot_welcome_message || null,
+      chatbot_absence_message || null,
+      chatbot_options ? JSON.stringify(chatbot_options) : null,
+      token
+    ]
+  );
+
+  res.json({ ok: true });
+});
+
+// Disconnect WhatsApp session
+app.post('/client/:token/disconnect', async (req, res) => {
+  const token = req.params.token;
+  const client = await getClientByToken(token);
+  if (!client) return res.status(404).json({ error: 'Link inválido' });
+
+  // Call Evolution API logout
+  const { status, data } = await evoFetch(`/instance/logout/${client.instance_name}`, { method: 'DELETE' });
+
+  // Update DB status to pending and clear phone
+  const table = client.token_type === 'extra' ? 'fluvius_client_inboxes' : 'fluvius_clients';
+  await pool.query(
+    `UPDATE ${table} SET status = 'pending', phone = NULL, updated_at = NOW() WHERE token = $1`,
+    [token]
+  );
+
+  res.status(status).json({ ok: true, data });
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 app.get('/', (_req, res) => {
@@ -4530,11 +4678,18 @@ let triageBotRunning = false;
 
 async function triageClients() {
   const { rows } = await pool.query(
-    `SELECT *
+    `SELECT id, chatwoot_account_id, inbox_id, instance_name, name, chatbot_enabled, chatbot_type, chatbot_welcome_message, chatbot_absence_message, chatbot_options, 'main' as source_type
      FROM fluvius_clients
      WHERE chatwoot_account_id IS NOT NULL
        AND inbox_id IS NOT NULL
-       AND (chatwoot_user_id IS NOT NULL OR chatwoot_user_email IS NOT NULL)
+       AND chatbot_enabled = true
+     UNION ALL
+     SELECT i.id, c.chatwoot_account_id, i.inbox_id, i.instance_name, i.channel_display_name as name, i.chatbot_enabled, i.chatbot_type, i.chatbot_welcome_message, i.chatbot_absence_message, i.chatbot_options, 'extra' as source_type
+     FROM fluvius_client_inboxes i
+     INNER JOIN fluvius_clients c ON i.client_id = c.id
+     WHERE c.chatwoot_account_id IS NOT NULL
+       AND i.inbox_id IS NOT NULL
+       AND i.chatbot_enabled = true
      ORDER BY id ASC`,
   );
   return rows;
@@ -4542,8 +4697,9 @@ async function triageClients() {
 
 async function pendingTriageGreetings(client) {
   const { rows } = await pool.query(
-    `SELECT conversations.id, conversations.display_id, conversations.account_id, conversations.inbox_id
+    `SELECT conversations.id, conversations.display_id, conversations.account_id, conversations.inbox_id, contacts.name AS contact_name
      FROM conversations
+     INNER JOIN contacts ON conversations.contact_id = contacts.id
      WHERE conversations.account_id = $1
        AND conversations.inbox_id = $2
        AND conversations.status <> 1
@@ -4611,7 +4767,7 @@ async function waitingTriageReplies(client) {
 }
 
 async function greetTriageConversation(client, conversation) {
-  await sendTriageMessage(client, conversation, triageGreetingForClient(client));
+  await sendTriageMessage(client, conversation, triageGreetingForClient(client, conversation.contact_name));
   await addConversationLabel(client.chatwoot_account_id, conversation.id, 'triagem-bot', '#0ea5e9');
   await updateConversationCustomAttributes(client.chatwoot_account_id, conversation.id, {
     fluvius_triage_state: 'waiting',
@@ -4620,19 +4776,19 @@ async function greetTriageConversation(client, conversation) {
   });
 }
 
-function triageOptionFromContent(content) {
+function triageOptionFromContent(content, client) {
   const normalized = String(content || '').trim().toLowerCase();
   const numericMatch = normalized.match(/^(\d+)\b/);
   const key = numericMatch ? numericMatch[1] : normalized;
-  return parseTriageOptions().find(option => option.key.toLowerCase() === key) || null;
+  return parseTriageOptionsForClient(client).find(option => option.key.toLowerCase() === key) || null;
 }
 
 async function routeTriageConversation(client, conversation) {
-  const option = triageOptionFromContent(conversation.latest_incoming_content);
+  const option = triageOptionFromContent(conversation.latest_incoming_content, client);
   const latestIncomingId = String(conversation.latest_incoming_message_id || '');
 
   if (!option) {
-    await sendTriageMessage(client, conversation, triageInvalidOptionText());
+    await sendTriageMessage(client, conversation, triageInvalidOptionText(client));
     await updateConversationCustomAttributes(client.chatwoot_account_id, conversation.id, {
       fluvius_triage_last_incoming_id: latestIncomingId,
       fluvius_triage_last_invalid_at: new Date().toISOString(),
