@@ -10,14 +10,15 @@
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --bg: #090d16;
-      --surface: rgba(255, 255, 255, 0.03);
-      --surface-hover: rgba(255, 255, 255, 0.05);
-      --surface-solid: #151b26;
-      --border: rgba(255, 255, 255, 0.08);
+      --bg: #070a13;
+      --surface: rgba(255, 255, 255, 0.02);
+      --surface-hover: rgba(255, 255, 255, 0.04);
+      --border: rgba(255, 255, 255, 0.06);
+      --border-hover: rgba(255, 255, 255, 0.12);
       --border-focus: #10b981;
-      --text: #f3f4f6;
-      --muted: #9ca3af;
+      --text: #cbd5e1;
+      --text-bright: #ffffff;
+      --muted: #94a3b8;
       --emerald: #10b981;
       --emerald-dim: rgba(16, 185, 129, 0.1);
       --emerald-dark: #059669;
@@ -29,11 +30,28 @@
 
     body {
       font-family: var(--font);
-      background: radial-gradient(circle at 10% 20%, rgba(5, 46, 28, 0.3) 0%, var(--bg) 90%);
+      background: radial-gradient(circle at 50% 0%, #0e1e17 0%, var(--bg) 80%);
       color: var(--text);
       min-height: 100vh;
       display: flex;
       flex-direction: column;
+      overflow-x: hidden;
+    }
+
+    /* Scrollbar Customization */
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(255, 255, 255, 0.2);
     }
 
     /* Header */
@@ -41,10 +59,10 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 20px 40px;
+      padding: 16px 40px;
       border-bottom: 1px solid var(--border);
-      background: rgba(9, 13, 22, 0.7);
-      backdrop-filter: blur(12px);
+      background: rgba(7, 10, 19, 0.6);
+      backdrop-filter: blur(20px);
       z-index: 10;
     }
 
@@ -55,24 +73,25 @@
     }
 
     .brand img {
-      height: 36px;
+      height: 32px;
     }
 
     .brand-title {
-      font-size: 18px;
+      font-size: 17px;
       font-weight: 800;
       letter-spacing: 0.5px;
-      color: var(--text);
+      color: var(--text-bright);
     }
 
     .brand-title span {
       color: var(--emerald);
-      font-weight: 400;
-      font-size: 14px;
-      margin-left: 6px;
-      padding: 2px 8px;
+      font-weight: 500;
+      font-size: 12px;
+      margin-left: 8px;
+      padding: 3px 8px;
       background: var(--emerald-dim);
       border-radius: 6px;
+      border: 1px solid rgba(16, 185, 129, 0.15);
     }
 
     .nav-actions {
@@ -85,13 +104,14 @@
       display: inline-flex;
       align-items: center;
       gap: 8px;
-      padding: 6px 12px;
+      padding: 6px 14px;
       border-radius: 20px;
-      font-size: 13px;
+      font-size: 12.5px;
       font-weight: 600;
-      background: var(--border);
-      color: var(--muted);
+      background: rgba(255, 255, 255, 0.04);
+      color: #94a3b8;
       border: 1px solid var(--border);
+      transition: all 0.2s;
     }
 
     .status-badge.connected {
@@ -105,17 +125,17 @@
       display: flex;
       flex: 1;
       width: 100%;
-      max-width: 1400px;
+      max-width: 1200px;
       margin: 0 auto;
-      padding: 32px 40px;
-      gap: 32px;
+      padding: 40px 24px;
+      gap: 40px;
     }
 
     .config-panel {
       flex: 1;
       display: flex;
       flex-direction: column;
-      gap: 24px;
+      gap: 32px;
     }
 
     .preview-panel {
@@ -130,31 +150,33 @@
     /* Card */
     .card {
       background: var(--surface);
-      backdrop-filter: blur(16px);
+      backdrop-filter: blur(20px);
       border: 1px solid var(--border);
       border-radius: var(--radius);
-      padding: 24px;
-      transition: border-color 0.2s;
+      padding: 32px;
+      box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+      transition: border-color 0.25s, box-shadow 0.25s;
     }
 
     .card:hover {
-      border-color: rgba(255, 255, 255, 0.12);
+      border-color: var(--border-hover);
+      box-shadow: 0 12px 40px 0 rgba(0, 0, 0, 0.4);
     }
 
     .card-title {
-      font-size: 18px;
+      font-size: 19px;
       font-weight: 700;
-      margin-bottom: 16px;
+      color: var(--text-bright);
+      margin-bottom: 8px;
       display: flex;
       align-items: center;
       justify-content: space-between;
     }
 
     .card-subtitle {
-      font-size: 13px;
-      color: var(--muted);
-      margin-top: -12px;
-      margin-bottom: 18px;
+      font-size: 13.5px;
+      color: #a1a1aa;
+      margin-bottom: 24px;
       line-height: 1.5;
     }
 
@@ -163,25 +185,30 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 8px 0;
+      padding: 12px 16px;
+      background: rgba(255, 255, 255, 0.01);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      margin-bottom: 24px;
     }
 
     .toggle-label {
       font-weight: 600;
       font-size: 15px;
+      color: var(--text-bright);
     }
 
     .toggle-desc {
       font-size: 13px;
-      color: var(--muted);
+      color: #94a3b8;
       margin-top: 4px;
     }
 
     .switch {
       position: relative;
       display: inline-block;
-      width: 48px;
-      height: 26px;
+      width: 46px;
+      height: 24px;
     }
 
     .switch input {
@@ -197,8 +224,8 @@
       left: 0;
       right: 0;
       bottom: 0;
-      background-color: rgba(255, 255, 255, 0.1);
-      transition: .3s;
+      background-color: rgba(255, 255, 255, 0.08);
+      transition: .25s;
       border-radius: 34px;
       border: 1px solid var(--border);
     }
@@ -206,17 +233,19 @@
     .slider:before {
       position: absolute;
       content: "";
-      height: 18px;
-      width: 18px;
+      height: 16px;
+      width: 16px;
       left: 3px;
       bottom: 3px;
-      background-color: white;
-      transition: .3s;
+      background-color: #ffffff;
+      transition: .25s;
       border-radius: 50%;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.2);
     }
 
     input:checked + .slider {
       background-color: var(--emerald);
+      border-color: var(--emerald);
     }
 
     input:checked + .slider:before {
@@ -225,35 +254,36 @@
 
     /* Textarea & Inputs */
     .form-group {
-      margin-bottom: 18px;
+      margin-bottom: 24px;
     }
 
     .form-label {
       display: block;
-      font-size: 14px;
+      font-size: 14.5px;
       font-weight: 600;
-      margin-bottom: 8px;
-      color: var(--text);
+      margin-bottom: 10px;
+      color: var(--text-bright);
     }
 
     textarea {
       width: 100%;
-      height: 140px;
-      background: rgba(0, 0, 0, 0.2);
+      height: 130px;
+      background: rgba(0, 0, 0, 0.3);
       border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 12px;
-      color: var(--text);
+      border-radius: 12px;
+      padding: 14px;
+      color: var(--text-bright);
       font-family: inherit;
       font-size: 14px;
       line-height: 1.6;
       resize: vertical;
-      transition: border-color 0.2s;
+      transition: border-color 0.25s, box-shadow 0.25s;
     }
 
     textarea:focus {
       outline: none;
       border-color: var(--border-focus);
+      box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.15);
     }
 
     /* Tag buttons */
@@ -261,16 +291,17 @@
       display: flex;
       flex-wrap: wrap;
       gap: 8px;
-      margin-top: 8px;
+      margin-top: 10px;
     }
 
     .tag-btn {
       background: rgba(255, 255, 255, 0.05);
       border: 1px solid var(--border);
-      color: var(--muted);
-      padding: 4px 10px;
-      border-radius: 6px;
+      color: #cbd5e1;
+      padding: 6px 12px;
+      border-radius: 8px;
       font-size: 12px;
+      font-weight: 500;
       cursor: pointer;
       transition: all 0.2s;
       font-family: inherit;
@@ -287,37 +318,44 @@
       display: flex;
       flex-direction: column;
       gap: 12px;
-      margin-bottom: 16px;
+      margin-bottom: 18px;
     }
 
     .option-item {
       display: flex;
       align-items: center;
       gap: 12px;
-      background: rgba(255, 255, 255, 0.02);
+      background: rgba(255, 255, 255, 0.01);
       border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 10px 14px;
+      border-radius: 10px;
+      padding: 12px 16px;
+      transition: all 0.2s;
+    }
+
+    .option-item:focus-within {
+      border-color: var(--border-focus);
+      background: rgba(255, 255, 255, 0.03);
     }
 
     .option-key {
-      background: var(--border);
-      width: 24px;
-      height: 24px;
+      background: rgba(16, 185, 129, 0.1);
+      width: 28px;
+      height: 28px;
       display: flex;
       align-items: center;
       justify-content: center;
-      border-radius: 6px;
+      border-radius: 8px;
       font-size: 13px;
       font-weight: 700;
-      color: var(--text);
+      color: var(--emerald);
+      border: 1px solid rgba(16, 185, 129, 0.25);
     }
 
     .option-label-input {
       flex: 1;
       background: transparent;
       border: none;
-      color: var(--text);
+      color: var(--text-bright);
       font-size: 14px;
       font-family: inherit;
       font-weight: 500;
@@ -331,10 +369,13 @@
       background: none;
       border: none;
       cursor: pointer;
-      color: var(--muted);
+      color: #94a3b8;
       font-size: 16px;
-      padding: 4px;
+      padding: 6px;
       transition: color 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
 
     .btn-delete-option:hover {
@@ -342,12 +383,12 @@
     }
 
     .btn-add-option {
-      background: transparent;
-      border: 1px dashed var(--border);
+      background: rgba(16, 185, 129, 0.03);
+      border: 1px dashed rgba(16, 185, 129, 0.3);
       color: var(--emerald);
       width: 100%;
-      padding: 10px;
-      border-radius: 8px;
+      padding: 12px;
+      border-radius: 10px;
       cursor: pointer;
       font-weight: 600;
       font-size: 13px;
@@ -377,9 +418,9 @@
       align-items: center;
       justify-content: center;
       gap: 8px;
-      padding: 12px 24px;
-      border-radius: 8px;
-      font-size: 14px;
+      padding: 12px 28px;
+      border-radius: 10px;
+      font-size: 14.5px;
       font-weight: 600;
       cursor: pointer;
       border: none;
@@ -390,21 +431,25 @@
     .btn-primary {
       background: var(--emerald);
       color: #052e1c;
+      box-shadow: 0 4px 12px rgba(16, 185, 129, 0.2);
     }
 
     .btn-primary:hover {
       background: var(--emerald-dark);
+      transform: translateY(-1px);
+      box-shadow: 0 6px 18px rgba(16, 185, 129, 0.3);
     }
 
     .btn-outline {
       background: transparent;
       border: 1px solid var(--border);
-      color: var(--muted);
+      color: #cbd5e1;
     }
 
     .btn-outline:hover {
-      border-color: var(--text);
-      color: var(--text);
+      border-color: var(--text-bright);
+      color: var(--text-bright);
+      background: rgba(255, 255, 255, 0.02);
     }
 
     .btn-red {
@@ -416,6 +461,20 @@
     .btn-red:hover {
       background: var(--red);
       color: white;
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(239, 68, 68, 0.2);
+    }
+
+    /* WhatsApp Connected Box */
+    .connected-info-box {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 20px;
+      padding: 16px;
+      background: rgba(16, 185, 129, 0.04);
+      border-radius: 12px;
+      border: 1px solid rgba(16, 185, 129, 0.15);
     }
 
     /* Smartphone Mockup */
@@ -424,11 +483,12 @@
       height: 620px;
       background: #000;
       border-radius: 40px;
-      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 0 10px #1a1a1a;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.6), 0 0 0 10px #1c1c1e;
       overflow: hidden;
       display: flex;
       flex-direction: column;
       position: relative;
+      border: 1px solid rgba(255, 255, 255, 0.1);
     }
 
     /* Smartphone Notch */
@@ -438,34 +498,37 @@
       top: 0;
       left: 50%;
       transform: translateX(-50%);
-      width: 130px;
-      height: 25px;
+      width: 120px;
+      height: 22px;
       background: #000;
-      border-bottom-left-radius: 16px;
-      border-bottom-right-radius: 16px;
+      border-bottom-left-radius: 14px;
+      border-bottom-right-radius: 14px;
       z-index: 100;
     }
 
+    /* WhatsApp Dark Mode Mockup */
     .phone-header {
-      background: #075e54;
-      padding: 30px 16px 10px;
-      color: white;
+      background: #1f2c34;
+      padding: 28px 16px 10px;
+      color: #e9edef;
       display: flex;
       align-items: center;
       gap: 10px;
       font-size: 13px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
     }
 
     .phone-avatar {
-      width: 32px;
-      height: 32px;
-      background: rgba(255,255,255,0.2);
+      width: 30px;
+      height: 30px;
+      background: var(--emerald);
+      color: #052e1c;
       border-radius: 50%;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 16px;
-      font-weight: bold;
+      font-size: 13.5px;
+      font-weight: 700;
     }
 
     .phone-contact {
@@ -473,52 +536,61 @@
     }
 
     .phone-contact-name {
-      font-weight: 700;
+      font-weight: 600;
+      color: #e9edef;
     }
 
     .phone-contact-status {
       font-size: 10px;
-      opacity: 0.8;
+      color: #8696a0;
     }
 
     .phone-body {
       flex: 1;
-      background: #e5ddd5 url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png') repeat;
+      background: #0b141a;
       padding: 16px;
       overflow-y: auto;
       display: flex;
       flex-direction: column;
       gap: 12px;
+      background-image: url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png');
+      background-repeat: repeat;
+      background-blend-mode: overlay;
+      background-color: rgba(11, 20, 26, 0.97);
     }
 
     .chat-bubble {
-      max-width: 85%;
+      max-width: 82%;
       padding: 8px 12px;
       border-radius: 8px;
       font-size: 12.5px;
       line-height: 1.5;
       position: relative;
-      box-shadow: 0 1px 1px rgba(0,0,0,0.1);
+      box-shadow: 0 1px 2px rgba(0,0,0,0.3);
       white-space: pre-wrap;
+      min-width: 75px;
     }
 
     .chat-bubble.incoming {
-      background: white;
+      background: #202c33;
       align-self: flex-start;
-      color: #333;
+      color: #e9edef;
+      border-top-left-radius: 0;
     }
 
     .chat-bubble.outgoing {
-      background: #dcf8c6;
+      background: #005c4b;
       align-self: flex-end;
-      color: #333;
+      color: #e9edef;
+      border-top-right-radius: 0;
     }
 
     .chat-time {
       font-size: 9px;
-      color: rgba(0,0,0,0.45);
+      color: #8696a0;
       text-align: right;
       margin-top: 4px;
+      display: block;
     }
 
     /* WhatsApp Onboarding inside Dashboard */
@@ -533,7 +605,7 @@
     }
 
     .qr-box {
-      background: rgba(255, 255, 255, 0.02);
+      background: rgba(255, 255, 255, 0.01);
       border: 1px solid var(--border);
       border-radius: 12px;
       padding: 24px;
@@ -542,15 +614,15 @@
     }
 
     .qr-box img {
-      width: 200px;
-      height: 200px;
+      width: 180px;
+      height: 180px;
       border-radius: 8px;
       border: 4px solid white;
     }
 
     .qr-placeholder {
-      width: 200px;
-      height: 200px;
+      width: 180px;
+      height: 180px;
       border: 2px dashed var(--border);
       border-radius: 8px;
       display: flex;
@@ -629,11 +701,11 @@
 
         <!-- Disconnect View -->
         <div id="viewConnected" style="display:none;">
-          <div style="display: flex; align-items: center; gap: 16px; margin-bottom: 16px; padding: 12px; background: rgba(255,255,255,0.02); border-radius: 8px; border: 1px solid var(--border);">
+          <div class="connected-info-box">
             <div style="font-size: 24px;">✅</div>
             <div>
-              <div style="font-weight: 600; font-size: 15px;">Dispositivo Conectado</div>
-              <div style="font-size: 13px; color: var(--muted);" id="lblConnectedPhone">Número: -</div>
+              <div style="font-weight: 600; font-size: 15px; color: var(--text-bright);">Dispositivo Conectado</div>
+              <div style="font-size: 13px; color: #94a3b8; margin-top: 2px;" id="lblConnectedPhone">Número: -</div>
             </div>
           </div>
           <button class="btn btn-red" onclick="disconnectWhatsApp()">Desvincular WhatsApp</button>
