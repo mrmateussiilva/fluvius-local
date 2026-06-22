@@ -34,7 +34,7 @@ const EVOLUTION_HISTORY_AUTO_IMPORT_INTERVAL_SECONDS = Math.max(Number(process.e
 const EVOLUTION_HISTORY_AUTO_IMPORT_LIMIT = Math.min(Math.max(Number(process.env.EVOLUTION_HISTORY_AUTO_IMPORT_LIMIT || 20), 1), 100);
 const EVOLUTION_CHATWOOT_DIRECT_DB_IMPORT_ENABLED = String(process.env.EVOLUTION_CHATWOOT_DIRECT_DB_IMPORT_ENABLED || 'false') === 'true';
 const TRIAGE_BOT_ENABLED = String(process.env.TRIAGE_BOT_ENABLED || 'false') === 'true';
-const TRIAGE_BOT_INTERVAL_SECONDS = Math.max(Number(process.env.TRIAGE_BOT_INTERVAL_SECONDS || 20), 10);
+const TRIAGE_BOT_INTERVAL_SECONDS = Math.max(Number(process.env.TRIAGE_BOT_INTERVAL_SECONDS || 7), 5);
 const TRIAGE_BOT_LIMIT = Math.min(Math.max(Number(process.env.TRIAGE_BOT_LIMIT || 10), 1), 50);
 const TRIAGE_BOT_NEW_CONVERSATION_WINDOW_HOURS = Math.min(Math.max(Number(process.env.TRIAGE_BOT_NEW_CONVERSATION_WINDOW_HOURS || 24), 1), 720);
 const TRIAGE_BOT_OPTIONS_RAW = String(process.env.TRIAGE_BOT_OPTIONS || '');
@@ -4864,6 +4864,127 @@ async function resetTriageOnTriggerWord(client) {
     console.warn(`[triage-trigger] failed for client=${client.id}: ${error.message}`);
   }
 }
+
+// ─── In-memory lock to prevent double-processing conversations via webhook+poll ──
+const triageProcessingConvs = new Map(); // convId -> timestamp
+function triageLock(convId) {
+  const now = Date.now();
+  const last = triageProcessingConvs.get(convId) || 0;
+  if (now - last < 8000) return false; // locked for 8s
+  triageProcessingConvs.set(convId, now);
+  return true;
+}
+
+// ─── Chatwoot Webhook — instant triage processing ────────────────────────────
+app.post('/webhook/chatwoot', express.json({ limit: '1mb' }), (req, res) => {
+  // Acknowledge immediately so Chatwoot doesn't retry
+  res.status(200).json({ ok: true });
+
+  if (!TRIAGE_BOT_ENABLED) return;
+
+  const payload = req.body;
+  if (payload.event !== 'message_created') return;
+  // Only process incoming messages from contacts (message_type 0 = incoming)
+  if (payload.message_type !== 0) return;
+  // Skip outgoing bot messages
+  if (payload.sender?.type === 'agent_bot' || payload.sender?.type === 'agent') return;
+
+  const accountId = Number(payload.account?.id || 0);
+  const inboxId = Number(payload.inbox?.id || 0);
+  const conversationId = Number(payload.conversation?.id || 0);
+  const conversationDisplayId = Number(payload.conversation?.display_id || 0);
+  const messageId = Number(payload.id || 0);
+  const content = String(payload.content || '').trim();
+  const contactName = String(payload.sender?.name || 'Cliente').trim();
+
+  if (!accountId || !inboxId || !conversationId) return;
+
+  // Avoid double-processing same conversation too quickly
+  if (!triageLock(conversationId)) return;
+
+  // Process asynchronously (do not await here — response already sent)
+  (async () => {
+    try {
+      const clients = await triageClients();
+      const client = clients.find(
+        c => Number(c.chatwoot_account_id) === accountId && Number(c.inbox_id) === inboxId,
+      );
+      if (!client) return;
+
+      // Fetch current triage state from DB
+      const convRes = await pool.query(
+        'SELECT id, display_id, custom_attributes FROM conversations WHERE id = $1 LIMIT 1',
+        [conversationId],
+      );
+      if (!convRes.rows.length) return;
+      const conv = convRes.rows[0];
+      const triageState = String(conv.custom_attributes?.fluvius_triage_state || '');
+      const lastIncomingId = Number(conv.custom_attributes?.fluvius_triage_last_incoming_id || 0);
+
+      // Skip if this message was already processed
+      if (messageId && lastIncomingId && messageId <= lastIncomingId && triageState === 'waiting') return;
+
+      const keyword = String(client.chatbot_trigger_keyword || '').toLowerCase().trim();
+      const contentLower = content.toLowerCase();
+
+      // ── Case 1: Trigger keyword detected → reset + re-greet immediately ──
+      if (keyword && contentLower.includes(keyword) && triageState !== '') {
+        await pool.query(
+          `UPDATE conversations SET custom_attributes = custom_attributes
+            - 'fluvius_triage_state'
+            - 'fluvius_triage_greeted_at'
+            - 'fluvius_triage_option'
+            - 'fluvius_triage_label'
+            - 'fluvius_triage_routed_at'
+            - 'fluvius_triage_last_incoming_id'
+            - 'fluvius_triage_last_invalid_at'
+           WHERE id = $1`,
+          [conversationId],
+        );
+        const convForGreet = {
+          id: conversationId,
+          display_id: conversationDisplayId,
+          account_id: accountId,
+          inbox_id: inboxId,
+          contact_name: contactName,
+        };
+        await greetTriageConversation(client, convForGreet);
+        console.log(`[triage-webhook] reset+greeted client=${client.id} conversation=${conversationDisplayId}`);
+        return;
+      }
+
+      // ── Case 2: No triage state → greet immediately ──
+      if (!triageState) {
+        const convForGreet = {
+          id: conversationId,
+          display_id: conversationDisplayId,
+          account_id: accountId,
+          inbox_id: inboxId,
+          contact_name: contactName,
+        };
+        await greetTriageConversation(client, convForGreet);
+        console.log(`[triage-webhook] greeted client=${client.id} conversation=${conversationDisplayId}`);
+        return;
+      }
+
+      // ── Case 3: Waiting for option selection → route immediately ──
+      if (triageState === 'waiting') {
+        const convForRoute = {
+          id: conversationId,
+          display_id: conversationDisplayId,
+          account_id: accountId,
+          inbox_id: inboxId,
+          latest_incoming_message_id: messageId,
+          latest_incoming_content: content,
+        };
+        const result = await routeTriageConversation(client, convForRoute);
+        console.log(`[triage-webhook] routed client=${client.id} conversation=${conversationDisplayId} routed=${result.routed}`);
+      }
+    } catch (err) {
+      console.warn(`[triage-webhook] error processing conversation=${conversationDisplayId}: ${err.message}`);
+    }
+  })();
+});
 
 async function runTriageBot() {
   if (!TRIAGE_BOT_ENABLED || triageBotRunning) return;
