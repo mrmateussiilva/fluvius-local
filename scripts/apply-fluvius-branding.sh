@@ -86,14 +86,14 @@ docker compose -f "$COMPOSE_FILE" exec -T chatwoot bundle exec rails runner "
       .woot-logo,
       img[alt='Fluvius'],
       img[alt='chatwoot'] {
-        content: url('/brand-assets/logo.svg') !important;
+        content: url('/brand-assets/logo.png') !important;
         object-fit: contain;
       }
 
       body.dark .woot-logo,
       body.dark img[alt='Fluvius'],
       body.dark img[alt='chatwoot'] {
-        content: url('/brand-assets/logo_dark.svg') !important;
+        content: url('/brand-assets/logo_dark.png') !important;
       }
 
       button[type='submit'],
@@ -203,7 +203,7 @@ docker compose -f "$COMPOSE_FILE" exec -T chatwoot bundle exec rails runner "
         width: 30px;
         height: 30px;
         border-radius: 8px;
-        background: url('/brand-assets/logo_thumbnail.svg') center / cover no-repeat;
+        background: url('/brand-assets/logo_thumbnail.png') center / cover no-repeat;
         box-shadow: 0 8px 22px rgba(5, 46, 28, 0.2);
       }
 
@@ -244,7 +244,7 @@ docker compose -f "$COMPOSE_FILE" exec -T chatwoot bundle exec rails runner "
           selectors.forEach(selector => {
             document.querySelectorAll(selector).forEach(element => {
               if (element.tagName === 'IMG') {
-                element.src = '/brand-assets/logo.svg';
+                element.src = '/brand-assets/logo.png';
                 element.alt = brandName;
               }
             });
@@ -291,9 +291,9 @@ docker compose -f "$COMPOSE_FILE" exec -T chatwoot bundle exec rails runner "
     'BRAND_NAME' => brand_name,
     'BRAND_URL' => brand_url,
     'WIDGET_BRAND_URL' => brand_url,
-    'LOGO' => '/brand-assets/logo.svg',
-    'LOGO_DARK' => '/brand-assets/logo_dark.svg',
-    'LOGO_THUMBNAIL' => '/brand-assets/logo_thumbnail.svg',
+    'LOGO' => '/brand-assets/logo.png',
+    'LOGO_DARK' => '/brand-assets/logo_dark.png',
+    'LOGO_THUMBNAIL' => '/brand-assets/logo_thumbnail.png',
     'DASHBOARD_SCRIPTS' => dashboard_scripts
   }.each do |name, value|
     config = InstallationConfig.where(name: name).first_or_initialize

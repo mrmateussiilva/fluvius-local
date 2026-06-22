@@ -95,11 +95,11 @@ Rails.application.config.after_initialize do
       .woot-logo,
       img[alt="Chatwoot"], img[alt="chatwoot"],
       img[src*="chatwoot-logo"], img[src*="chatwoot_logo"] {
-        content: url("/brand-assets/logo.svg") !important;
+        content: url("/brand-assets/logo.png") !important;
       }
       body.dark .woot-logo,
       body.dark img[alt="Chatwoot"], body.dark img[alt="chatwoot"] {
-        content: url("/brand-assets/logo_dark.svg") !important;
+        content: url("/brand-assets/logo_dark.png") !important;
       }
 
       /* Esconder links do Chatwoot externo */
@@ -137,8 +137,8 @@ Rails.application.config.after_initialize do
           /* Logos */
           document.querySelectorAll('img[alt="Chatwoot"], img[alt="chatwoot"], .woot-logo, img[src*="chatwoot"]').forEach(function(el) {
             el.src = document.body.classList.contains("dark")
-              ? "/brand-assets/logo_dark.svg"
-              : "/brand-assets/logo.svg";
+              ? "/brand-assets/logo_dark.png"
+              : "/brand-assets/logo.png";
             el.alt = BRAND;
           });
 
@@ -150,9 +150,9 @@ Rails.application.config.after_initialize do
           });
 
           /* Favicon dinâmico */
-          var favicon = document.querySelector("link[rel='icon'][type='image/png']");
+          var favicon = document.querySelector("link[rel*='icon']");
           if (favicon && !/brand-assets/.test(favicon.href)) {
-            favicon.href = "/brand-assets/logo_thumbnail.svg";
+            favicon.href = "/brand-assets/logo_thumbnail.png";
           }
         }
 
@@ -170,9 +170,9 @@ Rails.application.config.after_initialize do
   {
     'INSTALLATION_NAME' => 'Fluvius',
     'BRAND_NAME'        => 'Fluvius',
-    'LOGO'              => '/brand-assets/logo.svg',
-    'LOGO_DARK'         => '/brand-assets/logo_dark.svg',
-    'LOGO_THUMBNAIL'    => '/brand-assets/logo_thumbnail.svg',
+    'LOGO'              => '/brand-assets/logo.png',
+    'LOGO_DARK'         => '/brand-assets/logo_dark.png',
+    'LOGO_THUMBNAIL'    => '/brand-assets/logo_thumbnail.png',
     'CUSTOM_DASHBOARD_SCRIPT' => custom_script.strip,
   }.each do |name, value|
     config = InstallationConfig.where(name: name).first_or_initialize
