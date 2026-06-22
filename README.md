@@ -425,3 +425,5 @@ O script grava as configs no banco do Fluvius e reinicia `chatwoot` e `sidekiq`.
 O servico `sidekiq` e necessario para envio de mensagens pelo Fluvius. Sem ele, mensagens podem aparecer no Fluvius, mas nao sair para o WhatsApp.
 
 `ALLOW_PRIVATE_WEBHOOK_URLS=true` e o initializer local permitem webhooks para containers Docker internos. Use isso apenas neste ambiente local.
+
+`FLUVIUS_FILTER_EVOLUTION_WEBHOOKS=true` evita que webhooks de API inbox para a Evolution entrem na fila `medium` quando nao sao envio real. O filtro deixa passar apenas `message_created:outgoing`; eventos de entrada, updates e typing sao descartados antes de virarem `WebhookJob`.
