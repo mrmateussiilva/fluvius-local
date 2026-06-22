@@ -38,6 +38,7 @@ const TRIAGE_BOT_INTERVAL_SECONDS = Math.max(Number(process.env.TRIAGE_BOT_INTER
 const TRIAGE_BOT_LIMIT = Math.min(Math.max(Number(process.env.TRIAGE_BOT_LIMIT || 10), 1), 50);
 const TRIAGE_BOT_NEW_CONVERSATION_WINDOW_HOURS = Math.min(Math.max(Number(process.env.TRIAGE_BOT_NEW_CONVERSATION_WINDOW_HOURS || 24), 1), 720);
 const TRIAGE_BOT_OPTIONS_RAW = String(process.env.TRIAGE_BOT_OPTIONS || '');
+const TRIAGE_BOT_AI_ENABLED = Boolean(GEMINI_API_KEY) && String(process.env.TRIAGE_BOT_AI_ENABLED || 'true') === 'true';
 
 function directEvolutionImportDisabledPayload() {
   return {
@@ -1724,6 +1725,10 @@ function triageGreetingForClient(client, contactName = 'Cliente') {
 
 function triageConfirmationText(option) {
   return `Perfeito, vou direcionar seu atendimento para ${option.label}.`;
+}
+
+function triageAiConfirmationText(option) {
+  return `Entendido! 🤖 Percebi que você precisa de ajuda com *${option.label}*. Vou te encaminhar agora!`;
 }
 
 function triageInvalidOptionText(client) {
@@ -4792,9 +4797,52 @@ function triageOptionFromContent(content, client) {
   return parseTriageOptionsForClient(client).find(option => option.key.toLowerCase() === key) || null;
 }
 
+async function triageDetectIntentWithAI(client, content) {
+  if (!TRIAGE_BOT_AI_ENABLED || !content) return null;
+  const options = parseTriageOptionsForClient(client);
+  if (!options.length) return null;
+
+  const optionsList = options.map(o => `${o.key} - ${o.label}`).join('\n');
+  const companyName = String(client.name || 'empresa').trim();
+
+  const prompt = `Você é um assistente de triagem da empresa "${companyName}" no WhatsApp.
+Um cliente enviou a seguinte mensagem:
+"${content}"
+
+As opções de atendimento disponíveis são:
+${optionsList}
+
+Identifique qual opção melhor atende à necessidade do cliente.
+Responda APENAS com JSON:
+- Se identificar com ALTA confiança: {"key": "1", "confidence": "high"}
+- Se não souber ou tiver dúvida: {"key": null, "confidence": "low"}
+Nunca invente opções. Se a mensagem for saudação genérica (oi, olá, tudo bem), retorne null.`;
+
+  try {
+    const result = await geminiGenerateJson(prompt);
+    const key = String(result?.key || '').trim();
+    const confidence = String(result?.confidence || '').toLowerCase();
+    if (!key || key === 'null' || confidence !== 'high') return null;
+    return options.find(o => o.key === key) || null;
+  } catch (err) {
+    console.warn(`[triage-ai] intent detection failed: ${err.message}`);
+    return null;
+  }
+}
+
 async function routeTriageConversation(client, conversation) {
-  const option = triageOptionFromContent(conversation.latest_incoming_content, client);
+  let option = triageOptionFromContent(conversation.latest_incoming_content, client);
   const latestIncomingId = String(conversation.latest_incoming_message_id || '');
+  let aiDetected = false;
+
+  // Fallback: try Gemini AI intent detection if numeric match failed
+  if (!option && TRIAGE_BOT_AI_ENABLED) {
+    option = await triageDetectIntentWithAI(client, conversation.latest_incoming_content);
+    if (option) {
+      aiDetected = true;
+      console.log(`[triage-ai] detected intent key=${option.key} label="${option.label}" for conversation=${conversation.display_id}`);
+    }
+  }
 
   if (!option) {
     await sendTriageMessage(client, conversation, triageInvalidOptionText(client));
@@ -4808,7 +4856,8 @@ async function routeTriageConversation(client, conversation) {
   const label = `triagem-${slugifyLabel(option.label) || option.key}`;
   await addConversationLabel(client.chatwoot_account_id, conversation.id, label, '#22c55e');
   await assignTriageConversation(client, conversation, option);
-  await sendTriageMessage(client, conversation, triageConfirmationText(option));
+  const confirmText = aiDetected ? triageAiConfirmationText(option) : triageConfirmationText(option);
+  await sendTriageMessage(client, conversation, confirmText);
   await updateConversationCustomAttributes(client.chatwoot_account_id, conversation.id, {
     fluvius_triage_state: 'routed',
     fluvius_triage_option: option.key,
@@ -4816,7 +4865,7 @@ async function routeTriageConversation(client, conversation) {
     fluvius_triage_last_incoming_id: latestIncomingId,
     fluvius_triage_routed_at: new Date().toISOString(),
   });
-  return { routed: true, option };
+  return { routed: true, option, aiDetected };
 }
 
 async function resetTriageOnTriggerWord(client) {
