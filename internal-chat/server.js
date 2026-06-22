@@ -2233,7 +2233,10 @@ async function refreshTaggingCounts(dbClient, tagIds) {
 
 async function getPlatformUserToken(userId) {
   const token = await platformFetch(`/platform/api/v1/users/${userId}/token`, { method: 'POST' });
-  if (token.status >= 300) return null;
+  if (token.status >= 300) {
+    console.warn(`[getPlatformUserToken] failed status=${token.status} data=${JSON.stringify(token.data)}`);
+    return null;
+  }
   return token.data?.access_token || null;
 }
 
@@ -4684,13 +4687,13 @@ let triageBotRunning = false;
 
 async function triageClients() {
   const { rows } = await pool.query(
-    `SELECT id, chatwoot_account_id, inbox_id, instance_name, name, chatbot_enabled, chatbot_type, chatbot_welcome_message, chatbot_absence_message, chatbot_options, chatbot_trigger_keyword, 'main' as source_type
+    `SELECT id, chatwoot_account_id, inbox_id, instance_name, name, chatbot_enabled, chatbot_type, chatbot_welcome_message, chatbot_absence_message, chatbot_options, chatbot_trigger_keyword, chatwoot_user_id, chatwoot_user_email, 'main' as source_type
      FROM fluvius_clients
      WHERE chatwoot_account_id IS NOT NULL
        AND inbox_id IS NOT NULL
        AND chatbot_enabled = true
      UNION ALL
-     SELECT i.id, c.chatwoot_account_id, i.inbox_id, i.instance_name, i.channel_display_name as name, i.chatbot_enabled, i.chatbot_type, i.chatbot_welcome_message, i.chatbot_absence_message, i.chatbot_options, i.chatbot_trigger_keyword, 'extra' as source_type
+     SELECT i.id, c.chatwoot_account_id, i.inbox_id, i.instance_name, i.channel_display_name as name, i.chatbot_enabled, i.chatbot_type, i.chatbot_welcome_message, i.chatbot_absence_message, i.chatbot_options, i.chatbot_trigger_keyword, c.chatwoot_user_id, c.chatwoot_user_email, 'extra' as source_type
      FROM fluvius_client_inboxes i
      INNER JOIN fluvius_clients c ON i.client_id = c.id
      WHERE c.chatwoot_account_id IS NOT NULL
