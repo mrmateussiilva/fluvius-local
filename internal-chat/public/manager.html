@@ -996,7 +996,7 @@
         <button class="btn btn-ghost btn-sm" onclick="renameCompanyChannel(${c.id}, '${escapeAttr(channelName)}', this)">Renomear conexão</button>
         <button class="btn btn-ghost btn-sm" onclick="generateClientAdminPasswordResetLink(${c.id}, '${escapeAttr(c.chatwoot_user_email || c.email || 'admin')}', this)">Gerar link de senha do admin</button>
         <button class="btn btn-ghost btn-sm" onclick="openAgentsModal(${c.id}, '${escapeAttr(c.name)}')">Adicionar agentes</button>
-        <button class="btn btn-ghost btn-sm" onclick="importHistory(${c.id}, '${escapeAttr(c.name)}', this)">Importar histórico</button>
+        <button class="btn btn-ghost btn-sm" onclick="importHistory(${c.id}, '${escapeAttr(c.name)}', this)">Sync histórico leve</button>
       </div>
 
       <div style="display:flex;align-items:center;justify-content:space-between;margin:24px 0 12px">
@@ -1750,19 +1750,23 @@
   }
 
   async function importHistory(id, name, btn) {
-    if (!confirm(`Importar mensagens da Evolution para "${name}"? O processo é idempotente e não deve duplicar mensagens já vinculadas.`)) return;
+    if (!confirm(`Sincronizar um lote leve de mensagens da Evolution para "${name}"? O processo é idempotente, tem pausa entre mensagens e pode ser repetido.`)) return;
     const original = btn.innerHTML;
     btn.innerHTML = `<span class="spinner"></span>`;
     btn.disabled = true;
     try {
-      const r = await apiFetch(`${API}/clients/${id}/import-history`, { method: 'POST' });
+      const r = await apiFetch(`${API}/clients/${id}/import-history`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: 'safe' }),
+      });
       const data = await r.json();
       if (!r.ok) {
         toast(readableError(data), 'error');
         return;
       }
       toast(
-        `Histórico: ${data.contacts_created} contatos, ${data.conversations_created} conversas, ${data.messages_imported} mensagens importadas, ${data.messages_relinked} vinculadas.`,
+        `Sync leve: ${data.messages_found} encontradas, ${data.messages_imported} importadas, ${data.messages_relinked} vinculadas, ${data.messages_skipped} ignoradas.`,
       );
     } catch (e) {
       toast(`Erro: ${e.message}`, 'error');

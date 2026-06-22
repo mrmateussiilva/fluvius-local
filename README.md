@@ -337,6 +337,19 @@ O `internal-chat` tambem roda uma importacao automatica leve para esse mesmo cas
 EVOLUTION_HISTORY_AUTO_IMPORT_ENABLED=true
 EVOLUTION_HISTORY_AUTO_IMPORT_INTERVAL_SECONDS=10
 EVOLUTION_HISTORY_AUTO_IMPORT_LIMIT=20
+EVOLUTION_HISTORY_MANUAL_IMPORT_LIMIT=25
+EVOLUTION_HISTORY_IMPORT_THROTTLE_MS=150
+```
+
+O botao "Sync historico leve" no Manager usa esse modo economico: processa no maximo `EVOLUTION_HISTORY_MANUAL_IMPORT_LIMIT` mensagens por clique, nao varre todos os contatos/chats e espera `EVOLUTION_HISTORY_IMPORT_THROTTLE_MS` ms entre mensagens para reduzir pico de CPU. Repita o clique ate zerar mensagens pendentes.
+
+Para uma importacao completa, use explicitamente `mode=full` apenas fora do horario de pico:
+
+```bash
+curl -X POST -H "Authorization: Bearer $MANAGER_ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"mode":"full","throttleMs":250}' \
+  http://127.0.0.1:4000/manager/api/clients/<id>/import-history
 ```
 
 Para acompanhar:

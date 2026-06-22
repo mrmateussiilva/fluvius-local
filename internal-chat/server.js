@@ -32,6 +32,8 @@ const CRM_AI_AUTO_LIMIT = Math.min(Math.max(Number(process.env.CRM_AI_AUTO_LIMIT
 const EVOLUTION_HISTORY_AUTO_IMPORT_ENABLED = String(process.env.EVOLUTION_HISTORY_AUTO_IMPORT_ENABLED || 'false') === 'true';
 const EVOLUTION_HISTORY_AUTO_IMPORT_INTERVAL_SECONDS = Math.max(Number(process.env.EVOLUTION_HISTORY_AUTO_IMPORT_INTERVAL_SECONDS || 10), 5);
 const EVOLUTION_HISTORY_AUTO_IMPORT_LIMIT = Math.min(Math.max(Number(process.env.EVOLUTION_HISTORY_AUTO_IMPORT_LIMIT || 20), 1), 100);
+const EVOLUTION_HISTORY_MANUAL_IMPORT_LIMIT = Math.min(Math.max(Number(process.env.EVOLUTION_HISTORY_MANUAL_IMPORT_LIMIT || 25), 1), 100);
+const EVOLUTION_HISTORY_IMPORT_THROTTLE_MS = Math.min(Math.max(Number(process.env.EVOLUTION_HISTORY_IMPORT_THROTTLE_MS || 150), 0), 2000);
 const EVOLUTION_CHATWOOT_DIRECT_DB_IMPORT_ENABLED = String(process.env.EVOLUTION_CHATWOOT_DIRECT_DB_IMPORT_ENABLED || 'false') === 'true';
 const TRIAGE_BOT_ENABLED = String(process.env.TRIAGE_BOT_ENABLED || 'false') === 'true';
 const TRIAGE_BOT_INTERVAL_SECONDS = Math.max(Number(process.env.TRIAGE_BOT_INTERVAL_SECONDS || 7), 5);
@@ -46,6 +48,10 @@ function directEvolutionImportDisabledPayload() {
     message:
       'Importar mensagens da Evolution pelo internal-chat está desabilitado: esse fluxo escreve direto no banco do Chatwoot e pula callbacks/realtime do Rails.',
   };
+}
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 function assertValidInternalUrl(name, value) {
@@ -2672,6 +2678,7 @@ async function importEvolutionHistoryForClient(client, options = {}) {
   const syncSettings = options.syncSettings !== false;
   const ensureAllThreads = options.ensureAllThreads !== false;
   const pendingLimit = Math.min(Math.max(Number(options.pendingLimit || 0), 0), 500);
+  const throttleMs = Math.min(Math.max(Number(options.throttleMs || 0), 0), 2000);
 
   const instance = await evolutionPool.query('SELECT id FROM "Instance" WHERE name = $1 LIMIT 1', [client.instance_name]);
   if (!instance.rowCount) throw new Error(`Evolution instance not found: ${client.instance_name}`);
@@ -2808,7 +2815,11 @@ async function importEvolutionHistoryForClient(client, options = {}) {
     stats.threads_ensured += 1;
   }
 
+  let processedRows = 0;
   for (const row of evolutionRows.rows) {
+    if (processedRows > 0 && throttleMs > 0) await sleep(throttleMs);
+    processedRows += 1;
+
     const key = safeJsonParse(row.key);
     const remoteJid = evolutionRemoteJid(key);
     if (!remoteJid || remoteJid === 'status@broadcast') {
@@ -2951,6 +2962,9 @@ async function importEvolutionHistoryForClient(client, options = {}) {
     instance_name: client.instance_name,
     account_id: client.chatwoot_account_id,
     inbox_id: client.inbox_id,
+    pending_limit: pendingLimit,
+    throttle_ms: throttleMs,
+    ensure_all_threads: ensureAllThreads,
     ...stats,
   };
 }
@@ -3925,9 +3939,32 @@ app.post('/manager/api/clients/:id/import-history', async (req, res) => {
   if (!rows.length) return res.status(404).json({ error: 'client not found' });
 
   try {
+    const body = req.body || {};
+    const mode = String(body.mode || req.query.mode || 'safe').toLowerCase();
+    const safeMode = mode !== 'full';
+    const pendingLimit = Math.min(
+      Math.max(Number(body.pendingLimit || req.query.pendingLimit || (safeMode ? EVOLUTION_HISTORY_MANUAL_IMPORT_LIMIT : 0)), 0),
+      500,
+    );
+    const throttleMs = Math.min(
+      Math.max(Number(body.throttleMs ?? req.query.throttleMs ?? (safeMode ? EVOLUTION_HISTORY_IMPORT_THROTTLE_MS : 0)), 0),
+      2000,
+    );
+    const ensureAllThreads = safeMode
+      ? false
+      : String(body.ensureAllThreads ?? req.query.ensureAllThreads ?? 'true') !== 'false';
+
     await repairClientIntegration(rows[0]);
-    const result = await importEvolutionHistoryForClient(rows[0]);
-    return res.json(result);
+    const result = await importEvolutionHistoryForClient(rows[0], {
+      syncSettings: !safeMode,
+      ensureAllThreads,
+      pendingLimit,
+      throttleMs,
+    });
+    return res.json({
+      mode: safeMode ? 'safe' : 'full',
+      ...result,
+    });
   } catch (err) {
     return res.status(500).json({
       step: 'import_history',
@@ -4658,6 +4695,7 @@ async function runEvolutionHistoryAutoImport() {
           syncSettings: false,
           ensureAllThreads: false,
           pendingLimit: EVOLUTION_HISTORY_AUTO_IMPORT_LIMIT,
+          throttleMs: EVOLUTION_HISTORY_IMPORT_THROTTLE_MS,
         });
         if (result.messages_found || result.messages_imported || result.messages_relinked || result.messages_skipped || result.media_pending) {
           console.log(
