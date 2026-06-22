@@ -577,6 +577,67 @@
   </div>
 </div>
 
+<!-- Add Inbox Modal -->
+<div class="modal-overlay hidden priority" id="addInboxModal">
+  <div class="modal">
+    <div class="company-modal-header">
+      <h2>Adicionar conexão WhatsApp</h2>
+      <p>Cria um novo número/inbox para esta mesma empresa.</p>
+    </div>
+    <div class="company-modal-body">
+      <div class="form-group">
+        <label>Nome do inbox/canal</label>
+        <input type="text" id="addInboxLabel" placeholder="Ex: Suporte Nível 2" class="form-control">
+        <small>Este nome aparecerá no Chatwoot para os agentes.</small>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="document.getElementById('addInboxModal').classList.add('hidden')">Cancelar</button>
+      <button class="btn btn-primary" id="addInboxBtn">Adicionar Conexão</button>
+    </div>
+  </div>
+</div>
+
+<!-- Add Automation Modal -->
+<div class="modal-overlay hidden priority" id="addAutomationModal">
+  <div class="modal">
+    <div class="company-modal-header">
+      <h2>Nova Automação</h2>
+      <p>Cria uma regra automática no Chatwoot para esta empresa.</p>
+    </div>
+    <div class="company-modal-body">
+      <div class="form-group">
+        <label>Nome da regra</label>
+        <input type="text" id="autoName" placeholder="Ex: Etiquetar vendas" class="form-control">
+      </div>
+      <div class="form-group">
+        <label>Gatilho (Quando dispara)</label>
+        <select id="autoEvent" class="form-control">
+          <option value="conversation_created">Nova conversa aberta</option>
+          <option value="message_created">Nova mensagem recebida</option>
+          <option value="conversation_resolved">Conversa resolvida</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Ação principal</label>
+        <select id="autoAction" class="form-control" onchange="toggleAutoParams()">
+          <option value="add_label">Adicionar etiqueta</option>
+          <option value="send_message">Enviar mensagem</option>
+          <option value="resolve_conversation">Resolver conversa</option>
+        </select>
+      </div>
+      <div class="form-group" id="autoParamWrap">
+        <label id="autoParamLabel">Etiqueta</label>
+        <input type="text" id="autoParam" placeholder="Ex: suporte-tecnico" class="form-control">
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="document.getElementById('addAutomationModal').classList.add('hidden')">Cancelar</button>
+      <button class="btn btn-primary" id="addAutomationBtn">Salvar Automação</button>
+    </div>
+  </div>
+</div>
+
 <!-- Credentials Modal (shown after client creation) -->
 <div class="modal-overlay hidden" id="credentialsModal">
   <div class="modal">
@@ -602,22 +663,6 @@
     </div>
     <div class="company-modal-body" id="companyContent">
       <div class="loading-wrap"><span class="spinner"></span> Carregando...</div>
-    </div>
-  </div>
-</div>
-
-<!-- Add Inbox Modal -->
-<div class="modal-overlay hidden" id="addInboxModal">
-  <div class="modal">
-    <h2>Adicionar Conexão WhatsApp</h2>
-    <p>Cria um novo número/inbox no Chatwoot para a mesma empresa.</p>
-    <div class="form-group">
-      <label>Nome do canal / Setor</label>
-      <input type="text" id="inboxLabelInput" placeholder="Ex: Suporte, Vendas, WhatsApp 2" />
-    </div>
-    <div class="modal-actions">
-      <button class="btn btn-ghost" onclick="closeAddInboxModal()">Cancelar</button>
-      <button class="btn btn-primary" id="btnAddInbox" onclick="addCompanyInbox()">Adicionar Conexão</button>
     </div>
   </div>
 </div>
@@ -660,6 +705,12 @@
   }
 
   async function apiFetch(url, options = {}) {
+    if (options.body && typeof options.body === 'string') {
+      options.headers = options.headers || {};
+      if (!options.headers['Content-Type'] && !options.headers['content-type']) {
+        options.headers['Content-Type'] = 'application/json';
+      }
+    }
     const r = await fetch(url, options);
     if (r.status === 401) {
       requireLogin();
@@ -952,6 +1003,15 @@
         <div class="loading-wrap"><span class="spinner"></span> Carregando conexões...</div>
       </div>
 
+      <div style="display:flex;align-items:center;justify-content:space-between;margin:24px 0 12px">
+        <h3 style="font-size:14px;margin:0">Automações</h3>
+        <button class="btn btn-ghost btn-sm" onclick="openAddAutomationModal(${c.id})">+ Nova regra</button>
+      </div>
+      <div id="companyAutomationsContent">
+        <div class="loading-wrap"><span class="spinner"></span> Carregando automações...</div>
+      </div>
+
+
       <h3 style="font-size:14px;margin:24px 0 8px">Agentes da empresa</h3>
       ${renderAgents(c.id, c.agents || [])}
       <section class="crm-panel">
@@ -974,6 +1034,7 @@
       </div>
     `;
     loadCompanyInboxes(c.id);
+    loadCompanyAutomations(c.id);
     loadCompanyCrm(c.id);
   }
 
@@ -1080,6 +1141,140 @@
       `;
     } catch (e) {
       wrap.innerHTML = `<div style="color:var(--red)">Erro ao carregar conexões extras: ${e.message}</div>`;
+    }
+  }
+
+  // --- AUTOMATIONS ---
+  async function loadCompanyAutomations(clientId) {
+    const wrap = document.getElementById('companyAutomationsContent');
+    if (!wrap) return;
+    try {
+      const r = await apiFetch(`${API}/clients/${clientId}/automations`);
+      const data = await r.json();
+      const rules = Array.isArray(data) ? data : (data.payload || []);
+      if (!rules.length) {
+        wrap.innerHTML = '<div class="detail-box"><span>Nenhuma automação</span><strong>Esta empresa não possui regras automáticas.</strong></div>';
+        return;
+      }
+      
+      wrap.innerHTML = `
+        <div class="agent-list">
+          ${rules.map(rule => {
+            const actionLabel = rule.actions && rule.actions.length ? rule.actions[0].action_name : 'Nenhuma ação';
+            const isActive = rule.active;
+            return `
+            <div class="agent-row">
+              <div>
+                <strong style="color: ${isActive ? 'inherit' : 'var(--muted)'}">${escapeHtml(rule.name || 'Regra sem nome')}</strong>
+                <span style="color:var(--muted);display:block;margin-top:4px">Quando: ${rule.event_name} → ${actionLabel}</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;justify-content:flex-end;flex-wrap:wrap">
+                <button class="btn ${isActive ? 'btn-ghost' : 'btn-primary'} btn-sm" onclick="toggleAutomation(${clientId}, ${rule.id}, this)">${isActive ? 'Pausar' : 'Ativar'}</button>
+                <button class="btn btn-danger" onclick="deleteAutomation(${clientId}, ${rule.id}, '${escapeAttr(rule.name)}')">Remover</button>
+              </div>
+            </div>
+            `;
+          }).join('')}
+        </div>
+      `;
+    } catch (e) {
+      wrap.innerHTML = `<div style="color:var(--red)">Erro ao carregar automações: ${e.message}</div>`;
+    }
+  }
+
+  function toggleAutoParams() {
+    const action = document.getElementById('autoAction').value;
+    const label = document.getElementById('autoParamLabel');
+    const input = document.getElementById('autoParam');
+    
+    if (action === 'add_label') {
+      label.textContent = 'Nome da Etiqueta';
+      input.placeholder = 'Ex: suporte-tecnico';
+      input.style.display = 'block';
+    } else if (action === 'send_message') {
+      label.textContent = 'Mensagem a ser enviada';
+      input.placeholder = 'Ex: Olá! Já vamos te atender.';
+      input.style.display = 'block';
+    } else {
+      input.style.display = 'none';
+      label.textContent = 'Sem parâmetros extras';
+    }
+  }
+
+  function openAddAutomationModal(clientId) {
+    const modal = document.getElementById('addAutomationModal');
+    modal.classList.remove('hidden');
+    
+    document.getElementById('autoName').value = '';
+    document.getElementById('autoParam').value = '';
+    toggleAutoParams();
+    
+    const btn = document.getElementById('addAutomationBtn');
+    btn.onclick = async () => {
+      const name = document.getElementById('autoName').value.trim();
+      const event_name = document.getElementById('autoEvent').value;
+      const action_name = document.getElementById('autoAction').value;
+      const param = document.getElementById('autoParam').value.trim();
+      
+      if (!name) return toast('Nome é obrigatório', 'error');
+      if (action_name !== 'resolve_conversation' && !param) return toast('Parâmetro é obrigatório para esta ação', 'error');
+      
+      btn.innerHTML = '<span class="spinner"></span>';
+      btn.disabled = true;
+      
+      try {
+        const payload = {
+          name,
+          event_name,
+          actions: [{ action_name, action_params: param ? [param] : [] }],
+          conditions: [{ attribute_key: 'status', filter_operator: 'equal_to', values: ['open'], query_operator: 'and' }]
+        };
+        
+        const r = await apiFetch(`${API}/clients/${clientId}/automations`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await r.json();
+        if (!r.ok) throw new Error(readableError(data));
+        
+        toast('Automação criada!');
+        modal.classList.add('hidden');
+        loadCompanyAutomations(clientId);
+      } catch (e) {
+        toast(`Erro: ${e.message}`, 'error');
+      } finally {
+        btn.innerHTML = 'Salvar Automação';
+        btn.disabled = false;
+      }
+    };
+  }
+
+  async function toggleAutomation(clientId, ruleId, btn) {
+    const oldHtml = btn.innerHTML;
+    btn.innerHTML = '<span class="spinner"></span>';
+    btn.disabled = true;
+    try {
+      const r = await apiFetch(`${API}/clients/${clientId}/automations/${ruleId}/toggle`, { method: 'POST' });
+      if (!r.ok) throw new Error(readableError(await r.json()));
+      toast('Status atualizado');
+      loadCompanyAutomations(clientId);
+    } catch (e) {
+      toast(`Erro: ${e.message}`, 'error');
+      btn.innerHTML = oldHtml;
+      btn.disabled = false;
+    }
+  }
+
+  async function deleteAutomation(clientId, ruleId, name) {
+    if (!confirm(`Remover definitivamente a automação "${name}"?`)) return;
+    try {
+      const r = await apiFetch(`${API}/clients/${clientId}/automations/${ruleId}`, { method: 'DELETE' });
+      if (!r.ok) throw new Error(readableError(await r.json()));
+      toast('Automação removida');
+      loadCompanyAutomations(clientId);
+    } catch (e) {
+      toast(`Erro: ${e.message}`, 'error');
     }
   }
 
@@ -1744,6 +1939,25 @@
       requireLogin();
     }
   }
+
+  // Close modals by clicking on overlay background
+  [
+    { id: 'addInboxModal', closeFn: () => closeAddInboxModal() },
+    { id: 'addAutomationModal', closeFn: () => document.getElementById('addAutomationModal').classList.add('hidden') },
+    { id: 'companyModal', closeFn: () => closeCompanyModal() },
+    { id: 'agentCredentialsModal', closeFn: () => document.getElementById('agentCredentialsModal').classList.add('hidden') },
+    { id: 'passwordResetModal', closeFn: () => document.getElementById('passwordResetModal').classList.add('hidden') },
+    { id: 'healthModal', closeFn: () => document.getElementById('healthModal').classList.add('hidden') },
+    { id: 'agentsModal', closeFn: () => closeAgentsModal() },
+    { id: 'credentialsModal', closeFn: () => document.getElementById('credentialsModal').classList.add('hidden') }
+  ].forEach(({ id, closeFn }) => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.addEventListener('click', e => {
+        if (e.target === el) closeFn();
+      });
+    }
+  });
 
   // Init
   checkSession();

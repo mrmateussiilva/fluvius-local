@@ -3432,7 +3432,46 @@ app.post('/manager/api/clients', async (req, res) => {
       [name, email, onboardToken, instanceName, channelDisplayName, inboxId, inboxToken, accountId, userId, email],
     );
 
-    return res.json({ ...rows[0], chatwoot_temp_password: tempPassword, chatwoot_url: CHATWOOT_PUBLIC_URL });
+    const insertedClient = rows[0];
+
+    // --- PROVISION DEFAULT AUTOMATIONS ---
+    try {
+      const userToken = await getPlatformUserToken(userId);
+      if (userToken) {
+        // 1. Tag new-lead
+        await fetch(`${CHATWOOT_URL}/api/v1/accounts/${accountId}/automation_rules`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', api_access_token: userToken },
+          body: JSON.stringify({
+            name: 'Etiquetar novo lead',
+            description: 'Etiqueta todas as novas conversas automaticamente',
+            event_name: 'conversation_created',
+            conditions: [{ attribute_key: 'status', filter_operator: 'equal_to', values: ['open'] }],
+            actions: [{ action_name: 'add_label', action_params: ['novo-lead'] }]
+          })
+        });
+
+        // 2. Welcome message (if configured)
+        const welcomeMessage = process.env.DEFAULT_WELCOME_MESSAGE;
+        if (welcomeMessage) {
+          await fetch(`${CHATWOOT_URL}/api/v1/accounts/${accountId}/automation_rules`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', api_access_token: userToken },
+            body: JSON.stringify({
+              name: 'Mensagem de Boas-vindas',
+              description: 'Envia mensagem automática na primeira interação',
+              event_name: 'conversation_created',
+              conditions: [{ attribute_key: 'status', filter_operator: 'equal_to', values: ['open'] }],
+              actions: [{ action_name: 'send_message', action_params: [welcomeMessage] }]
+            })
+          });
+        }
+      }
+    } catch (autoErr) {
+      console.error('Failed to provision default automations:', autoErr);
+    }
+
+    return res.json({ ...insertedClient, chatwoot_temp_password: tempPassword, chatwoot_url: CHATWOOT_PUBLIC_URL });
   } catch (err) {
     const cleanup = await cleanupProvisioning(created);
     return res.status(500).json({
@@ -4036,6 +4075,160 @@ app.post('/manager/api/clients/:id/inboxes/:inboxId/integration/repair', async (
 
     const repair = await repairClientIntegration(adaptedClient, true);
     res.json(repair);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+// --- Automations Proxy ---
+app.get('/manager/api/clients/:id/automations', async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (isNaN(id)) return res.status(400).json({ error: 'invalid id' });
+    const { rows } = await pool.query('SELECT chatwoot_account_id, chatwoot_user_id, chatwoot_user_email FROM fluvius_clients WHERE id = $1', [id]);
+    if (!rows.length) return res.status(404).json({ error: 'client not found' });
+    const client = rows[0];
+    const userToken = await clientTokenForIntegration({ id, ...client });
+    if (!userToken) return res.status(500).json({ error: 'could not get admin token' });
+
+    const r = await fetch(`${CHATWOOT_URL}/api/v1/accounts/${client.chatwoot_account_id}/automation_rules`, {
+      headers: { api_access_token: userToken }
+    });
+    const data = await r.json();
+    res.status(r.status).json(data.payload || data);
+  } catch (err) {
+    console.error('Automation GET error:', err);
+    res.status(500).json({ error: err.message, stack: err.stack });
+  }
+});
+
+function sanitizeAutomationRuleBody(body) {
+  if (body && Array.isArray(body.conditions) && body.conditions.length > 0) {
+    const lastCondition = body.conditions[body.conditions.length - 1];
+    if (lastCondition) {
+      delete lastCondition.query_operator;
+    }
+  }
+  return body;
+}
+
+app.post('/manager/api/clients/:id/automations', async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (isNaN(id)) return res.status(400).json({ error: 'invalid id' });
+    const { rows } = await pool.query('SELECT chatwoot_account_id, chatwoot_user_id, chatwoot_user_email FROM fluvius_clients WHERE id = $1', [id]);
+    if (!rows.length) return res.status(404).json({ error: 'client not found' });
+    const client = rows[0];
+    const userToken = await clientTokenForIntegration({ id, ...client });
+    if (!userToken) return res.status(500).json({ error: 'could not get admin token' });
+
+    const sanitizedBody = sanitizeAutomationRuleBody(req.body);
+    console.log('Automation POST payload:', sanitizedBody);
+    const r = await fetch(`${CHATWOOT_URL}/api/v1/accounts/${client.chatwoot_account_id}/automation_rules`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', api_access_token: userToken },
+      body: JSON.stringify(sanitizedBody)
+    });
+    
+    const text = await r.text();
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch (parseErr) {
+      data = { raw_response: text };
+    }
+    
+    if (!r.ok) {
+      console.error('Automation POST failed:', r.status, data);
+    }
+    
+    res.status(r.status).json(data);
+  } catch (err) {
+    console.error('Automation POST error:', err);
+    res.status(500).json({ error: err.message, stack: err.stack });
+  }
+});
+
+app.patch('/manager/api/clients/:id/automations/:ruleId', async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const ruleId = Number(req.params.ruleId);
+    if (isNaN(id) || isNaN(ruleId)) return res.status(400).json({ error: 'invalid id' });
+    const { rows } = await pool.query('SELECT chatwoot_account_id, chatwoot_user_id, chatwoot_user_email FROM fluvius_clients WHERE id = $1', [id]);
+    if (!rows.length) return res.status(404).json({ error: 'client not found' });
+    const client = rows[0];
+    const userToken = await clientTokenForIntegration({ id, ...client });
+    
+    const sanitizedBody = sanitizeAutomationRuleBody(req.body);
+    const r = await fetch(`${CHATWOOT_URL}/api/v1/accounts/${client.chatwoot_account_id}/automation_rules/${ruleId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', api_access_token: userToken },
+      body: JSON.stringify(sanitizedBody)
+    });
+    const data = await r.json();
+    res.status(r.status).json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/manager/api/clients/:id/automations/:ruleId', async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const ruleId = Number(req.params.ruleId);
+    if (isNaN(id) || isNaN(ruleId)) return res.status(400).json({ error: 'invalid id' });
+    const { rows } = await pool.query('SELECT chatwoot_account_id, chatwoot_user_id, chatwoot_user_email FROM fluvius_clients WHERE id = $1', [id]);
+    if (!rows.length) return res.status(404).json({ error: 'client not found' });
+    const client = rows[0];
+    const userToken = await clientTokenForIntegration({ id, ...client });
+    
+    const r = await fetch(`${CHATWOOT_URL}/api/v1/accounts/${client.chatwoot_account_id}/automation_rules/${ruleId}`, {
+      method: 'DELETE',
+      headers: { api_access_token: userToken }
+    });
+    
+    if (r.ok) {
+      return res.status(r.status).send();
+    }
+    
+    const text = await r.text();
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = { error: text };
+    }
+    res.status(r.status).json(data);
+  } catch (err) {
+    console.error('Automation DELETE error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/manager/api/clients/:id/automations/:ruleId/toggle', async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const ruleId = Number(req.params.ruleId);
+    if (isNaN(id) || isNaN(ruleId)) return res.status(400).json({ error: 'invalid id' });
+    const { rows } = await pool.query('SELECT chatwoot_account_id, chatwoot_user_id, chatwoot_user_email FROM fluvius_clients WHERE id = $1', [id]);
+    if (!rows.length) return res.status(404).json({ error: 'client not found' });
+    const client = rows[0];
+    const userToken = await clientTokenForIntegration({ id, ...client });
+    
+    // First get the rule to flip its active status
+    let r = await fetch(`${CHATWOOT_URL}/api/v1/accounts/${client.chatwoot_account_id}/automation_rules/${ruleId}`, {
+      headers: { api_access_token: userToken }
+    });
+    if (!r.ok) return res.status(r.status).json(await r.json());
+    const rule = await r.json();
+    
+    // Now toggle
+    r = await fetch(`${CHATWOOT_URL}/api/v1/accounts/${client.chatwoot_account_id}/automation_rules/${ruleId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', api_access_token: userToken },
+      body: JSON.stringify({ active: !rule.active })
+    });
+    const data = await r.json();
+    res.status(r.status).json(data);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
