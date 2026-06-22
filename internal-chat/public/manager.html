@@ -593,7 +593,7 @@
       </div>
     </div>
     <div class="modal-actions">
-      <button class="btn btn-ghost" onclick="document.getElementById('addInboxModal').classList.add('hidden')">Cancelar</button>
+      <button class="btn btn-ghost" onclick="closeAddInboxModal()">Cancelar</button>
       <button class="btn btn-primary" id="addInboxBtn">Adicionar Conexão</button>
     </div>
   </div>
@@ -1073,21 +1073,22 @@
   function openAddInboxModal(clientId) {
     currentInboxClientId = clientId;
     document.getElementById('addInboxModal').classList.remove('hidden');
-    document.getElementById('inboxLabelInput').focus();
+    document.getElementById('addInboxLabel').focus();
+    document.getElementById('addInboxBtn').onclick = addCompanyInbox;
   }
 
   function closeAddInboxModal() {
     currentInboxClientId = null;
     document.getElementById('addInboxModal').classList.add('hidden');
-    document.getElementById('inboxLabelInput').value = '';
+    document.getElementById('addInboxLabel').value = '';
   }
 
   async function addCompanyInbox() {
     if (!currentInboxClientId) return;
-    const label = document.getElementById('inboxLabelInput').value.trim();
+    const label = document.getElementById('addInboxLabel').value.trim();
     if (!label) return toast('Nome do canal é obrigatório', 'error');
 
-    const btn = document.getElementById('btnAddInbox');
+    const btn = document.getElementById('addInboxBtn');
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner"></span> Adicionando...';
     try {
