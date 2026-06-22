@@ -927,6 +927,7 @@
           <button class="btn btn-ghost btn-sm" onclick="openCompany(${c.id})">Ver empresa</button>
           ${c.chatwoot_account_id ? `<button class="btn btn-ghost btn-sm" onclick="generateClientAdminPasswordResetLink(${c.id}, '${escapeAttr(c.chatwoot_user_email || c.email || 'admin')}', this)">Link senha admin</button>` : ''}
           <a class="btn btn-ghost btn-sm" href="${chatwootUrl}" target="_blank" style="text-decoration:none">Fluvius</a>
+          <a class="btn btn-ghost btn-sm" href="${CHAT_BASE}/client/${c.token}" target="_blank" style="text-decoration:none">⚙️ Configurar Bot</a>
           <a class="btn btn-ghost btn-sm" href="${link}" target="_blank" style="text-decoration:none">Onboarding</a>
           <button class="btn btn-ghost btn-sm" onclick="copyLink('${link}', this)">Copiar onboarding</button>
         </div>
@@ -988,6 +989,8 @@
       </div>
       <div class="company-actions" style="margin-bottom:18px">
         <a class="btn btn-primary btn-sm" href="${chatwootAccountUrl}" target="_blank" style="text-decoration:none">Abrir Fluvius da empresa</a>
+        <a class="btn btn-ghost btn-sm" href="${CHAT_BASE}/client/${c.token}" target="_blank" style="text-decoration:none">⚙️ Configurar Bot</a>
+        <button class="btn btn-ghost btn-sm" onclick="copyLink('${CHAT_BASE}/client/${c.token}', this)">Copiar link do Painel</button>
         <a class="btn btn-ghost btn-sm" href="${onboardLink}" target="_blank" style="text-decoration:none">Abrir onboarding WhatsApp</a>
         <button class="btn btn-ghost btn-sm" onclick="copyCompanyAccess(${c.id})">Copiar acesso</button>
         <button class="btn btn-ghost btn-sm" onclick="renameCompanyChannel(${c.id}, '${escapeAttr(channelName)}', this)">Renomear conexão</button>
@@ -1131,6 +1134,7 @@
               </div>
               <div style="display:flex;align-items:center;gap:8px;justify-content:flex-end;flex-wrap:wrap">
                 <a class="btn btn-ghost btn-sm" href="${onboardLink}" target="_blank" style="text-decoration:none">Onboarding</a>
+                <a class="btn btn-ghost btn-sm" href="${CHAT_BASE}/client/${inbox.token}" target="_blank" style="text-decoration:none">⚙️ Configurar Bot</a>
                 <button class="btn btn-ghost btn-sm" onclick="copyLink('${onboardLink}', this)">Copiar link</button>
                 <button class="btn btn-ghost btn-sm" onclick="repairCompanyInbox(${clientId}, ${inbox.id}, this)">Reparar</button>
                 <button class="btn btn-danger" onclick="deleteCompanyInbox(${clientId}, ${inbox.id}, '${escapeAttr(inbox.channel_display_name)}')">Remover</button>
