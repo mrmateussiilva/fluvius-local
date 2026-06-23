@@ -1959,6 +1959,32 @@ function evolutionChatwootPayload(accountId, userToken, nameInbox = null) {
   return payload;
 }
 
+function slugPart(value, fallback, maxLength = 20) {
+  const slug = String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, maxLength);
+  return slug || fallback;
+}
+
+function extraInboxInstanceName(client, extraInbox, label = '') {
+  return [
+    'fluvius',
+    slugPart(client.name, 'cliente', 20),
+    slugPart(label || extraInbox.label || extraInbox.channel_display_name, 'whatsapp', 16),
+    Date.now().toString(36),
+  ].join('-');
+}
+
+async function evolutionConnectionState(instanceName) {
+  if (!instanceName) return 'unknown';
+  const response = await evoFetch(`/instance/connectionState/${instanceName}`);
+  if (response.status >= 300) return 'unknown';
+  return String(response.data?.instance?.state || response.data?.state || 'unknown').toLowerCase();
+}
+
 async function setClientIntegrationState(clientId, status, error = null, repaired = false, isExtraInbox = false) {
   const table = isExtraInbox ? 'fluvius_client_inboxes' : 'fluvius_clients';
   await pool.query(
@@ -4062,7 +4088,11 @@ app.get('/manager/api/clients/:id/inboxes', async (req, res) => {
     const id = Number(req.params.id);
     if (isNaN(id)) return res.status(400).json({ error: 'invalid id' });
     const { rows } = await pool.query('SELECT * FROM fluvius_client_inboxes WHERE client_id = $1 ORDER BY created_at ASC', [id]);
-    res.json(rows);
+    const withConnectionState = await Promise.all(rows.map(async row => ({
+      ...row,
+      connection_state: await evolutionConnectionState(row.instance_name),
+    })));
+    res.json(withConnectionState);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -4158,6 +4188,137 @@ app.post('/manager/api/clients/:id/inboxes/:inboxId/integration/repair', async (
     res.json(repair);
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/manager/api/clients/:id/inboxes/:inboxId/integration/replace-instance', async (req, res) => {
+  const created = {};
+  try {
+    const id = Number(req.params.id);
+    const inboxId = Number(req.params.inboxId);
+    if (isNaN(id) || isNaN(inboxId)) return res.status(400).json({ error: 'invalid id' });
+
+    const { rows } = await pool.query('SELECT * FROM fluvius_client_inboxes WHERE id = $1 AND client_id = $2', [inboxId, id]);
+    if (!rows.length) return res.status(404).json({ error: 'inbox not found' });
+    const extraInbox = rows[0];
+
+    const clientRows = await pool.query(`SELECT ${CLIENT_PUBLIC_FIELDS} FROM fluvius_clients WHERE id = $1`, [id]);
+    if (!clientRows.rows.length) return res.status(404).json({ error: 'client not found' });
+    const client = clientRows.rows[0];
+    if (!client.chatwoot_account_id || !extraInbox.inbox_id) {
+      return res.status(400).json({ error: 'client or extra inbox is missing Fluvius account/inbox' });
+    }
+
+    const userToken = await clientTokenForIntegration(client);
+    if (!userToken) return res.status(400).json({ error: 'client admin token not available' });
+
+    const oldInstanceName = extraInbox.instance_name;
+    const requestedLabel = String(req.body?.label || '').trim();
+    const newInstanceName = extraInboxInstanceName(client, extraInbox, requestedLabel);
+
+    const evo = await evoFetch('/instance/create', {
+      method: 'POST',
+      body: JSON.stringify({ instanceName: newInstanceName, integration: 'WHATSAPP-BAILEYS' }),
+    });
+    if (evo.status >= 300) {
+      return res.status(evo.status).json(provisioningError('create_instance', evo).body);
+    }
+    created.instanceName = newInstanceName;
+
+    const settings = await evoFetch(`/settings/set/${newInstanceName}`, {
+      method: 'POST',
+      body: JSON.stringify({
+        rejectCall: false,
+        msgCall: '',
+        groupsIgnore: false,
+        alwaysOnline: false,
+        readMessages: false,
+        readStatus: false,
+        syncFullHistory: true,
+      }),
+    });
+    if (settings.status >= 300) {
+      await evoFetch(`/instance/delete/${newInstanceName}`, { method: 'DELETE' });
+      return res.status(settings.status).json({ step: 'evolution_settings', error: settings.data });
+    }
+
+    const link = await evoFetch(`/chatwoot/set/${newInstanceName}`, {
+      method: 'POST',
+      body: JSON.stringify(evolutionChatwootPayload(
+        client.chatwoot_account_id,
+        userToken,
+        extraInbox.channel_display_name,
+      )),
+    });
+    if (link.status >= 300) {
+      await evoFetch(`/instance/delete/${newInstanceName}`, { method: 'DELETE' });
+      return res.status(link.status).json({ step: 'evolution_chatwoot_link', error: link.data });
+    }
+
+    const actions = ['evolution_instance_created', 'evolution_settings_updated', 'evolution_chatwoot_link_updated'];
+    const updated = await pool.query(
+      `UPDATE fluvius_client_inboxes
+       SET instance_name = $1,
+           status = 'pending',
+           integration_status = 'ok',
+           integration_last_checked_at = NOW(),
+           integration_last_error = NULL,
+           integration_repaired_at = NOW(),
+           updated_at = NOW()
+       WHERE id = $2 AND client_id = $3
+       RETURNING *`,
+      [newInstanceName, inboxId, id],
+    );
+
+    const adaptedClient = {
+      id: extraInbox.id,
+      instance_name: newInstanceName,
+      chatwoot_account_id: client.chatwoot_account_id,
+      inbox_id: extraInbox.inbox_id,
+      channel_display_name: extraInbox.channel_display_name,
+      chatwoot_user_id: client.chatwoot_user_id,
+      chatwoot_user_email: client.chatwoot_user_email,
+    };
+    const webhook = await updateClientInboxWebhook(adaptedClient, userToken, actions);
+    if (!webhook.ok) {
+      await pool.query(
+        `UPDATE fluvius_client_inboxes
+         SET instance_name = $1,
+             integration_status = 'error',
+             integration_last_checked_at = NOW(),
+             integration_last_error = $2,
+             updated_at = NOW()
+         WHERE id = $3 AND client_id = $4`,
+        [oldInstanceName, JSON.stringify({ step: 'inbox_webhook', error: webhook.details }).slice(0, 2000), inboxId, id],
+      );
+      await evoFetch(`/instance/delete/${newInstanceName}`, { method: 'DELETE' });
+      return res.status(webhook.status || 500).json({ step: 'inbox_webhook', error: webhook.details });
+    }
+
+    let oldInstanceCleanup = null;
+    if (oldInstanceName && oldInstanceName !== newInstanceName) {
+      const cleanup = await evoFetch(`/instance/delete/${oldInstanceName}`, { method: 'DELETE' });
+      oldInstanceCleanup = cleanup.status < 300 || cleanup.status === 404
+        ? 'deleted'
+        : { status: cleanup.status, error: cleanup.data };
+    }
+
+    res.json({
+      replaced: true,
+      actions,
+      old_instance_name: oldInstanceName,
+      new_instance_name: newInstanceName,
+      inbox_id: extraInbox.inbox_id,
+      extra_inbox: updated.rows[0],
+      onboarding_url: `/onboard/${updated.rows[0].token}`,
+      old_instance_cleanup: oldInstanceCleanup,
+      connection_state: await evolutionConnectionState(newInstanceName),
+    });
+  } catch (err) {
+    if (created.instanceName) {
+      await evoFetch(`/instance/delete/${created.instanceName}`, { method: 'DELETE' });
+    }
+    res.status(500).json({ step: 'replace_instance', error: err.message });
   }
 });
 // --- Automations Proxy ---

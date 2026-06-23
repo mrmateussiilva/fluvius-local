@@ -133,19 +133,44 @@ clients="$(
     -F $'\t' \
     -v ON_ERROR_STOP=1 \
     -c "SELECT
-          id,
+          kind,
+          record_id,
+          client_id,
           instance_name,
           COALESCE(chatwoot_account_id::text, ''),
           COALESCE(chatwoot_user_id::text, ''),
           COALESCE(chatwoot_user_email, ''),
           COALESCE(inbox_id::text, '')
-        FROM fluvius_clients
+        FROM (
+          SELECT
+            'main' AS kind,
+            id AS record_id,
+            id AS client_id,
+            instance_name,
+            chatwoot_account_id,
+            chatwoot_user_id,
+            chatwoot_user_email,
+            inbox_id
+          FROM fluvius_clients
+          UNION ALL
+          SELECT
+            'extra' AS kind,
+            i.id AS record_id,
+            i.client_id,
+            i.instance_name,
+            c.chatwoot_account_id,
+            c.chatwoot_user_id,
+            c.chatwoot_user_email,
+            i.inbox_id
+          FROM fluvius_client_inboxes i
+          INNER JOIN fluvius_clients c ON c.id = i.client_id
+        ) targets
         $where_clause
-        ORDER BY id;"
+        ORDER BY kind, client_id, record_id;"
 )"
 
 if [ -z "$clients" ]; then
-  echo "Nenhuma instancia encontrada em fluvius_clients."
+  echo "Nenhuma instancia encontrada em fluvius_clients ou fluvius_client_inboxes."
   exit 0
 fi
 
@@ -205,6 +230,33 @@ manager_repair_client() {
   return 1
 }
 
+manager_repair_extra_inbox() {
+  local client_id="$1"
+  local record_id="$2"
+  local response_file
+  local status
+  local curl_args=(-sS -o)
+
+  response_file="$(mktemp)"
+  curl_args+=("$response_file" -w '%{http_code}' -X POST)
+  if [ -n "$MANAGER_ADMIN_TOKEN" ]; then
+    curl_args+=(-H "Authorization: Bearer $MANAGER_ADMIN_TOKEN")
+  fi
+  curl_args+=("$MANAGER_INTERNAL_URL/manager/api/clients/$client_id/inboxes/$record_id/integration/repair")
+
+  status="$(curl "${curl_args[@]}" || true)"
+  if [ "$status" -ge 200 ] 2>/dev/null && [ "$status" -lt 300 ]; then
+    sed 's/^/  /' "$response_file" || true
+    rm -f "$response_file"
+    return 0
+  fi
+
+  echo "  AVISO: Manager repair da inbox extra falhou (HTTP ${status:-curl_error}); usando fallback." >&2
+  sed 's/^/  /' "$response_file" >&2 || true
+  rm -f "$response_file"
+  return 1
+}
+
 update_inbox_webhook() {
   local inbox_id="$1"
   local webhook_url="$2"
@@ -228,13 +280,15 @@ puts "inbox=#{inbox.id} webhook_url=#{channel.webhook_url}"
 }
 
 repair_instance() {
-  local client_id="$1"
+  local kind="$1"
   shift
-  local instance_name="$1"
-  local account_id="$2"
-  local user_id="$3"
-  local user_email="$4"
-  local inbox_id="$5"
+  local record_id="$1"
+  local client_id="$2"
+  local instance_name="$3"
+  local account_id="$4"
+  local user_id="$5"
+  local user_email="$6"
+  local inbox_id="$7"
   local user_token="$CHATWOOT_USER_ACCESS_TOKEN"
   local webhook_url="$EVOLUTION_INTERNAL_URL/chatwoot/webhook/$instance_name"
   local payload
@@ -246,10 +300,18 @@ repair_instance() {
 
   echo ">>> Instancia: $instance_name"
 
-  if manager_repair_client "$client_id"; then
-    echo "  Reparo via Manager concluido."
-    echo ""
-    return 0
+  if [ "$kind" = "extra" ]; then
+    if manager_repair_extra_inbox "$client_id" "$record_id"; then
+      echo "  Reparo via Manager da inbox extra concluido."
+      echo ""
+      return 0
+    fi
+  else
+    if manager_repair_client "$client_id"; then
+      echo "  Reparo via Manager concluido."
+      echo ""
+      return 0
+    fi
   fi
 
   if [ -n "$user_id" ] || [ -n "$user_email" ]; then
@@ -290,8 +352,8 @@ repair_instance() {
 set_webhook_timeout
 echo ""
 
-while IFS=$'\t' read -r client_id instance_name account_id user_id user_email inbox_id; do
-  repair_instance "$client_id" "$instance_name" "$account_id" "$user_id" "$user_email" "$inbox_id"
+while IFS=$'\t' read -r kind record_id client_id instance_name account_id user_id user_email inbox_id; do
+  repair_instance "$kind" "$record_id" "$client_id" "$instance_name" "$account_id" "$user_id" "$user_email" "$inbox_id"
 done <<< "$clients"
 
 echo "Reparo concluido. Envie uma mensagem de teste e acompanhe:"

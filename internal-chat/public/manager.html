@@ -1127,17 +1127,22 @@
         <div class="agent-list">
           ${inboxes.map(inbox => {
             const onboardLink = `${CHAT_BASE}/onboard/${inbox.token}`;
+            const connectionState = inbox.connection_state || 'unknown';
             return `
             <div class="agent-row">
               <div>
                 <strong>${escapeHtml(inbox.channel_display_name)}</strong>
-                <span style="color:var(--muted);display:block;margin-top:4px">${inbox.phone || 'Aguardando conexão'} • ${statusBadge(inbox.status)}</span>
+                <span style="color:var(--muted);display:block;margin-top:4px">
+                  ${inbox.phone || 'Aguardando conexão'} • ${statusBadge(inbox.status)} ${connectionBadge(connectionState)}
+                </span>
+                <span style="color:var(--muted);display:block;margin-top:4px;font-size:12px">Inbox ${inbox.inbox_id || '-'} • ${escapeHtml(inbox.instance_name || '-')}</span>
               </div>
               <div style="display:flex;align-items:center;gap:8px;justify-content:flex-end;flex-wrap:wrap">
                 <a class="btn btn-ghost btn-sm" href="${onboardLink}" target="_blank" style="text-decoration:none">Onboarding</a>
                 <a class="btn btn-ghost btn-sm" href="${CHAT_BASE}/client/${inbox.token}" target="_blank" style="text-decoration:none">⚙️ Configurar Bot</a>
                 <button class="btn btn-ghost btn-sm" onclick="copyLink('${onboardLink}', this)">Copiar link</button>
                 <button class="btn btn-ghost btn-sm" onclick="repairCompanyInbox(${clientId}, ${inbox.id}, this)">Reparar</button>
+                <button class="btn btn-ghost btn-sm" onclick="replaceCompanyInboxInstance(${clientId}, ${inbox.id}, '${escapeAttr(inbox.channel_display_name)}', this)">Substituir sessão</button>
                 <button class="btn btn-danger" onclick="deleteCompanyInbox(${clientId}, ${inbox.id}, '${escapeAttr(inbox.channel_display_name)}')">Remover</button>
               </div>
             </div>
@@ -1293,6 +1298,32 @@
       const data = await r.json();
       if (!r.ok) throw new Error(readableError(data));
       toast('Conexão reparada com sucesso');
+    } catch (e) {
+      toast(`Erro: ${e.message}`, 'error');
+    } finally {
+      btn.innerHTML = oldHtml;
+      btn.disabled = false;
+      loadCompanyInboxes(clientId);
+    }
+  }
+
+  async function replaceCompanyInboxInstance(clientId, inboxId, name, btn) {
+    const message = `Substituir a sessão WhatsApp de "${name}" mantendo a mesma caixa de entrada e as conversas? Use isso quando a sessão antiga não reconecta.`;
+    if (!confirm(message)) return;
+    const oldHtml = btn.innerHTML;
+    btn.innerHTML = '<span class="spinner"></span>';
+    btn.disabled = true;
+    try {
+      const r = await apiFetch(`${API}/clients/${clientId}/inboxes/${inboxId}/integration/replace-instance`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reuseExistingInbox: true })
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(readableError(data));
+      const link = `${CHAT_BASE}${data.onboarding_url}`;
+      toast('Sessão substituída. Abra o onboarding para parear o WhatsApp.');
+      window.open(link, '_blank');
     } catch (e) {
       toast(`Erro: ${e.message}`, 'error');
     } finally {
@@ -1805,6 +1836,17 @@
       disconnected: ['badge-close', '✗ Desconectado'],
     };
     const [cls, label] = map[status] || ['badge-unknown', status];
+    return `<span class="badge ${cls}">${label}</span>`;
+  }
+
+  function connectionBadge(state) {
+    const map = {
+      open: ['badge-open', 'Evolution open'],
+      connecting: ['badge-connecting', 'Evolution conectando'],
+      close: ['badge-close', 'Evolution fechada'],
+      unknown: ['badge-unknown', 'Evolution desconhecida'],
+    };
+    const [cls, label] = map[state] || ['badge-unknown', `Evolution ${state || 'desconhecida'}`];
     return `<span class="badge ${cls}">${label}</span>`;
   }
 
