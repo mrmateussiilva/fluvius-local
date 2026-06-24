@@ -73,15 +73,13 @@ summary="$(
     -d "$CHATWOOT_POSTGRES_DB" \
     -At \
     -F $'\t' \
-    -v old_extra="$OLD_EXTRA_INBOX_ID" \
-    -v new_extra="$NEW_EXTRA_INBOX_ID" \
     -v ON_ERROR_STOP=1 \
     -c "
 WITH old_extra AS (
-  SELECT * FROM fluvius_client_inboxes WHERE id = :old_extra
+  SELECT * FROM fluvius_client_inboxes WHERE id = $OLD_EXTRA_INBOX_ID
 ),
 new_extra AS (
-  SELECT * FROM fluvius_client_inboxes WHERE id = :new_extra
+  SELECT * FROM fluvius_client_inboxes WHERE id = $NEW_EXTRA_INBOX_ID
 ),
 counts AS (
   SELECT
@@ -176,8 +174,6 @@ if [ "$MODE" = "adopt-instance" ]; then
   compose exec -T postgres psql \
     -U "$POSTGRES_USER" \
     -d "$CHATWOOT_POSTGRES_DB" \
-    -v old_extra="$OLD_EXTRA_INBOX_ID" \
-    -v new_extra="$NEW_EXTRA_INBOX_ID" \
     -v ON_ERROR_STOP=1 \
     -P pager=off \
     -c "
@@ -186,7 +182,7 @@ BEGIN;
 CREATE TEMP TABLE fluvius_consolidate_new_values AS
 SELECT instance_name, status, phone
 FROM fluvius_client_inboxes
-WHERE id = :new_extra;
+WHERE id = $NEW_EXTRA_INBOX_ID;
 
 UPDATE channel_api
 SET webhook_url = 'http://evolution:8080/chatwoot/webhook/' || (SELECT instance_name FROM fluvius_consolidate_new_values)
@@ -194,7 +190,7 @@ WHERE id = (
   SELECT inboxes.channel_id
   FROM inboxes
   INNER JOIN fluvius_client_inboxes old_extra ON old_extra.inbox_id = inboxes.id
-  WHERE old_extra.id = :old_extra
+  WHERE old_extra.id = $OLD_EXTRA_INBOX_ID
     AND inboxes.channel_type = 'Channel::Api'
 );
 
@@ -203,7 +199,7 @@ SET instance_name = instance_name || '-superseded-' || id::text,
     integration_status = 'superseded',
     integration_last_error = 'Consolidated into preserved extra inbox',
     updated_at = NOW()
-WHERE id = :new_extra;
+WHERE id = $NEW_EXTRA_INBOX_ID;
 
 UPDATE fluvius_client_inboxes old_extra
 SET instance_name = (SELECT instance_name FROM fluvius_consolidate_new_values),
@@ -214,7 +210,7 @@ SET instance_name = (SELECT instance_name FROM fluvius_consolidate_new_values),
     integration_last_error = NULL,
     integration_repaired_at = NOW(),
     updated_at = NOW()
-WHERE old_extra.id = :old_extra;
+WHERE old_extra.id = $OLD_EXTRA_INBOX_ID;
 
 COMMIT;
 "
@@ -242,15 +238,13 @@ else
   compose exec -T postgres psql \
     -U "$POSTGRES_USER" \
     -d "$CHATWOOT_POSTGRES_DB" \
-    -v old_inbox="$old_inbox_id" \
-    -v new_inbox="$new_inbox_id" \
     -v ON_ERROR_STOP=1 \
     -P pager=off \
     -c "
 BEGIN;
-UPDATE messages SET inbox_id = :new_inbox WHERE inbox_id = :old_inbox;
-UPDATE conversations SET inbox_id = :new_inbox WHERE inbox_id = :old_inbox;
-UPDATE contact_inboxes SET inbox_id = :new_inbox WHERE inbox_id = :old_inbox;
+UPDATE messages SET inbox_id = $new_inbox_id WHERE inbox_id = $old_inbox_id;
+UPDATE conversations SET inbox_id = $new_inbox_id WHERE inbox_id = $old_inbox_id;
+UPDATE contact_inboxes SET inbox_id = $new_inbox_id WHERE inbox_id = $old_inbox_id;
 COMMIT;
 "
 fi
