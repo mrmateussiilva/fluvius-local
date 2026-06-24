@@ -45,8 +45,8 @@ fi
 require_numeric "OLD_EXTRA_INBOX_ID" "$OLD_EXTRA_INBOX_ID"
 require_numeric "NEW_EXTRA_INBOX_ID" "$NEW_EXTRA_INBOX_ID"
 
-if [ "$MODE" != "adopt-instance" ] && [ "$MODE" != "move-history" ]; then
-  echo "ERRO: MODE deve ser adopt-instance ou move-history. Recebido: $MODE" >&2
+if [ "$MODE" != "adopt-instance" ] && [ "$MODE" != "move-history" ] && [ "$MODE" != "move-history-to-old" ]; then
+  echo "ERRO: MODE deve ser adopt-instance, move-history ou move-history-to-old. Recebido: $MODE" >&2
   exit 1
 fi
 
@@ -154,13 +154,14 @@ Para aplicar:
   MODE=$MODE APPLY=true $0 $OLD_EXTRA_INBOX_ID $NEW_EXTRA_INBOX_ID
 
 Modos:
-  adopt-instance  usa a instancia nova na inbox antiga e preserva as conversas antigas
-  move-history    move mensagens/conversas da inbox antiga para a nova
+  adopt-instance       usa a instancia nova na inbox antiga e preserva as conversas antigas
+  move-history         move mensagens/conversas da inbox antiga para a nova
+  move-history-to-old  move mensagens/conversas da inbox nova para a antiga
 INFO
   exit 0
 fi
 
-if [ "$MODE" = "move-history" ] && [ "$duplicate_contact_sources" != "0" ] && [ "$FORCE" != "true" ]; then
+if { [ "$MODE" = "move-history" ] || [ "$MODE" = "move-history-to-old" ]; } && [ "$duplicate_contact_sources" != "0" ] && [ "$FORCE" != "true" ]; then
   echo "ERRO: existem contact_inboxes duplicados entre as inboxes. Use MODE=adopt-instance ou resolva manualmente." >&2
   exit 1
 fi
@@ -234,7 +235,7 @@ COMMIT;
   else
     echo "AVISO: MANAGER_ADMIN_TOKEN vazio; rode o reparo da inbox preservada pelo Manager." >&2
   fi
-else
+elif [ "$MODE" = "move-history" ]; then
   compose exec -T postgres psql \
     -U "$POSTGRES_USER" \
     -d "$CHATWOOT_POSTGRES_DB" \
@@ -245,6 +246,19 @@ BEGIN;
 UPDATE messages SET inbox_id = $new_inbox_id WHERE inbox_id = $old_inbox_id;
 UPDATE conversations SET inbox_id = $new_inbox_id WHERE inbox_id = $old_inbox_id;
 UPDATE contact_inboxes SET inbox_id = $new_inbox_id WHERE inbox_id = $old_inbox_id;
+COMMIT;
+"
+else
+  compose exec -T postgres psql \
+    -U "$POSTGRES_USER" \
+    -d "$CHATWOOT_POSTGRES_DB" \
+    -v ON_ERROR_STOP=1 \
+    -P pager=off \
+    -c "
+BEGIN;
+UPDATE messages SET inbox_id = $old_inbox_id WHERE inbox_id = $new_inbox_id;
+UPDATE conversations SET inbox_id = $old_inbox_id WHERE inbox_id = $new_inbox_id;
+UPDATE contact_inboxes SET inbox_id = $old_inbox_id WHERE inbox_id = $new_inbox_id;
 COMMIT;
 "
 fi
