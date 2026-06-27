@@ -41,6 +41,7 @@ services:
       context: ./chatwoot-custom
       args:
         VITE_INTERNAL_CHAT_API_URL: ${INTERNAL_CHAT_PUBLIC_URL}
+        VITE_FLUVIUS_AGENT_SIMPLE_MODE: ${VITE_FLUVIUS_AGENT_SIMPLE_MODE:-auto}
     container_name: chatwoot
     restart: unless-stopped
     depends_on:

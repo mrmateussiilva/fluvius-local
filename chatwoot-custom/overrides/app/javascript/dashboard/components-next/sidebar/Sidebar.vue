@@ -10,6 +10,7 @@ import { useSidebarKeyboardShortcuts } from './useSidebarKeyboardShortcuts';
 import { vOnClickOutside } from '@vueuse/components';
 import { FEATURE_FLAGS } from 'dashboard/featureFlags';
 import { useWindowSize, useEventListener } from '@vueuse/core';
+import { isAgentSimpleMode } from 'dashboard/helper/agentSimpleMode';
 
 import Button from 'dashboard/components-next/button/Button.vue';
 import SidebarGroup from './SidebarGroup.vue';
@@ -52,6 +53,8 @@ const { width: windowWidth } = useWindowSize();
 const isMobile = computed(() => windowWidth.value < 768);
 
 const accountId = useMapGetter('getCurrentAccountId');
+const currentUser = useMapGetter('getCurrentUser');
+const currentRole = useMapGetter('getCurrentRole');
 const isFeatureEnabledonAccount = useMapGetter(
   'accounts/isFeatureEnabledonAccount'
 );
@@ -184,6 +187,26 @@ const closeMobileSidebar = () => {
   emit('closeMobileSidebar');
 };
 
+const isSimpleAgentMode = computed(() =>
+  isAgentSimpleMode(currentUser.value, accountId.value, currentRole.value)
+);
+
+const simpleAgentMenuItems = () => [
+  {
+    name: 'Conversation',
+    label: t('SIDEBAR.CONVERSATIONS'),
+    icon: 'i-lucide-message-circle',
+    children: [
+      {
+        name: 'All',
+        label: t('SIDEBAR.CONVERSATIONS'),
+        activeOn: ['inbox_conversation'],
+        to: accountScopedRoute('home'),
+      },
+    ],
+  },
+];
+
 const newReportRoutes = () => [
   {
     name: 'Reports Agent',
@@ -213,6 +236,10 @@ const newReportRoutes = () => [
 const reportRoutes = computed(() => newReportRoutes());
 
 const menuItems = computed(() => {
+  if (isSimpleAgentMode.value) {
+    return simpleAgentMenuItems();
+  }
+
   return [
     {
       name: 'Inbox',
@@ -742,7 +769,7 @@ const menuItems = computed(() => {
         >
           <span class="i-lucide-search size-4 text-n-slate-11" />
         </RouterLink>
-        <ComposeConversation align="start">
+        <ComposeConversation v-if="!isSimpleAgentMode" align="start">
           <template #trigger="{ isOpen }">
             <Button
               icon="i-lucide-pen-line"
@@ -790,9 +817,7 @@ const menuItems = computed(() => {
       />
       <SidebarChangelogButton
         v-if="
-          isOnHostedCloud &&
-          !isACustomBrandedInstance &&
-          isEffectivelyCollapsed
+          isOnHostedCloud && !isACustomBrandedInstance && isEffectivelyCollapsed
         "
       />
       <div
