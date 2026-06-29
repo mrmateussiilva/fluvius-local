@@ -1,6 +1,8 @@
 {
   "CONVERSATION": {
     "SELECT_A_CONVERSATION": "Por favor, selecione uma conversa no painel da esquerda",
+    "SIMPLE_EMPTY_STATE_TITLE": "Selecione uma conversa para começar o atendimento.",
+    "SIMPLE_EMPTY_STATE_SUBTITLE": "Escolha um cliente na lista ao lado.",
     "CSAT_REPLY_MESSAGE": "Por favor, classifique a conversa",
     "404": "Desculpe, não conseguimos encontrar a conversa. Por favor, tente novamente",
     "SWITCH_VIEW_LAYOUT": "Alternar o layout",
@@ -36,6 +38,8 @@
     "API_HOURS_WINDOW": "Você só pode responder a esta conversa em {hours} horas",
     "NOT_ASSIGNED_TO_YOU": "Esta conversa não está atribuída a você. Gostaria de atribuir esta conversa a você mesmo?",
     "ASSIGN_TO_ME": "Atribuir a mim",
+    "ASSUME_ATTENDANCE": "Assumir atendimento",
+    "SIMPLE_NOT_ASSIGNED_TO_YOU": "Este atendimento ainda não está com você.",
     "BOT_HANDOFF_MESSAGE": "Você está respondendo a uma conversa que é atualmente tratada por um assistente ou um robô.",
     "BOT_HANDOFF_ACTION": "Marcar como aberta e atribuir a você",
     "BOT_HANDOFF_REOPEN_ACTION": "Marcar conversa como aberta",
@@ -98,7 +102,8 @@
       "TRANSCRIPT_SHOW_LESS": "Mostrar menos"
     },
     "HEADER": {
-      "RESOLVE_ACTION": "Finalizar atendimento",
+      "RESOLVE_ACTION": "Resolver",
+      "FINALIZE_ATTENDANCE_ACTION": "Finalizar atendimento",
       "REOPEN_ACTION": "Reabrir",
       "OPEN_ACTION": "Abrir",
       "MORE_ACTIONS": "Mais ações",
@@ -209,6 +214,7 @@
       "ENABLE_SIGN_TOOLTIP": "Ativar assinatura",
       "DISABLE_SIGN_TOOLTIP": "Desativar assinatura",
       "MSG_INPUT": "Shift + enter para nova linha. Digite '/' para selecionar uma Resposta Pronta.",
+      "SIMPLE_MSG_INPUT": "Digite uma mensagem...",
       "PRIVATE_MSG_INPUT": "A mensagem será visível apenas para agentes",
       "MESSAGING_RESTRICTED": "Você não pode responder esta conversa",
       "MESSAGING_RESTRICTED_WHATSAPP": "Você só pode responder usando uma mensagem de modelo devido à restrição da janela de 24 horas",

@@ -18,8 +18,8 @@ const props = defineProps({
 });
 
 const DEFAULT_HEIGHT = 120;
-const SIMPLE_MODE_DEFAULT_HEIGHT = 88;
-const MIN_HEIGHT = 80;
+const SIMPLE_MODE_DEFAULT_HEIGHT = 76;
+const MIN_HEIGHT = 72;
 const MIN_MESSAGES_HEIGHT = 200;
 const EXPAND_RATIO = 0.5;
 const RESET_DELAY_MS = 120;

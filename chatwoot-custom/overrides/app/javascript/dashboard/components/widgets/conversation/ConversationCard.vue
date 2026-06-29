@@ -39,6 +39,16 @@ const currentAccountId = useMapGetter('getCurrentAccountId');
 const currentRole = useMapGetter('getCurrentRole');
 const hovered = ref(false);
 
+const contactDisplayName = computed(() => {
+  return (
+    props.currentContact.name ||
+    props.currentContact.phone_number ||
+    props.currentContact.identifier ||
+    props.currentContact.email ||
+    'Contato sem nome'
+  );
+});
+
 const isSimpleAgentMode = computed(() =>
   isAgentSimpleMode(
     currentUser.value,
@@ -142,13 +152,14 @@ watch(
     >
       <Avatar
         v-if="!hideThumbnail"
-        :name="currentContact.name"
+        :name="contactDisplayName"
         :src="currentContact.thumbnail"
         :size="isSimpleAgentMode ? 28 : 32"
-        :status="currentContact.availability_status"
-        :class="
-          isSimpleAgentMode ? 'mt-3' : !showInboxName ? 'mt-4' : 'mt-8'
+        :status="
+          currentContact.availability_status ||
+          currentContact.availabilityStatus
         "
+        :class="isSimpleAgentMode ? 'mt-3' : !showInboxName ? 'mt-4' : 'mt-8'"
         hide-offline-status
       >
         <template #overlay="{ size }">
@@ -205,7 +216,7 @@ watch(
               : 'text-sm pt-0.5 ltr:pr-16 rtl:pl-16 font-medium'
         "
       >
-        {{ currentContact.name }}
+        {{ contactDisplayName }}
       </h4>
       <VoiceCallStatus
         v-if="voiceCallData.status"

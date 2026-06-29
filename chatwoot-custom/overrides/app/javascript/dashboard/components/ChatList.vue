@@ -195,11 +195,19 @@ const assigneeTabItems = computed(() => {
     ? items.filter(({ key }) => key !== wootConstants.ASSIGNEE_TYPE.ALL)
     : items;
 
-  return visibleItems.map(({ key, count: countKey }) => ({
-    key,
-    name: t(`CHAT_LIST.ASSIGNEE_TYPE_TABS.${key}`),
-    count: conversationStats.value[countKey] || 0,
-  }));
+  return visibleItems.map(({ key, count: countKey }) => {
+    const count = conversationStats.value[countKey] || 0;
+    const labelKey = isSimpleAgentMode.value
+      ? `CHAT_LIST.ASSIGNEE_TYPE_TABS_SIMPLE.${key}`
+      : `CHAT_LIST.ASSIGNEE_TYPE_TABS.${key}`;
+    return {
+      key,
+      name: t(labelKey),
+      count,
+      displayCount:
+        isSimpleAgentMode.value && count > 99 ? '99+' : String(count),
+    };
+  });
 });
 
 const showAssigneeInConversationCard = computed(() => {

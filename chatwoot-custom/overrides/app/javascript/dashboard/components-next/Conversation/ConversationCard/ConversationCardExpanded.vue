@@ -38,6 +38,16 @@ const currentUser = useMapGetter('getCurrentUser');
 const currentAccountId = useMapGetter('getCurrentAccountId');
 const currentRole = useMapGetter('getCurrentRole');
 
+const contactDisplayName = computed(() => {
+  return (
+    props.currentContact.name ||
+    props.currentContact.phone_number ||
+    props.currentContact.identifier ||
+    props.currentContact.email ||
+    'Contato sem nome'
+  );
+});
+
 const lastMessageInChat = computed(() => getLastMessage(props.chat));
 const isSimpleAgentMode = computed(() =>
   isAgentSimpleMode(
@@ -75,9 +85,9 @@ const selectedModel = computed({
   get: () => props.selected,
   set: value => {
     if (value) {
-      emit('selectConversation', value);
+      emit('selectConversation', props.chat.id, props.inbox.id);
     } else {
-      emit('deSelectConversation', value);
+      emit('deSelectConversation', props.chat.id, props.inbox.id);
     }
   },
 });
@@ -189,7 +199,7 @@ const selectedModel = computed({
       <h4
         class="text-heading-3 my-0 capitalize truncate text-n-slate-12 font-medium w-32 flex-shrink-0"
       >
-        {{ currentContact.name }}
+        {{ contactDisplayName }}
       </h4>
 
       <CardContent

@@ -42,10 +42,19 @@ const cardMessagePreviewWithMetaRef = ref(null);
 
 const currentContact = computed(() => props.contact);
 
-const currentContactName = computed(() => currentContact.value?.name);
+const currentContactName = computed(
+  () =>
+    currentContact.value?.name ||
+    currentContact.value?.phone_number ||
+    currentContact.value?.identifier ||
+    currentContact.value?.email ||
+    'Contato sem nome'
+);
 const currentContactThumbnail = computed(() => currentContact.value?.thumbnail);
 const currentContactStatus = computed(
-  () => currentContact.value?.availabilityStatus
+  () =>
+    currentContact.value?.availabilityStatus ||
+    currentContact.value?.availability_status
 );
 
 const inbox = computed(() => props.stateInbox);

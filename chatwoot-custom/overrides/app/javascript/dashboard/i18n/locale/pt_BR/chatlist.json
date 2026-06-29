@@ -15,6 +15,11 @@
     },
     "FILTER_ALL": "Todos",
     "ASSIGNEE_TYPE_TABS": {
+      "me": "Minhas",
+      "unassigned": "Não atribuídas",
+      "all": "Todos"
+    },
+    "ASSIGNEE_TYPE_TABS_SIMPLE": {
       "me": "Meus atendimentos",
       "unassigned": "Novos clientes",
       "all": "Todos"

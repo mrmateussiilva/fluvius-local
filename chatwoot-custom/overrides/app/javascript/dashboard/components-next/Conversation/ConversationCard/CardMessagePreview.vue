@@ -22,9 +22,13 @@ const currentRole = useMapGetter('getCurrentRole');
 const { getPlainText } = useMessageFormatter();
 
 const lastNonActivityMessageContent = computed(() => {
-  const { lastNonActivityMessage = {}, customAttributes = {} } =
-    props.conversation;
-  const { email: { subject } = {} } = customAttributes;
+  const {
+    lastNonActivityMessage = {},
+    customAttributes,
+    custom_attributes,
+  } = props.conversation;
+  const attributes = customAttributes || custom_attributes || {};
+  const { email: { subject } = {} } = attributes;
   return getPlainText(
     subject || lastNonActivityMessage?.content || t('CHAT_LIST.NO_CONTENT')
   );
@@ -40,8 +44,7 @@ const assignee = computed(() => {
 });
 
 const unreadMessagesCount = computed(() => {
-  const { unreadCount } = props.conversation;
-  return unreadCount;
+  return props.conversation.unread_count || props.conversation.unreadCount || 0;
 });
 
 const isSimpleAgentMode = computed(() =>
