@@ -77,6 +77,7 @@ const activeAssigneeTab = ref(wootConstants.ASSIGNEE_TYPE.ME);
 const activeStatus = ref(wootConstants.STATUS_TYPE.OPEN);
 const activeSortBy = ref(wootConstants.SORT_BY_TYPE.LAST_ACTIVITY_AT_DESC);
 const showAdvancedFilters = ref(false);
+const simpleModeSearchQuery = ref('');
 // chatsOnView is to store the chats that are currently visible on the screen,
 // which mirrors the conversationList.
 const chatsOnView = ref([]);
@@ -379,18 +380,64 @@ const conversationList = computed(() => {
   return localConversationList;
 });
 
+const normalizedSimpleModeSearchQuery = computed(() =>
+  simpleModeSearchQuery.value.trim().toLowerCase()
+);
+
+const displayedConversationList = computed(() => {
+  if (!isSimpleAgentMode.value || !normalizedSimpleModeSearchQuery.value) {
+    return conversationList.value;
+  }
+
+  const query = normalizedSimpleModeSearchQuery.value;
+
+  return conversationList.value.filter(conversation => {
+    const sender = conversation.meta?.sender || {};
+    const emailSubject =
+      conversation.custom_attributes?.email?.subject ||
+      conversation.customAttributes?.email?.subject ||
+      '';
+    const haystack = [
+      sender.name,
+      sender.phone_number,
+      sender.identifier,
+      sender.email,
+      conversation.display_id,
+      conversation.id,
+      conversation.last_non_activity_message?.content,
+      conversation.lastNonActivityMessage?.content,
+      emailSubject,
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase();
+
+    return haystack.includes(query);
+  });
+});
+
+const emptyListMessage = computed(() => {
+  if (isSimpleAgentMode.value && normalizedSimpleModeSearchQuery.value) {
+    return t('CHAT_LIST.SEARCH_EMPTY');
+  }
+
+  return t('CHAT_LIST.LIST.404');
+});
+
 const showEndOfListMessage = computed(() => {
   return !!(
-    conversationList.value.length &&
+    displayedConversationList.value.length &&
     hasCurrentPageEndReached.value &&
-    !chatListLoading.value
+    !chatListLoading.value &&
+    !normalizedSimpleModeSearchQuery.value
   );
 });
 
 const allConversationsSelected = computed(() => {
   return (
-    conversationList.value.length === selectedConversations.value.length &&
-    conversationList.value.every(el =>
+    displayedConversationList.value.length ===
+      selectedConversations.value.length &&
+    displayedConversationList.value.every(el =>
       selectedConversations.value.includes(el.id)
     )
   );
@@ -646,6 +693,10 @@ function onBasicFilterChange(value, type) {
   resetAndFetchData();
 }
 
+function updateSimpleModeSearch(value) {
+  simpleModeSearchQuery.value = value;
+}
+
 function openLastSavedItemInFolder() {
   const lastItemOfFolder = folders.value[folders.value.length - 1];
   const lastItemId = lastItemOfFolder.id;
@@ -820,7 +871,7 @@ function allSelectedConversationsStatus(status) {
 }
 
 function toggleSelectAll(check) {
-  selectAllConversations(check, conversationList);
+  selectAllConversations(check, displayedConversationList);
 }
 
 useEmitter('fetch_conversation_stats', () => {
@@ -895,7 +946,11 @@ watch(activeFolder, (newVal, oldVal) => {
 });
 
 watch(chatLists, () => {
-  chatsOnView.value = conversationList.value;
+  chatsOnView.value = displayedConversationList.value;
+});
+
+watch(displayedConversationList, value => {
+  chatsOnView.value = value;
 });
 
 watch(conversationFilters, (newVal, oldVal) => {
@@ -907,10 +962,14 @@ watch(conversationFilters, (newVal, oldVal) => {
 
 <template>
   <div
-    class="flex flex-col flex-shrink-0 conversations-list-wrap bg-n-surface-1 relative"
+    class="flex flex-col flex-shrink-0 conversations-list-wrap relative"
     :class="[
       { hidden: !showConversationList },
-      isOnExpandedLayout ? 'basis-full' : 'w-[340px] 2xl:w-[412px]',
+      isOnExpandedLayout
+        ? 'basis-full'
+        : isSimpleAgentMode
+          ? 'agent-messenger-layout w-[23.5rem] xl:w-[25.5rem] border-r border-n-weak bg-n-background'
+          : 'w-[340px] 2xl:w-[412px] bg-n-surface-1',
     ]"
   >
     <slot />
@@ -922,11 +981,13 @@ watch(conversationFilters, (newVal, oldVal) => {
       :is-on-expanded-layout="isOnExpandedLayout"
       :conversation-stats="conversationStats"
       :is-list-loading="chatListLoading && !conversationList.length"
+      :search-query="simpleModeSearchQuery"
       @add-folders="onClickOpenAddFoldersModal"
       @delete-folders="onClickOpenDeleteFoldersModal"
       @filters-modal="onToggleAdvanceFiltersModal"
       @reset-filters="resetAndFetchData"
       @basic-filter-change="onBasicFilterChange"
+      @update-search="updateSimpleModeSearch"
     />
 
     <TeleportWithDirection
@@ -959,10 +1020,11 @@ watch(conversationFilters, (newVal, oldVal) => {
     />
 
     <p
-      v-if="!chatListLoading && !conversationList.length"
-      class="flex overflow-auto justify-center items-center p-4"
+      v-if="!chatListLoading && !displayedConversationList.length"
+      class="flex overflow-auto justify-center items-center p-4 text-center text-n-slate-11"
+      :class="isSimpleAgentMode ? 'px-6 py-10 text-sm' : ''"
     >
-      {{ $t('CHAT_LIST.LIST.404') }}
+      {{ emptyListMessage }}
     </p>
     <ConversationBulkActions
       :conversations="selectedConversations"
@@ -975,7 +1037,7 @@ watch(conversationFilters, (newVal, oldVal) => {
       @select-all-conversations="toggleSelectAll"
     />
     <ConversationList
-      :conversation-list="conversationList"
+      :conversation-list="displayedConversationList"
       :is-loading="chatListLoading"
       :show-end-of-list-message="showEndOfListMessage"
       :label="label"

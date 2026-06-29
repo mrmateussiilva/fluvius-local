@@ -2,7 +2,7 @@
   "CONVERSATION": {
     "SELECT_A_CONVERSATION": "Por favor, selecione uma conversa no painel da esquerda",
     "SIMPLE_EMPTY_STATE_TITLE": "Selecione uma conversa para começar o atendimento.",
-    "SIMPLE_EMPTY_STATE_SUBTITLE": "Escolha um cliente na lista ao lado.",
+    "SIMPLE_EMPTY_STATE_SUBTITLE": "Escolha um cliente na lista à esquerda.",
     "CSAT_REPLY_MESSAGE": "Por favor, classifique a conversa",
     "404": "Desculpe, não conseguimos encontrar a conversa. Por favor, tente novamente",
     "SWITCH_VIEW_LAYOUT": "Alternar o layout",

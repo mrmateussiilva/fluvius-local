@@ -58,6 +58,7 @@ const currentRole = useMapGetter('getCurrentRole');
 const isFeatureEnabledonAccount = useMapGetter(
   'accounts/isFeatureEnabledonAccount'
 );
+const SIMPLE_AGENT_SIDEBAR_WIDTH = 68;
 
 const hasAdvancedAssignment = computed(() => {
   return isFeatureEnabledonAccount.value(
@@ -92,9 +93,13 @@ const {
   COLLAPSED_THRESHOLD,
 } = useSidebarResize();
 
+const isSimpleAgentMode = computed(() =>
+  isAgentSimpleMode(currentUser.value, accountId.value, currentRole.value)
+);
+
 // On mobile, sidebar is always expanded (flyout mode)
 const isEffectivelyCollapsed = computed(
-  () => !isMobile.value && isCollapsed.value
+  () => !isMobile.value && (isSimpleAgentMode.value || isCollapsed.value)
 );
 
 // Resize handle logic
@@ -186,10 +191,6 @@ const closeMobileSidebar = () => {
   if (!props.isMobileSidebarOpen) return;
   emit('closeMobileSidebar');
 };
-
-const isSimpleAgentMode = computed(() =>
-  isAgentSimpleMode(currentUser.value, accountId.value, currentRole.value)
-);
 
 const simpleAgentMenuItems = () => [
   {
@@ -712,19 +713,40 @@ const menuItems = computed(() => {
           !isResizing,
       },
     ]"
-    :style="isMobile ? undefined : { width: `${sidebarWidth}px` }"
+    :style="
+      isMobile
+        ? undefined
+        : {
+            width: `${
+              isSimpleAgentMode ? SIMPLE_AGENT_SIDEBAR_WIDTH : sidebarWidth
+            }px`,
+          }
+    "
   >
     <section
       class="grid"
-      :class="isEffectivelyCollapsed ? 'mt-3 mb-6 gap-4' : 'mt-1 mb-4 gap-2'"
+      :class="
+        isSimpleAgentMode
+          ? 'mt-3 mb-5 gap-5 justify-items-center'
+          : isEffectivelyCollapsed
+            ? 'mt-3 mb-6 gap-4'
+            : 'mt-1 mb-4 gap-2'
+      "
     >
       <div
         class="flex gap-2 items-center min-w-0"
         :class="{
-          'justify-center px-1': isEffectivelyCollapsed,
+          'justify-center px-1': isEffectivelyCollapsed || isSimpleAgentMode,
           'px-2': !isEffectivelyCollapsed,
         }"
       >
+        <template v-if="isSimpleAgentMode">
+          <div
+            class="grid place-content-center size-10 rounded-2xl bg-n-alpha-2"
+          >
+            <Logo class="size-5" />
+          </div>
+        </template>
         <template v-if="isEffectivelyCollapsed">
           <SidebarAccountSwitcher
             is-collapsed
@@ -744,10 +766,24 @@ const menuItems = computed(() => {
       </div>
       <div
         class="flex gap-2"
-        :class="isEffectivelyCollapsed ? 'flex-col items-center' : 'px-2'"
+        :class="
+          isSimpleAgentMode
+            ? 'flex-col items-center'
+            : isEffectivelyCollapsed
+              ? 'flex-col items-center'
+              : 'px-2'
+        "
       >
         <RouterLink
-          v-if="!isEffectivelyCollapsed"
+          v-if="isSimpleAgentMode"
+          :to="{ name: 'search' }"
+          class="flex items-center justify-center size-10 rounded-2xl outline outline-1 outline-n-weak bg-n-alpha-2 transition-all duration-100 ease-out hover:bg-n-alpha-3"
+          :title="t('COMBOBOX.SEARCH_PLACEHOLDER')"
+        >
+          <span class="i-lucide-search size-4 text-n-slate-11" />
+        </RouterLink>
+        <RouterLink
+          v-else-if="!isEffectivelyCollapsed"
           :to="{ name: 'search' }"
           class="flex gap-2 items-center px-2 py-1 w-full h-7 rounded-lg outline outline-1 outline-n-weak bg-n-button-color transition-all duration-100 ease-out"
         >
@@ -789,7 +825,9 @@ const menuItems = computed(() => {
     </section>
     <nav
       class="grid overflow-y-scroll flex-grow gap-2 pb-5 no-scrollbar min-w-0"
-      :class="isEffectivelyCollapsed ? 'px-1' : 'px-2'"
+      :class="
+        isSimpleAgentMode ? 'px-2' : isEffectivelyCollapsed ? 'px-1' : 'px-2'
+      "
     >
       <ul
         class="flex flex-col gap-1 m-0 list-none min-w-0"
@@ -832,6 +870,7 @@ const menuItems = computed(() => {
     </section>
     <!-- Resize Handle (desktop only) -->
     <div
+      v-if="!isSimpleAgentMode"
       class="hidden md:block absolute top-0 h-full w-1 cursor-col-resize z-40 ltr:right-0 rtl:left-0 group"
       @mousedown="onResizeStart"
       @touchstart="onResizeStart"

@@ -198,10 +198,10 @@ export default {
 
 <template>
   <div
-    class="flex justify-between gap-2 items-center"
+    class="flex items-center justify-between gap-2"
     :class="
       isSimplifiedAgentUI
-        ? 'h-11 ltr:pl-2.5 ltr:pr-2 rtl:pr-2.5 rtl:pl-2'
+        ? 'h-10 border-b border-n-weak/80 ltr:pl-2.5 ltr:pr-2 rtl:pr-2.5 rtl:pl-2'
         : 'h-[3.25rem] ltr:pl-3 ltr:pr-2 rtl:pr-3 rtl:pl-2'
     "
   >
@@ -230,6 +230,7 @@ export default {
           :class="{
             'text-n-violet-9 hover:enabled:!bg-n-violet-3': !showCopilotMenu,
             'text-n-violet-9 bg-n-violet-3': showCopilotMenu,
+            'rounded-full': isSimplifiedAgentUI,
           }"
           sm
           icon="i-ph-sparkle-fill"
@@ -251,6 +252,7 @@ export default {
       <NextButton
         ghost
         class="text-n-slate-11"
+        :class="{ 'rounded-full': isSimplifiedAgentUI }"
         sm
         icon="i-lucide-maximize-2"
         @click="$emit('toggleEditorSize')"

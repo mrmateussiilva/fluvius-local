@@ -67,7 +67,7 @@ const needsAssignmentToCurrentUser = computed(() => {
 
 const showSelfAssignBanner = computed(() => {
   if (isSimpleMode.value) {
-    return needsAssignmentToCurrentUser.value;
+    return false;
   }
 
   return (

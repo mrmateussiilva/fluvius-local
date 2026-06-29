@@ -101,6 +101,9 @@ const selectedModel = computed({
         isActiveChat,
       'selected bg-n-slate-2 dark:bg-n-slate-3 !border-n-surface-1': selected,
       'hover:bg-n-alpha-1': !isActiveChat && !selected,
+      'mx-2 mb-1 h-[4.5rem] rounded-2xl border border-transparent hover:bg-n-alpha-2':
+        isSimpleAgentMode,
+      '!border-n-brand bg-n-alpha-2': isSimpleAgentMode && isActiveChat,
       'grid-cols-[minmax(0,2fr)_minmax(0,1fr)]': showLabelsSection,
       'grid-cols-[minmax(0,2fr)_max-content]': !showLabelsSection,
     }"
@@ -197,7 +200,12 @@ const selectedModel = computed({
       />
 
       <h4
-        class="text-heading-3 my-0 capitalize truncate text-n-slate-12 font-medium w-32 flex-shrink-0"
+        class="my-0 capitalize truncate text-n-slate-12 flex-shrink-0"
+        :class="
+          isSimpleAgentMode
+            ? 'text-sm font-semibold w-36'
+            : 'text-heading-3 font-medium w-32'
+        "
       >
         {{ contactDisplayName }}
       </h4>
@@ -230,7 +238,8 @@ const selectedModel = computed({
           :conversation-id="chat.id"
           :last-activity-timestamp="chat.timestamp"
           :created-at-timestamp="chat.created_at"
-          class="font-440 !text-xs text-n-slate-11"
+          class="font-440 text-n-slate-11"
+          :class="isSimpleAgentMode ? '!text-[0.6875rem]' : '!text-xs'"
         />
       </div>
     </div>

@@ -1,6 +1,8 @@
 <script setup>
 import { computed } from 'vue';
 import { useKeyboardEvents } from 'dashboard/composables/useKeyboardEvents';
+import { useMapGetter } from 'dashboard/composables/store';
+import { isAgentSimpleMode } from 'dashboard/helper/agentSimpleMode';
 import wootConstants from 'dashboard/constants/globals';
 
 const props = defineProps({
@@ -16,9 +18,21 @@ const props = defineProps({
 
 const emit = defineEmits(['chatTabChange']);
 
+const currentUser = useMapGetter('getCurrentUser');
+const currentAccountId = useMapGetter('getCurrentAccountId');
+const currentRole = useMapGetter('getCurrentRole');
+
 const activeTabIndex = computed(() => {
   return props.items.findIndex(item => item.key === props.activeTab);
 });
+
+const isSimpleMode = computed(() =>
+  isAgentSimpleMode(
+    currentUser.value,
+    currentAccountId.value,
+    currentRole.value
+  )
+);
 
 const onTabChange = selectedTabIndex => {
   if (selectedTabIndex >= 0 && selectedTabIndex < props.items.length) {
@@ -46,7 +60,38 @@ useKeyboardEvents(keyboardEvents);
 </script>
 
 <template>
+  <div
+    v-if="isSimpleMode"
+    class="agent-conversation-chip-list flex flex-wrap gap-2 px-4 py-3 border-b border-n-weak bg-n-background"
+  >
+    <button
+      v-for="item in items"
+      :key="item.key"
+      type="button"
+      class="agent-conversation-chip inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition"
+      :class="
+        item.key === activeTab
+          ? 'bg-n-slate-12 text-white shadow-sm'
+          : 'bg-n-alpha-2 text-n-slate-11 hover:bg-n-alpha-3'
+      "
+      @click="emit('chatTabChange', item.key)"
+    >
+      <span>{{ item.name }}</span>
+      <span
+        class="inline-flex min-w-6 items-center justify-center rounded-full px-1.5 py-0.5 text-[0.6875rem] leading-none"
+        :class="
+          item.key === activeTab
+            ? 'bg-white/18 text-white'
+            : 'bg-n-solid-1 text-n-slate-10'
+        "
+      >
+        {{ item.displayCount ?? item.count }}
+      </span>
+    </button>
+  </div>
+
   <woot-tabs
+    v-else
     :index="activeTabIndex"
     class="w-full px-3 -mt-1 py-0 [&_ul]:p-0 h-10"
     @change="onTabChange"

@@ -59,6 +59,9 @@ const isSimpleAgentMode = computed(() =>
 
 const unreadCount = computed(() => props.chat.unread_count);
 const hasUnread = computed(() => unreadCount.value > 0);
+const displayUnreadCount = computed(() =>
+  unreadCount.value > 99 ? '99+' : unreadCount.value
+);
 const lastMessageInChat = computed(() => getLastMessage(props.chat));
 
 const voiceCallData = computed(() => {
@@ -134,11 +137,20 @@ watch(
 
 <template>
   <div
-    class="relative flex items-start flex-grow-0 flex-shrink-0 w-auto max-w-full py-0 cursor-pointer conversation border-b border-n-slate-3 hover:border-n-surface-1 hover:bg-n-alpha-1 dark:hover:bg-n-alpha-3 group hover:z-[1] before:content-[none] before:absolute before:-top-px before:inset-x-0 before:h-px before:bg-n-surface-1 before:pointer-events-none hover:before:content-['']"
+    class="relative flex items-start flex-grow-0 flex-shrink-0 w-auto max-w-full py-0 cursor-pointer conversation group hover:z-[1]"
     :class="{
       'active animate-card-select bg-n-background !border-n-surface-1':
-        isActiveChat,
-      'selected bg-n-slate-2 !border-n-surface-1': selected,
+        isActiveChat && !isSimpleAgentMode,
+      'selected bg-n-slate-2 !border-n-surface-1':
+        selected && !isSimpleAgentMode,
+      'mx-2 mb-1 rounded-2xl border border-transparent px-0 shadow-[0_1px_2px_rgba(15,23,42,0.02)] transition hover:bg-n-alpha-2':
+        isSimpleAgentMode,
+      'border-b border-n-slate-3 hover:border-n-surface-1 hover:bg-n-alpha-1 dark:hover:bg-n-alpha-3 before:content-[none] before:absolute before:-top-px before:inset-x-0 before:h-px before:bg-n-surface-1 before:pointer-events-none hover:before:content-[\'\']':
+        !isSimpleAgentMode,
+      '!border-n-brand bg-n-alpha-2 shadow-[0_10px_30px_rgba(15,23,42,0.08)]':
+        isSimpleAgentMode && isActiveChat,
+      '!border-n-weak bg-n-alpha-2':
+        isSimpleAgentMode && selected && !isActiveChat,
       'px-0': compact || isSimpleAgentMode,
       'px-3': !compact && !isSimpleAgentMode,
     }"
@@ -154,12 +166,14 @@ watch(
         v-if="!hideThumbnail"
         :name="contactDisplayName"
         :src="currentContact.thumbnail"
-        :size="isSimpleAgentMode ? 28 : 32"
+        :size="isSimpleAgentMode ? 40 : 32"
         :status="
           currentContact.availability_status ||
           currentContact.availabilityStatus
         "
-        :class="isSimpleAgentMode ? 'mt-3' : !showInboxName ? 'mt-4' : 'mt-8'"
+        :class="
+          isSimpleAgentMode ? 'mt-4 ml-3' : !showInboxName ? 'mt-4' : 'mt-8'
+        "
         hide-offline-status
       >
         <template #overlay="{ size }">
@@ -176,7 +190,7 @@ watch(
     </div>
     <div
       class="px-0 flex-1 min-w-0 border-line"
-      :class="isSimpleAgentMode ? 'py-2.5' : 'py-3'"
+      :class="isSimpleAgentMode ? 'py-3.5 pr-3' : 'py-3'"
     >
       <div
         v-if="showMetaSection"
@@ -210,7 +224,7 @@ watch(
         class="conversation--user my-0 mx-2 capitalize text-ellipsis overflow-hidden whitespace-nowrap flex-1 min-w-0 text-n-slate-12"
         :class="
           isSimpleAgentMode
-            ? 'text-sm pt-0 ltr:pr-12 rtl:pl-12 font-semibold'
+            ? 'text-[0.95rem] pt-0 ltr:pr-12 rtl:pl-12 font-semibold tracking-[-0.01em]'
             : hasUnread
               ? 'text-sm pt-0.5 ltr:pr-16 rtl:pl-16 font-semibold'
               : 'text-sm pt-0.5 ltr:pr-16 rtl:pl-16 font-medium'
@@ -250,10 +264,15 @@ watch(
       <div
         class="absolute flex flex-col ltr:right-3 rtl:left-3"
         :class="
-          isSimpleAgentMode ? 'top-3' : showMetaSection ? 'top-8' : 'top-4'
+          isSimpleAgentMode ? 'top-4' : showMetaSection ? 'top-8' : 'top-4'
         "
       >
-        <span class="ml-auto font-normal leading-4 text-xxs">
+        <span
+          class="ml-auto font-normal leading-4"
+          :class="
+            isSimpleAgentMode ? 'text-[0.6875rem] text-n-slate-10' : 'text-xxs'
+          "
+        >
           <TimeAgo
             :last-activity-timestamp="chat.timestamp"
             :created-at-timestamp="chat.created_at"
@@ -262,9 +281,9 @@ watch(
         </span>
         <UnreadBadge
           v-if="hasUnread"
-          :count="unreadCount"
+          :count="displayUnreadCount"
           class="ltr:ml-auto rtl:mr-auto"
-          :class="isSimpleAgentMode ? 'mt-0.5' : 'mt-1'"
+          :class="isSimpleAgentMode ? 'mt-2' : 'mt-1'"
         />
       </div>
       <CardLabels

@@ -280,7 +280,9 @@ export default {
     class="flex justify-between"
     :class="[
       wrapClass,
-      isSimplifiedAgentUI ? 'p-2 gap-2 items-center' : 'p-3 gap-3',
+      isSimplifiedAgentUI
+        ? 'items-center gap-2 border-t border-n-weak/80 px-2.5 py-2'
+        : 'p-3 gap-3',
     ]"
   >
     <div class="left-wrap" :class="isSimplifiedAgentUI ? '!gap-1.5' : ''">
@@ -410,6 +412,7 @@ export default {
         :color="isNote ? 'amber' : 'blue'"
         :disabled="isSendDisabled"
         class="flex-shrink-0"
+        :class="isSimplifiedAgentUI ? 'rounded-full px-4 shadow-sm' : ''"
         @click="onSend"
       />
     </div>

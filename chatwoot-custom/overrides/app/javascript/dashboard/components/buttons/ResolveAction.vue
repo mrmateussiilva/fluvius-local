@@ -195,16 +195,29 @@ useEmitter(CMD_RESOLVE_CONVERSATION, onCmdResolveConversation);
 <template>
   <div class="flex relative justify-end items-center resolve-actions">
     <ButtonGroup
-      class="flex-shrink-0 rounded-lg shadow outline-1 outline"
-      :class="!showOpenButton ? 'outline-n-container' : 'outline-transparent'"
+      class="flex-shrink-0 outline-1 outline"
+      :class="
+        isSimpleMode
+          ? 'rounded-full shadow-sm outline-transparent'
+          : !showOpenButton
+            ? 'rounded-lg shadow outline-n-container'
+            : 'rounded-lg outline-transparent'
+      "
     >
       <Button
         v-if="isOpen"
         :label="resolveActionLabel"
         size="sm"
-        color="slate"
+        :color="isSimpleMode ? 'blue' : 'slate'"
         no-animation
-        class="ltr:rounded-r-none rtl:rounded-l-none !outline-0"
+        class="!outline-0"
+        :class="
+          showAdditionalActions
+            ? 'ltr:rounded-r-none rtl:rounded-l-none'
+            : isSimpleMode
+              ? 'rounded-full'
+              : ''
+        "
         :is-loading="isLoading"
         @click="onCmdResolveConversation"
       />
@@ -212,9 +225,16 @@ useEmitter(CMD_RESOLVE_CONVERSATION, onCmdResolveConversation);
         v-else-if="isResolved"
         :label="t('CONVERSATION.HEADER.REOPEN_ACTION')"
         size="sm"
-        color="slate"
+        :color="isSimpleMode ? 'blue' : 'slate'"
         no-animation
-        class="ltr:rounded-r-none rtl:rounded-l-none !outline-0"
+        class="!outline-0"
+        :class="
+          showAdditionalActions
+            ? 'ltr:rounded-r-none rtl:rounded-l-none'
+            : isSimpleMode
+              ? 'rounded-full'
+              : ''
+        "
         :is-loading="isLoading"
         @click="onCmdOpenConversation"
       />
@@ -222,8 +242,9 @@ useEmitter(CMD_RESOLVE_CONVERSATION, onCmdResolveConversation);
         v-else-if="showOpenButton"
         :label="t('CONVERSATION.HEADER.OPEN_ACTION')"
         size="sm"
-        color="slate"
+        :color="isSimpleMode ? 'blue' : 'slate'"
         no-animation
+        :class="isSimpleMode ? 'rounded-full' : ''"
         :is-loading="isLoading"
         @click="onCmdOpenConversation"
       />
@@ -235,7 +256,8 @@ useEmitter(CMD_RESOLVE_CONVERSATION, onCmdResolveConversation);
         size="sm"
         no-animation
         class="ltr:rounded-l-none rtl:rounded-r-none !outline-0"
-        color="slate"
+        :class="isSimpleMode ? 'bg-n-brand text-white hover:opacity-90' : ''"
+        :color="isSimpleMode ? 'blue' : 'slate'"
         trailing-icon
         @click="openDropdown"
       />

@@ -12,6 +12,10 @@ const props = defineProps({
     type: Object,
     required: true,
   },
+  displayUnreadCount: {
+    type: [String, Number],
+    default: '',
+  },
 });
 
 const { t } = useI18n();
@@ -84,13 +88,13 @@ const isSimpleAgentMode = computed(() =>
       <div
         v-if="unreadMessagesCount > 0"
         class="inline-flex items-center justify-center rounded-full bg-n-brand"
-        :class="isSimpleAgentMode ? 'min-w-4 h-4 px-1' : 'size-5'"
+        :class="isSimpleAgentMode ? 'min-w-5 h-5 px-1.5' : 'size-5'"
       >
         <span
           class="font-semibold text-white"
           :class="isSimpleAgentMode ? 'text-[0.625rem] leading-4' : 'text-xs'"
         >
-          {{ unreadMessagesCount }}
+          {{ displayUnreadCount || unreadMessagesCount }}
         </span>
       </div>
     </div>

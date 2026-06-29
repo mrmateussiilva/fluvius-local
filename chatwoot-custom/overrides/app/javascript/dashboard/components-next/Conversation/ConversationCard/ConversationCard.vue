@@ -71,6 +71,14 @@ const lastActivityAt = computed(() => {
   return timestamp ? shortTimestamp(dynamicTime(timestamp)) : '';
 });
 
+const unreadCount = computed(
+  () => props.conversation?.unread_count || props.conversation?.unreadCount || 0
+);
+
+const displayUnreadCount = computed(() =>
+  unreadCount.value > 99 ? '99+' : unreadCount.value
+);
+
 const isSimpleAgentMode = computed(() =>
   isAgentSimpleMode(
     currentUser.value,
@@ -111,14 +119,18 @@ const onCardClick = e => {
 <template>
   <div
     role="button"
-    class="flex w-full transition-all duration-300 ease-in-out cursor-pointer"
-    :class="isSimpleAgentMode ? 'gap-2.5 px-3 py-2.5' : 'gap-3 px-3 py-4'"
+    class="flex w-full cursor-pointer transition-all duration-300 ease-in-out"
+    :class="
+      isSimpleAgentMode
+        ? 'mx-2 mb-1 gap-3 rounded-2xl border border-transparent px-3 py-3 hover:bg-n-alpha-2'
+        : 'gap-3 px-3 py-4'
+    "
     @click="onCardClick"
   >
     <Avatar
       :name="currentContactName"
       :src="currentContactThumbnail"
-      :size="isSimpleAgentMode ? 22 : 24"
+      :size="isSimpleAgentMode ? 40 : 24"
       :status="currentContactStatus"
       rounded-full
     />
@@ -131,7 +143,7 @@ const onCardClick = e => {
           class="truncate text-n-slate-12"
           :class="
             isSimpleAgentMode
-              ? 'text-sm font-semibold'
+              ? 'text-[0.95rem] font-semibold tracking-[-0.01em]'
               : 'text-base font-medium'
           "
         >
@@ -152,7 +164,10 @@ const onCardClick = e => {
               class="flex-shrink-0 text-n-slate-11 size-3"
             />
           </div>
-          <span class="text-sm text-n-slate-10 flex-shrink-0">
+          <span
+            class="flex-shrink-0 text-n-slate-10"
+            :class="isSimpleAgentMode ? 'text-[0.6875rem]' : 'text-sm'"
+          >
             {{ lastActivityAt }}
           </span>
         </div>
@@ -160,6 +175,7 @@ const onCardClick = e => {
       <CardMessagePreview
         v-show="showMessagePreviewWithoutMeta"
         :conversation="conversation"
+        :display-unread-count="displayUnreadCount"
       />
       <CardMessagePreviewWithMeta
         v-show="!showMessagePreviewWithoutMeta"

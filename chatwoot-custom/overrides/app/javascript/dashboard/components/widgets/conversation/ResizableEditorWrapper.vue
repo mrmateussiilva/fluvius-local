@@ -160,6 +160,7 @@ defineExpose({ toggleEditorExpand, resetEditorHeight });
   <div
     ref="wrapperRef"
     class="relative resizable-editor-wrapper"
+    :class="{ 'agent-chat-composer px-2 pb-2': isSimpleAgentMode }"
     :style="{
       '--editor-height': editorHeight + 'px',
       '--editor-min-allowed': sizeBounds.min + 'px',
@@ -181,3 +182,22 @@ defineExpose({ toggleEditorExpand, resetEditorHeight });
     <slot />
   </div>
 </template>
+
+<style scoped>
+.agent-chat-composer :deep(.reply-box) {
+  border-radius: 1.5rem;
+  border-color: transparent;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
+  margin-bottom: 0;
+}
+
+.agent-chat-composer :deep(.reply-box__top) {
+  padding-left: 0.875rem;
+  padding-right: 0.875rem;
+}
+
+.agent-chat-composer :deep(.reply-box .ProseMirror) {
+  font-size: 0.9375rem;
+  line-height: 1.5rem;
+}
+</style>
