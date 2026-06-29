@@ -143,11 +143,11 @@ watch(
         isActiveChat && !isSimpleAgentMode,
       'selected bg-n-slate-2 !border-n-surface-1':
         selected && !isSimpleAgentMode,
-      'mx-2 mb-1 rounded-2xl border border-transparent px-0 shadow-[0_1px_2px_rgba(15,23,42,0.02)] transition hover:bg-n-alpha-2':
+      'mx-2 mb-1 rounded-xl border border-transparent px-0 transition hover:bg-n-alpha-2':
         isSimpleAgentMode,
       'border-b border-n-slate-3 hover:border-n-surface-1 hover:bg-n-alpha-1 dark:hover:bg-n-alpha-3 before:content-[none] before:absolute before:-top-px before:inset-x-0 before:h-px before:bg-n-surface-1 before:pointer-events-none hover:before:content-[\'\']':
         !isSimpleAgentMode,
-      '!border-n-brand bg-n-alpha-2 shadow-[0_10px_30px_rgba(15,23,42,0.08)]':
+      '!border-n-brand/40 bg-n-alpha-2 shadow-none ring-1 ring-n-brand/20':
         isSimpleAgentMode && isActiveChat,
       '!border-n-weak bg-n-alpha-2':
         isSimpleAgentMode && selected && !isActiveChat,
@@ -190,7 +190,7 @@ watch(
     </div>
     <div
       class="px-0 flex-1 min-w-0 border-line"
-      :class="isSimpleAgentMode ? 'py-3.5 pr-3' : 'py-3'"
+      :class="isSimpleAgentMode ? 'py-3 pr-3' : 'py-3'"
     >
       <div
         v-if="showMetaSection"
@@ -224,7 +224,7 @@ watch(
         class="conversation--user my-0 mx-2 capitalize text-ellipsis overflow-hidden whitespace-nowrap flex-1 min-w-0 text-n-slate-12"
         :class="
           isSimpleAgentMode
-            ? 'text-[0.95rem] pt-0 ltr:pr-12 rtl:pl-12 font-semibold tracking-[-0.01em]'
+            ? 'text-sm pt-0 ltr:pr-12 rtl:pl-12 font-semibold'
             : hasUnread
               ? 'text-sm pt-0.5 ltr:pr-16 rtl:pl-16 font-semibold'
               : 'text-sm pt-0.5 ltr:pr-16 rtl:pl-16 font-medium'

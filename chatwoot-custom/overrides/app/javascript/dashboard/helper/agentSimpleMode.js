@@ -58,7 +58,9 @@ export const isAgentSimpleMode = (user, accountId, currentRole = '') => {
 };
 
 export const isSimplifiedAgentMode = isAgentSimpleMode;
+export const isAgentMessengerMode = isAgentSimpleMode;
 export const shouldUseAgentMessengerMode = isAgentSimpleMode;
+export const shouldUseAgentMessengerLayout = isAgentSimpleMode;
 
 export const cappedCount = count => {
   const numericCount = Number(count || 0);

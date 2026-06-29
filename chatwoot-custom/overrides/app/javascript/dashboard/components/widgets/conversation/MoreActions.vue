@@ -68,6 +68,12 @@ const contactPhone = computed(
     ''
 );
 
+const assignButtonLabel = computed(() =>
+  isSimpleMode.value
+    ? t('CONVERSATION.HEADER.ASSUME_SHORT')
+    : t('CONVERSATION.ASSUME_ATTENDANCE')
+);
+
 const actionMenuItems = computed(() => {
   const items = [];
 
@@ -281,10 +287,12 @@ onUnmounted(() => {
   <div class="relative flex items-center gap-2 actions--container">
     <ButtonV4
       v-if="isSimpleMode && needsAssignmentToCurrentUser"
-      :label="$t('CONVERSATION.ASSUME_ATTENDANCE')"
+      v-tooltip="$t('CONVERSATION.ASSUME_ATTENDANCE')"
+      :label="assignButtonLabel"
+      :aria-label="$t('CONVERSATION.ASSUME_ATTENDANCE')"
       size="sm"
-      color="blue"
-      class="rounded-full shadow-sm"
+      color="slate"
+      class="rounded-full !bg-n-alpha-2 px-3 text-n-slate-12 hover:!bg-n-alpha-3"
       @click="onAssignToMe"
     />
     <ResolveAction

@@ -146,7 +146,7 @@ const copyConversationId = async () => {
     class="flex w-full min-w-0 flex-1 items-center justify-between"
     :class="
       isSimpleMode
-        ? 'border-b border-n-weak bg-n-background px-4 py-3'
+        ? 'border-b border-n-weak bg-n-background px-4 py-2.5'
         : 'flex-col gap-3 px-3 pt-3 pb-2 h-24 xl:flex-row xl:h-12'
     "
   >
@@ -237,14 +237,6 @@ const copyConversationId = async () => {
         class="hidden md:flex"
       />
       <ConversationCallButton :inbox="inbox" :chat="currentChat" />
-      <button
-        v-if="isSimpleMode"
-        type="button"
-        class="hidden rounded-full px-3 py-1.5 text-xs font-medium text-n-slate-10 transition hover:bg-n-alpha-2 sm:inline-flex"
-        @click="copyConversationId"
-      >
-        {{ `#${chat.id}` }}
-      </button>
       <MoreActions :conversation-id="currentChat.id" />
     </div>
   </div>

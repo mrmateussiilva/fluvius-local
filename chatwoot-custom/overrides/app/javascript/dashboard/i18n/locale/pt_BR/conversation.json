@@ -109,6 +109,8 @@
     "HEADER": {
       "RESOLVE_ACTION": "Resolver",
       "FINALIZE_ATTENDANCE_ACTION": "Finalizar atendimento",
+      "FINALIZE_SHORT": "Finalizar",
+      "ASSUME_SHORT": "Assumir",
       "REOPEN_ACTION": "Reabrir",
       "OPEN_ACTION": "Abrir",
       "MORE_ACTIONS": "Mais ações",

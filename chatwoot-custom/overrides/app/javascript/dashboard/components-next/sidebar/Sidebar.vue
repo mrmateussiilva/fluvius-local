@@ -747,7 +747,7 @@ const menuItems = computed(() => {
             <Logo class="size-5" />
           </div>
         </template>
-        <template v-if="isEffectivelyCollapsed">
+        <template v-else-if="isEffectivelyCollapsed">
           <SidebarAccountSwitcher
             is-collapsed
             @show-create-account-modal="emit('showCreateAccountModal')"
@@ -777,7 +777,7 @@ const menuItems = computed(() => {
         <RouterLink
           v-if="isSimpleAgentMode"
           :to="{ name: 'search' }"
-          class="flex items-center justify-center size-10 rounded-2xl outline outline-1 outline-n-weak bg-n-alpha-2 transition-all duration-100 ease-out hover:bg-n-alpha-3"
+          class="flex size-9 items-center justify-center rounded-xl bg-transparent text-n-slate-10 transition-all duration-100 ease-out hover:bg-n-alpha-2 hover:text-n-slate-12"
           :title="t('COMBOBOX.SEARCH_PLACEHOLDER')"
         >
           <span class="i-lucide-search size-4 text-n-slate-11" />

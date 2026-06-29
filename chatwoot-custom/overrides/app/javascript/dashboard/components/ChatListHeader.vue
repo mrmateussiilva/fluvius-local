@@ -79,12 +79,12 @@ const toggleConversationLayout = () => {
 <template>
   <div
     v-if="shouldUseMessengerHeader"
-    class="agent-conversation-list border-b border-n-weak bg-n-background px-4 pt-4 pb-3"
+    class="agent-conversation-list border-b border-n-weak bg-n-background px-4 pb-2.5 pt-3"
   >
-    <div class="mb-3 flex items-center justify-between gap-3">
+    <div class="mb-2.5 flex items-center justify-between gap-3">
       <div class="min-w-0">
         <h1
-          class="truncate text-xl font-semibold tracking-[-0.02em] text-n-slate-12"
+          class="truncate text-lg font-semibold text-n-slate-12"
           :title="pageTitle"
         >
           {{ pageTitle }}
@@ -96,15 +96,15 @@ const toggleConversationLayout = () => {
         slate
         sm
         faded
-        class="shrink-0 rounded-full"
+        class="shrink-0 rounded-full !bg-n-alpha-2 hover:!bg-n-alpha-3"
         @click="emit('newConversation')"
       />
     </div>
 
     <label
-      class="flex h-11 items-center gap-3 rounded-full border border-transparent bg-n-alpha-2 px-4 text-sm text-n-slate-11 transition focus-within:border-n-brand focus-within:bg-n-solid-1"
+      class="flex h-10 items-center gap-2.5 rounded-full border border-transparent bg-n-alpha-2 px-3.5 text-sm text-n-slate-11 transition focus-within:bg-n-solid-1 focus-within:ring-1 focus-within:ring-n-weak"
     >
-      <span class="i-lucide-search size-4 shrink-0 text-n-slate-10" />
+      <span class="i-lucide-search size-4 shrink-0 text-n-slate-9" />
       <input
         :value="searchQuery"
         type="search"

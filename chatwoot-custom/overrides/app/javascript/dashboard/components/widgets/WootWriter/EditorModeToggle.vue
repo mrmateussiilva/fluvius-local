@@ -68,7 +68,7 @@ const translateValue = computed(() => {
     class="flex items-center w-auto p-1 transition-all border rounded-full group relative duration-300 ease-in-out z-0 active:scale-[0.995] active:duration-75"
     :class="
       isSimpleMode
-        ? 'h-8 bg-n-alpha-2/90 border-n-weak shadow-[inset_0_1px_0_rgba(255,255,255,0.18)]'
+        ? 'h-8 bg-transparent border-transparent'
         : 'h-8 bg-n-alpha-2 border-transparent'
     "
     :disabled="disabled || isReplyRestricted"
@@ -77,14 +77,26 @@ const translateValue = computed(() => {
     <div
       ref="wootEditorReplyMode"
       class="flex items-center gap-1 px-2 z-20"
-      :class="isSimpleMode ? 'text-xs font-medium text-n-slate-12' : ''"
+      :class="
+        isSimpleMode
+          ? mode === REPLY_EDITOR_MODES.REPLY
+            ? 'text-xs font-semibold text-n-slate-12'
+            : 'text-xs font-medium text-n-slate-10'
+          : ''
+      "
     >
       {{ $t('CONVERSATION.REPLYBOX.REPLY') }}
     </div>
     <div
       ref="wootEditorPrivateMode"
       class="flex items-center gap-1 px-2 z-20"
-      :class="isSimpleMode ? 'text-xs text-n-slate-10' : ''"
+      :class="
+        isSimpleMode
+          ? mode === REPLY_EDITOR_MODES.NOTE
+            ? 'text-xs font-medium text-n-slate-11'
+            : 'text-xs text-n-slate-9'
+          : ''
+      "
     >
       {{ $t('CONVERSATION.REPLYBOX.PRIVATE_NOTE') }}
     </div>
@@ -92,7 +104,7 @@ const translateValue = computed(() => {
       class="absolute shadow-sm rounded-full ease-in-out translate-x-[var(--translate-x)] rtl:translate-x-[var(--rtl-translate-x)] bg-n-solid-1"
       :class="
         isSimpleMode
-          ? 'h-6 w-[var(--chip-width)] shadow-[0_1px_2px_rgba(15,23,42,0.08)]'
+          ? 'h-6 w-[var(--chip-width)] bg-n-alpha-2 shadow-none'
           : 'h-6 w-[var(--chip-width)]'
       "
       :style="{

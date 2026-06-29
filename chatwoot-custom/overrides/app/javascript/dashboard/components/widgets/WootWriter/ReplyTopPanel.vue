@@ -201,7 +201,7 @@ export default {
     class="flex items-center justify-between gap-2"
     :class="
       isSimplifiedAgentUI
-        ? 'h-10 border-b border-n-weak/80 ltr:pl-2.5 ltr:pr-2 rtl:pr-2.5 rtl:pl-2'
+        ? 'h-9 border-b border-transparent ltr:pl-2.5 ltr:pr-2 rtl:pr-2.5 rtl:pl-2'
         : 'h-[3.25rem] ltr:pl-3 ltr:pr-2 rtl:pr-3 rtl:pl-2'
     "
   >

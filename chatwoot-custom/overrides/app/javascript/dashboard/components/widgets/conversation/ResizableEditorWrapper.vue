@@ -18,8 +18,8 @@ const props = defineProps({
 });
 
 const DEFAULT_HEIGHT = 120;
-const SIMPLE_MODE_DEFAULT_HEIGHT = 76;
-const MIN_HEIGHT = 72;
+const SIMPLE_MODE_DEFAULT_HEIGHT = 60;
+const MIN_HEIGHT = 56;
 const MIN_MESSAGES_HEIGHT = 200;
 const EXPAND_RATIO = 0.5;
 const RESET_DELAY_MS = 120;
@@ -169,6 +169,7 @@ defineExpose({ toggleEditorExpand, resetEditorHeight });
     }"
   >
     <div
+      v-if="!isSimpleAgentMode"
       class="group absolute inset-x-0 -top-4 z-10 flex h-4 cursor-row-resize select-none items-center justify-center bg-gradient-to-b from-transparent from-10% dark:to-n-surface-1/80 to-n-surface-1/90 backdrop-blur-[0.01875rem]"
       @mousedown="onResizeStart"
       @touchstart.prevent="onResizeStart"
@@ -185,19 +186,31 @@ defineExpose({ toggleEditorExpand, resetEditorHeight });
 
 <style scoped>
 .agent-chat-composer :deep(.reply-box) {
-  border-radius: 1.5rem;
-  border-color: transparent;
-  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
+  background: transparent;
+  border-radius: 1.25rem;
+  box-shadow: none;
   margin-bottom: 0;
+  overflow: hidden;
 }
 
 .agent-chat-composer :deep(.reply-box__top) {
-  padding-left: 0.875rem;
-  padding-right: 0.875rem;
+  padding-left: 0.75rem;
+  padding-right: 0.75rem;
 }
 
 .agent-chat-composer :deep(.reply-box .ProseMirror) {
   font-size: 0.9375rem;
   line-height: 1.5rem;
+  min-height: 2.5rem;
+  padding-bottom: 0.25rem;
+  padding-top: 0.25rem;
+}
+
+.agent-chat-composer :deep(.reply-box > div:first-child) {
+  border-bottom-color: transparent;
+}
+
+.agent-chat-composer :deep(.reply-box > div:last-child) {
+  border-top-color: transparent;
 }
 </style>

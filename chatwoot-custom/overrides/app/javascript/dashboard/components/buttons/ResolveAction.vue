@@ -74,7 +74,7 @@ const showOpenButton = computed(() => {
 
 const resolveActionLabel = computed(() => {
   return isSimpleMode.value
-    ? t('CONVERSATION.HEADER.FINALIZE_ATTENDANCE_ACTION')
+    ? t('CONVERSATION.HEADER.FINALIZE_SHORT')
     : t('CONVERSATION.HEADER.RESOLVE_ACTION');
 });
 
@@ -220,9 +220,17 @@ useEmitter(CMD_RESOLVE_CONVERSATION, onCmdResolveConversation);
     >
       <Button
         v-if="isOpen"
+        v-tooltip="
+          isSimpleMode ? t('CONVERSATION.HEADER.FINALIZE_ATTENDANCE_ACTION') : ''
+        "
         :label="resolveActionLabel"
+        :aria-label="
+          isSimpleMode
+            ? t('CONVERSATION.HEADER.FINALIZE_ATTENDANCE_ACTION')
+            : t('CONVERSATION.HEADER.RESOLVE_ACTION')
+        "
         size="sm"
-        :color="isSimpleMode ? 'blue' : 'slate'"
+        :color="isSimpleMode ? 'slate' : 'slate'"
         no-animation
         class="!outline-0"
         :class="
@@ -270,8 +278,8 @@ useEmitter(CMD_RESOLVE_CONVERSATION, onCmdResolveConversation);
         size="sm"
         no-animation
         class="ltr:rounded-l-none rtl:rounded-r-none !outline-0"
-        :class="isSimpleMode ? 'bg-n-brand text-white hover:opacity-90' : ''"
-        :color="isSimpleMode ? 'blue' : 'slate'"
+        :class="isSimpleMode ? '!bg-n-alpha-2 !text-n-slate-11 hover:!bg-n-alpha-3' : ''"
+        :color="isSimpleMode ? 'slate' : 'slate'"
         trailing-icon
         @click="openDropdown"
       />

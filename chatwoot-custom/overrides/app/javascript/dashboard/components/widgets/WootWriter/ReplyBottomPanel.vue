@@ -281,11 +281,11 @@ export default {
     :class="[
       wrapClass,
       isSimplifiedAgentUI
-        ? 'items-center gap-2 border-t border-n-weak/80 px-2.5 py-2'
+        ? 'items-center gap-2 border-t border-transparent px-2 py-1.5'
         : 'p-3 gap-3',
     ]"
   >
-    <div class="left-wrap" :class="isSimplifiedAgentUI ? '!gap-1.5' : ''">
+    <div class="left-wrap" :class="isSimplifiedAgentUI ? '!gap-1' : ''">
       <NextButton
         v-if="!isEditorDisabled"
         v-tooltip.top-end="$t('CONVERSATION.REPLYBOX.TIP_EMOJI_ICON')"
@@ -293,6 +293,7 @@ export default {
         slate
         faded
         sm
+        :class="isSimplifiedAgentUI ? 'rounded-full !text-n-slate-10' : ''"
         @click="toggleEmojiPicker"
       />
       <FileUpload
@@ -318,6 +319,7 @@ export default {
           slate
           faded
           sm
+          :class="isSimplifiedAgentUI ? 'rounded-full !text-n-slate-10' : ''"
         />
       </FileUpload>
       <NextButton
@@ -327,6 +329,7 @@ export default {
         slate
         faded
         sm
+        :class="isSimplifiedAgentUI ? 'rounded-full !text-n-slate-10' : ''"
         @click="toggleAudioRecorder"
       />
       <NextButton
@@ -336,6 +339,7 @@ export default {
         faded
         sm
         :label="recordingAudioDurationText"
+        :class="isSimplifiedAgentUI ? 'rounded-full !text-n-slate-10' : ''"
         @click="toggleAudioRecorderPlayPause"
       />
       <NextButton
@@ -345,6 +349,7 @@ export default {
         slate
         faded
         sm
+        :class="isSimplifiedAgentUI ? 'rounded-full !text-n-slate-10' : ''"
         @click="toggleMessageSignature"
       />
       <NextButton
@@ -355,24 +360,31 @@ export default {
         color="slate"
         sm
         :aria-pressed="quotedReplyEnabled"
+        :class="isSimplifiedAgentUI ? 'rounded-full !text-n-slate-10' : ''"
         @click="$emit('toggleQuotedReply')"
       />
       <NextButton
         v-if="enableWhatsAppTemplates"
         v-tooltip.top-end="$t('CONVERSATION.FOOTER.WHATSAPP_TEMPLATES')"
-        icon="i-ph-whatsapp-logo"
+        :icon="
+          isSimplifiedAgentUI ? 'i-ph-chat-text' : 'i-ph-whatsapp-logo'
+        "
         slate
         faded
         sm
+        :class="isSimplifiedAgentUI ? 'rounded-full !text-n-slate-10' : ''"
         @click="$emit('selectWhatsappTemplate')"
       />
       <NextButton
         v-if="enableContentTemplates"
         v-tooltip.top-end="'Content Templates'"
-        icon="i-ph-whatsapp-logo"
+        :icon="
+          isSimplifiedAgentUI ? 'i-ph-chat-text' : 'i-ph-whatsapp-logo'
+        "
         slate
         faded
         sm
+        :class="isSimplifiedAgentUI ? 'rounded-full !text-n-slate-10' : ''"
         @click="$emit('selectContentTemplate')"
       />
       <VideoCallButton
@@ -401,6 +413,7 @@ export default {
         slate
         faded
         sm
+        :class="isSimplifiedAgentUI ? 'rounded-full !text-n-slate-10' : ''"
         @click="toggleInsertArticle"
       />
     </div>
@@ -412,7 +425,11 @@ export default {
         :color="isNote ? 'amber' : 'blue'"
         :disabled="isSendDisabled"
         class="flex-shrink-0"
-        :class="isSimplifiedAgentUI ? 'rounded-full px-4 shadow-sm' : ''"
+        :class="
+          isSimplifiedAgentUI
+            ? 'rounded-full px-4 shadow-none'
+            : ''
+        "
         @click="onSend"
       />
     </div>

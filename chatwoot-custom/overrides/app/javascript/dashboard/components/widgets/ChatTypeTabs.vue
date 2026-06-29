@@ -62,26 +62,26 @@ useKeyboardEvents(keyboardEvents);
 <template>
   <div
     v-if="isSimpleMode"
-    class="agent-conversation-chip-list flex flex-wrap gap-2 px-4 py-3 border-b border-n-weak bg-n-background"
+    class="agent-conversation-chip-list flex flex-wrap gap-1.5 border-b border-n-weak bg-n-background px-4 py-2"
   >
     <button
       v-for="item in items"
       :key="item.key"
       type="button"
-      class="agent-conversation-chip inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition"
+      class="agent-conversation-chip inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-xs font-medium transition"
       :class="
         item.key === activeTab
-          ? 'bg-n-brand text-white shadow-sm dark:bg-n-brand/25 dark:text-n-brand dark:ring-1 dark:ring-n-brand/50'
-          : 'bg-n-alpha-2 text-n-slate-11 hover:bg-n-alpha-3'
+          ? 'bg-n-alpha-3 text-n-slate-12 ring-1 ring-n-weak dark:bg-n-brand/20 dark:text-n-slate-12 dark:ring-n-brand/40'
+          : 'bg-transparent text-n-slate-10 hover:bg-n-alpha-2 hover:text-n-slate-12'
       "
       @click="emit('chatTabChange', item.key)"
     >
       <span>{{ item.name }}</span>
       <span
-        class="inline-flex min-w-6 items-center justify-center rounded-full px-1.5 py-0.5 text-[0.6875rem] leading-none"
+        class="inline-flex min-w-5 items-center justify-center rounded-full px-1.5 py-0.5 text-[0.625rem] leading-none"
         :class="
           item.key === activeTab
-            ? 'bg-white/18 text-white dark:bg-n-brand/20 dark:text-n-brand'
+            ? 'bg-n-solid-1 text-n-slate-11 dark:bg-n-brand/20 dark:text-n-slate-12'
             : 'bg-n-solid-1 text-n-slate-10'
         "
       >
