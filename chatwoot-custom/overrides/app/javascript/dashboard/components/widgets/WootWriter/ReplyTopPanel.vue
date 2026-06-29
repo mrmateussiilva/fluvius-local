@@ -174,22 +174,24 @@ export default {
   methods: {
     syncSimplifiedPlaceholder() {
       this.$nextTick(() => {
-        if (
-          !this.isSimplifiedAgentUI ||
-          this.mode !== REPLY_EDITOR_MODES.REPLY
-        ) {
+        if (!this.isSimplifiedAgentUI) {
           return;
         }
 
-        const emptyNode = document.querySelector(
-          '.reply-box .ProseMirror p.empty-node:first-child'
+        const placeholder = this.$t('CONVERSATION.FOOTER.SIMPLE_MSG_INPUT');
+        const technicalPlaceholder = this.$t('CONVERSATION.FOOTER.MSG_INPUT');
+        const nodes = document.querySelectorAll(
+          '.reply-box .ProseMirror [data-placeholder], .reply-box .ProseMirror[data-placeholder]'
         );
-        if (!emptyNode) return;
 
-        emptyNode.setAttribute(
-          'data-placeholder',
-          this.$t('CONVERSATION.FOOTER.SIMPLE_MSG_INPUT')
-        );
+        nodes.forEach(node => {
+          const currentPlaceholder = node.getAttribute('data-placeholder');
+          if (this.mode === REPLY_EDITOR_MODES.REPLY) {
+            node.setAttribute('data-placeholder', placeholder);
+          } else if (currentPlaceholder === technicalPlaceholder) {
+            node.removeAttribute('data-placeholder');
+          }
+        });
       });
     },
   },
