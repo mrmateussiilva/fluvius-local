@@ -267,10 +267,21 @@ watch(
           isSimpleAgentMode ? 'top-4' : showMetaSection ? 'top-8' : 'top-4'
         "
       >
+        <button
+          v-if="isSimpleAgentMode"
+          v-tooltip="$t('CONVERSATION.HEADER.MORE_ACTIONS')"
+          type="button"
+          class="absolute -top-1 hidden size-7 items-center justify-center rounded-full bg-n-solid-1 text-n-slate-10 shadow-sm transition hover:text-n-slate-12 ltr:right-0 rtl:left-0 group-hover:inline-flex"
+          @click.stop="$emit('contextmenu', $event)"
+        >
+          <span class="i-lucide-more-vertical size-4" />
+        </button>
         <span
           class="ml-auto font-normal leading-4"
           :class="
-            isSimpleAgentMode ? 'text-[0.6875rem] text-n-slate-10' : 'text-xxs'
+            isSimpleAgentMode
+              ? 'text-[0.6875rem] text-n-slate-10 transition-opacity group-hover:opacity-0'
+              : 'text-xxs'
           "
         >
           <TimeAgo

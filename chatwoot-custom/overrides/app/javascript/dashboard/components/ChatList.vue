@@ -1,5 +1,13 @@
 <script setup>
-import { ref, unref, provide, computed, watch, onMounted } from 'vue';
+import {
+  ref,
+  unref,
+  provide,
+  computed,
+  watch,
+  onMounted,
+  onUnmounted,
+} from 'vue';
 import { useStore } from 'vuex';
 import { useRoute, useRouter } from 'vue-router';
 import {
@@ -39,7 +47,11 @@ import filterQueryGenerator from '../helper/filterQueryGenerator.js';
 import languages from 'dashboard/components/widgets/conversation/advancedFilterItems/languages';
 import countries from 'shared/constants/countries';
 import { generateValuesForEditCustomViews } from 'dashboard/helper/customViewsHelper';
-import { conversationListPageURL } from '../helper/URLHelper';
+import {
+  conversationListPageURL,
+  conversationUrl,
+  frontendURL,
+} from '../helper/URLHelper';
 import {
   isOnMentionsView,
   isOnParticipatingView,
@@ -52,7 +64,13 @@ import {
 import { matchesFilters } from '../store/modules/conversations/helpers/filterHelpers';
 import { CONVERSATION_EVENTS } from '../helper/AnalyticsHelper/events';
 import { ASSIGNEE_TYPE_TAB_PERMISSIONS } from 'dashboard/constants/permissions.js';
-import { isAgentSimpleMode } from 'dashboard/helper/agentSimpleMode';
+import {
+  cappedCount,
+  conversationSearchText,
+  isAgentSimpleMode,
+  isLikelyPhoneSearch,
+  isWhatsAppGroupConversation,
+} from 'dashboard/helper/agentSimpleMode';
 
 const props = defineProps({
   conversationInbox: { type: [String, Number], default: 0 },
@@ -78,6 +96,16 @@ const activeStatus = ref(wootConstants.STATUS_TYPE.OPEN);
 const activeSortBy = ref(wootConstants.SORT_BY_TYPE.LAST_ACTIVITY_AT_DESC);
 const showAdvancedFilters = ref(false);
 const simpleModeSearchQuery = ref('');
+const SIMPLE_AGENT_FILTERS = {
+  ME: wootConstants.ASSIGNEE_TYPE.ME,
+  NEW: wootConstants.ASSIGNEE_TYPE.UNASSIGNED,
+  UNREAD: 'unread',
+  GROUPS: 'groups',
+  ARCHIVED: 'archived',
+};
+
+const unreadCountFor = conversation =>
+  Number(conversation?.unread_count || conversation?.unreadCount || 0);
 // chatsOnView is to store the chats that are currently visible on the screen,
 // which mirrors the conversationList.
 const chatsOnView = ref([]);
@@ -186,12 +214,87 @@ const isSimpleAgentMode = computed(() =>
   )
 );
 
+const simpleModeEffectiveStatus = computed(() => {
+  if (
+    isSimpleAgentMode.value &&
+    activeAssigneeTab.value === SIMPLE_AGENT_FILTERS.ARCHIVED
+  ) {
+    return wootConstants.STATUS_TYPE.RESOLVED;
+  }
+
+  return activeStatus.value;
+});
+
+const simpleModeEffectiveAssigneeTab = computed(() => {
+  if (!isSimpleAgentMode.value) return activeAssigneeTab.value;
+
+  if (activeAssigneeTab.value === SIMPLE_AGENT_FILTERS.NEW) {
+    return wootConstants.ASSIGNEE_TYPE.UNASSIGNED;
+  }
+
+  return wootConstants.ASSIGNEE_TYPE.ME;
+});
+
+const simpleModeOpenFilters = computed(() => ({
+  inboxId: props.conversationInbox ? props.conversationInbox : undefined,
+  status: wootConstants.STATUS_TYPE.OPEN,
+  sortBy: activeSortBy.value,
+  labels: props.label ? [props.label] : undefined,
+  teamId: props.teamId || undefined,
+  conversationType: props.conversationType || undefined,
+}));
+
 const assigneeTabItems = computed(() => {
   const items = filterItemsByPermission(
     ASSIGNEE_TYPE_TAB_PERMISSIONS,
     userPermissions.value,
     item => item.permissions
   );
+
+  if (isSimpleAgentMode.value) {
+    const countFor = assigneeType => {
+      const countKey = items.find(({ key }) => key === assigneeType)?.count;
+      return countKey ? conversationStats.value[countKey] || 0 : 0;
+    };
+
+    const mineCount = countFor(wootConstants.ASSIGNEE_TYPE.ME);
+    const newCount = countFor(wootConstants.ASSIGNEE_TYPE.UNASSIGNED);
+    const accessibleOpenConversations = getSimpleModeAccessibleConversations();
+    const unreadCount = accessibleOpenConversations.filter(
+      conversation => unreadCountFor(conversation) > 0
+    ).length;
+    const groupCount = accessibleOpenConversations.filter(
+      isWhatsAppGroupConversation
+    ).length;
+
+    return [
+      {
+        key: SIMPLE_AGENT_FILTERS.ME,
+        name: t('CHAT_LIST.AGENT_MESSENGER_FILTERS.ME'),
+        count: mineCount,
+        displayCount: cappedCount(mineCount),
+      },
+      {
+        key: SIMPLE_AGENT_FILTERS.NEW,
+        name: t('CHAT_LIST.AGENT_MESSENGER_FILTERS.NEW'),
+        count: newCount,
+        displayCount: cappedCount(newCount),
+      },
+      {
+        key: SIMPLE_AGENT_FILTERS.UNREAD,
+        name: t('CHAT_LIST.AGENT_MESSENGER_FILTERS.UNREAD'),
+        count: unreadCount,
+        displayCount: cappedCount(unreadCount),
+      },
+      {
+        key: SIMPLE_AGENT_FILTERS.GROUPS,
+        name: t('CHAT_LIST.AGENT_MESSENGER_FILTERS.GROUPS'),
+        count: groupCount,
+        displayCount: cappedCount(groupCount),
+      },
+    ];
+  }
+
   const visibleItems = isSimpleAgentMode.value
     ? items.filter(({ key }) => key !== wootConstants.ASSIGNEE_TYPE.ALL)
     : items;
@@ -221,13 +324,13 @@ const showAssigneeInConversationCard = computed(() => {
 const currentPageFilterKey = computed(() => {
   return hasAppliedFiltersOrActiveFolders.value
     ? 'appliedFilters'
-    : activeAssigneeTab.value;
+    : simpleModeEffectiveAssigneeTab.value;
 });
 
 const inbox = useFunctionGetter('inboxes/getInbox', activeInbox);
 const currentPage = useFunctionGetter(
   'conversationPage/getCurrentPageFilter',
-  activeAssigneeTab
+  simpleModeEffectiveAssigneeTab
 );
 const currentFiltersPage = useFunctionGetter(
   'conversationPage/getCurrentPageFilter',
@@ -273,8 +376,8 @@ const conversationListPagination = computed(() => {
 const conversationFilters = computed(() => {
   return {
     inboxId: props.conversationInbox ? props.conversationInbox : undefined,
-    assigneeType: activeAssigneeTab.value,
-    status: activeStatus.value,
+    assigneeType: simpleModeEffectiveAssigneeTab.value,
+    status: simpleModeEffectiveStatus.value,
     sortBy: activeSortBy.value,
     page: conversationListPagination.value,
     labels: props.label ? [props.label] : undefined,
@@ -334,10 +437,42 @@ function filterByAssigneeTab(conversations) {
 
 function sortByUnreadStatus(conversations) {
   return [...conversations].sort((a, b) => {
-    const unreadCountDiff = (b.unread_count || 0) - (a.unread_count || 0);
+    const unreadCountDiff = unreadCountFor(b) - unreadCountFor(a);
     if (unreadCountDiff !== 0) return unreadCountDiff;
 
     return (b.last_activity_at || 0) - (a.last_activity_at || 0);
+  });
+}
+
+function uniqueConversations(conversations) {
+  const indexed = new Map();
+  conversations.forEach(conversation => {
+    if (conversation?.id) indexed.set(conversation.id, conversation);
+  });
+  return [...indexed.values()];
+}
+
+function getSimpleModeAccessibleConversations(
+  status = wootConstants.STATUS_TYPE.OPEN
+) {
+  const baseFilters = {
+    ...simpleModeOpenFilters.value,
+    status,
+  };
+
+  return uniqueConversations([
+    ...mineChatsList.value({
+      ...baseFilters,
+      assigneeType: wootConstants.ASSIGNEE_TYPE.ME,
+    }),
+    ...unAssignedChatsList.value({
+      ...baseFilters,
+      assigneeType: wootConstants.ASSIGNEE_TYPE.UNASSIGNED,
+    }),
+  ]).sort((a, b) => {
+    const aTimestamp = a.last_activity_at || a.timestamp || 0;
+    const bTimestamp = b.last_activity_at || b.timestamp || 0;
+    return bTimestamp - aTimestamp;
   });
 }
 
@@ -346,7 +481,37 @@ const conversationList = computed(() => {
 
   if (!hasAppliedFiltersOrActiveFolders.value) {
     const filters = conversationFilters.value;
-    if (
+    if (isSimpleAgentMode.value) {
+      if (activeAssigneeTab.value === SIMPLE_AGENT_FILTERS.UNREAD) {
+        localConversationList = getSimpleModeAccessibleConversations().filter(
+          conversation => unreadCountFor(conversation) > 0
+        );
+      } else if (activeAssigneeTab.value === SIMPLE_AGENT_FILTERS.GROUPS) {
+        localConversationList = getSimpleModeAccessibleConversations().filter(
+          isWhatsAppGroupConversation
+        );
+      } else if (activeAssigneeTab.value === SIMPLE_AGENT_FILTERS.ARCHIVED) {
+        localConversationList = mineChatsList.value({
+          ...filters,
+          assigneeType: wootConstants.ASSIGNEE_TYPE.ME,
+          status: wootConstants.STATUS_TYPE.RESOLVED,
+        });
+      } else if (activeAssigneeTab.value === SIMPLE_AGENT_FILTERS.NEW) {
+        localConversationList = [
+          ...unAssignedChatsList.value({
+            ...filters,
+            assigneeType: wootConstants.ASSIGNEE_TYPE.UNASSIGNED,
+          }),
+        ];
+      } else {
+        localConversationList = [
+          ...mineChatsList.value({
+            ...filters,
+            assigneeType: wootConstants.ASSIGNEE_TYPE.ME,
+          }),
+        ];
+      }
+    } else if (
       props.conversationType === wootConstants.CONVERSATION_TYPE.PARTICIPATING
     ) {
       localConversationList = filterByAssigneeTab(
@@ -392,29 +557,17 @@ const displayedConversationList = computed(() => {
   const query = normalizedSimpleModeSearchQuery.value;
 
   return conversationList.value.filter(conversation => {
-    const sender = conversation.meta?.sender || {};
-    const emailSubject =
-      conversation.custom_attributes?.email?.subject ||
-      conversation.customAttributes?.email?.subject ||
-      '';
-    const haystack = [
-      sender.name,
-      sender.phone_number,
-      sender.identifier,
-      sender.email,
-      conversation.display_id,
-      conversation.id,
-      conversation.last_non_activity_message?.content,
-      conversation.lastNonActivityMessage?.content,
-      emailSubject,
-    ]
-      .filter(Boolean)
-      .join(' ')
-      .toLowerCase();
-
-    return haystack.includes(query);
+    return conversationSearchText(conversation).includes(query);
   });
 });
+
+const shouldShowPhoneStartDisabled = computed(
+  () =>
+    isSimpleAgentMode.value &&
+    normalizedSimpleModeSearchQuery.value &&
+    !displayedConversationList.value.length &&
+    isLikelyPhoneSearch(normalizedSimpleModeSearchQuery.value)
+);
 
 const emptyListMessage = computed(() => {
   if (isSimpleAgentMode.value && normalizedSimpleModeSearchQuery.value) {
@@ -678,6 +831,11 @@ function updateAssigneeTab(selectedTab) {
     resetBulkActions();
     emitter.emit('clearSearchInput');
     activeAssigneeTab.value = selectedTab;
+    if (isSimpleAgentMode.value) {
+      store.dispatch('conversationPage/reset');
+      fetchConversations();
+      return;
+    }
     if (!currentPage.value) {
       fetchConversations();
     }
@@ -695,6 +853,51 @@ function onBasicFilterChange(value, type) {
 
 function updateSimpleModeSearch(value) {
   simpleModeSearchQuery.value = value;
+}
+
+function openConversation(conversation) {
+  if (!conversation?.id) return;
+
+  router.push({
+    path: frontendURL(
+      conversationUrl({
+        accountId: route.params.accountId,
+        id: conversation.id,
+      })
+    ),
+  });
+}
+
+function onSimpleModeSearchSubmit() {
+  if (!isSimpleAgentMode.value) return;
+  if (displayedConversationList.value.length === 1) {
+    openConversation(displayedConversationList.value[0]);
+  }
+}
+
+function openNewConversationFlow() {
+  if (!isSimpleAgentMode.value) return;
+
+  router.push({
+    name: 'contacts_dashboard_index',
+    params: { accountId: route.params.accountId },
+    query: normalizedSimpleModeSearchQuery.value
+      ? { search: simpleModeSearchQuery.value.trim() }
+      : {},
+  });
+}
+
+function handleAgentMessengerEvent(event) {
+  const action = event?.detail?.action;
+  if (action === 'new_conversation') {
+    openNewConversationFlow();
+    return;
+  }
+
+  const filter = event?.detail?.filter;
+  if (filter && Object.values(SIMPLE_AGENT_FILTERS).includes(filter)) {
+    updateAssigneeTab(filter);
+  }
 }
 
 function openLastSavedItemInFolder() {
@@ -765,9 +968,10 @@ async function markAsUnread(conversationId) {
     await store.dispatch('markMessagesUnread', {
       id: conversationId,
     });
+    useAlert(t('CONVERSATION.FEEDBACK.MARKED_UNREAD'));
     redirectToConversationList();
   } catch (error) {
-    // Ignore error
+    useAlert(t('CONVERSATION.FEEDBACK.ACTION_FAILED'));
   }
 }
 async function markAsRead(conversationId) {
@@ -775,8 +979,9 @@ async function markAsRead(conversationId) {
     await store.dispatch('markMessagesRead', {
       id: conversationId,
     });
+    useAlert(t('CONVERSATION.FEEDBACK.MARKED_READ'));
   } catch (error) {
-    // Ignore error
+    useAlert(t('CONVERSATION.FEEDBACK.ACTION_FAILED'));
   }
 }
 
@@ -813,9 +1018,21 @@ function toggleConversationStatus(
     payload.customAttributes = customAttributes;
   }
 
-  store.dispatch('toggleStatus', payload).then(() => {
-    useAlert(t('CONVERSATION.CHANGE_STATUS'));
-  });
+  store
+    .dispatch('toggleStatus', payload)
+    .then(() => {
+      if (
+        isSimpleAgentMode.value &&
+        status === wootConstants.STATUS_TYPE.RESOLVED
+      ) {
+        useAlert(t('CONVERSATION.FEEDBACK.FINALIZED'));
+      } else {
+        useAlert(t('CONVERSATION.CHANGE_STATUS'));
+      }
+    })
+    .catch(() => {
+      useAlert(t('CONVERSATION.FEEDBACK.ACTION_FAILED'));
+    });
 }
 
 function handleResolveConversation(conversationId, status, snoozedUntil) {
@@ -880,6 +1097,10 @@ useEmitter('fetch_conversation_stats', () => {
 });
 
 onMounted(() => {
+  window.addEventListener(
+    'fluvius:agent-messenger-action',
+    handleAgentMessengerEvent
+  );
   store.dispatch('setChatListFilters', conversationFilters.value);
   setFiltersFromUISettings();
   store.dispatch('setChatStatusFilter', activeStatus.value);
@@ -888,6 +1109,13 @@ onMounted(() => {
   if (hasActiveFolders.value) {
     store.dispatch('campaigns/get');
   }
+});
+
+onUnmounted(() => {
+  window.removeEventListener(
+    'fluvius:agent-messenger-action',
+    handleAgentMessengerEvent
+  );
 });
 
 const deleteConversationDialogRef = ref(null);
@@ -988,6 +1216,8 @@ watch(conversationFilters, (newVal, oldVal) => {
       @reset-filters="resetAndFetchData"
       @basic-filter-change="onBasicFilterChange"
       @update-search="updateSimpleModeSearch"
+      @submit-search="onSimpleModeSearchSubmit"
+      @new-conversation="openNewConversationFlow"
     />
 
     <TeleportWithDirection
@@ -1019,13 +1249,50 @@ watch(conversationFilters, (newVal, oldVal) => {
       @chat-tab-change="updateAssigneeTab"
     />
 
-    <p
+    <div
+      v-if="isSimpleAgentMode && !hasAppliedFiltersOrActiveFolders"
+      class="border-b border-n-weak bg-n-background px-4 py-2"
+    >
+      <button
+        v-if="activeAssigneeTab !== SIMPLE_AGENT_FILTERS.ARCHIVED"
+        type="button"
+        class="flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-medium text-n-slate-11 transition hover:bg-n-alpha-2"
+        @click="updateAssigneeTab(SIMPLE_AGENT_FILTERS.ARCHIVED)"
+      >
+        <span class="inline-flex items-center gap-2">
+          <span class="i-lucide-archive size-4" />
+          {{ $t('CHAT_LIST.AGENT_MESSENGER_FILTERS.ARCHIVED') }}
+        </span>
+        <span class="i-lucide-chevron-right size-4 text-n-slate-9" />
+      </button>
+      <button
+        v-else
+        type="button"
+        class="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-n-slate-11 transition hover:bg-n-alpha-2"
+        @click="updateAssigneeTab(SIMPLE_AGENT_FILTERS.ME)"
+      >
+        <span class="i-lucide-arrow-left size-4" />
+        {{ $t('CHAT_LIST.AGENT_MESSENGER_FILTERS.BACK_TO_ACTIVE') }}
+      </button>
+    </div>
+
+    <div
       v-if="!chatListLoading && !displayedConversationList.length"
-      class="flex overflow-auto justify-center items-center p-4 text-center text-n-slate-11"
+      class="flex flex-col overflow-auto justify-center items-center gap-3 p-4 text-center text-n-slate-11"
       :class="isSimpleAgentMode ? 'px-6 py-10 text-sm' : ''"
     >
-      {{ emptyListMessage }}
-    </p>
+      <p>{{ emptyListMessage }}</p>
+      <button
+        v-if="shouldShowPhoneStartDisabled"
+        type="button"
+        disabled
+        class="inline-flex items-center gap-2 rounded-full border border-n-weak px-4 py-2 text-sm font-medium text-n-slate-10"
+        :title="$t('CHAT_LIST.START_CONVERSATION_UNSUPPORTED')"
+      >
+        <span class="i-lucide-message-circle-plus size-4" />
+        {{ $t('CHAT_LIST.START_CONVERSATION_WITH_NUMBER') }}
+      </button>
+    </div>
     <ConversationBulkActions
       :conversations="selectedConversations"
       :all-conversations-selected="allConversationsSelected"

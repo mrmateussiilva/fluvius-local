@@ -117,10 +117,21 @@ const toggleStatus = (status, snoozedUntil, customAttributes = null) => {
     payload.customAttributes = customAttributes;
   }
 
-  store.dispatch('toggleStatus', payload).then(() => {
-    useAlert(t('CONVERSATION.CHANGE_STATUS'));
-    isLoading.value = false;
-  });
+  store
+    .dispatch('toggleStatus', payload)
+    .then(() => {
+      if (isSimpleMode.value && status === wootConstants.STATUS_TYPE.RESOLVED) {
+        useAlert(t('CONVERSATION.FEEDBACK.FINALIZED'));
+      } else {
+        useAlert(t('CONVERSATION.CHANGE_STATUS'));
+      }
+    })
+    .catch(() => {
+      useAlert(t('CONVERSATION.FEEDBACK.ACTION_FAILED'));
+    })
+    .finally(() => {
+      isLoading.value = false;
+    });
 };
 
 const handleResolveWithAttributes = ({ attributes, context }) => {
@@ -156,6 +167,9 @@ const onCmdResolveConversation = () => {
       conversationContext
     );
   } else {
+    if (isSimpleMode.value) {
+      useAlert(t('CONVERSATION.FEEDBACK.FINALIZING'));
+    }
     toggleStatus(wootConstants.STATUS_TYPE.RESOLVED);
   }
 };

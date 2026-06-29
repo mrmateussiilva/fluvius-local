@@ -45,6 +45,12 @@ const shouldShowSimpleSubtitle = computed(
 const shouldShowFeaturePlaceholder = computed(
   () => !(isSimpleMode.value && isConversationSelectionPrompt.value)
 );
+
+const emitAgentMessengerAction = detail => {
+  window.dispatchEvent(
+    new CustomEvent('fluvius:agent-messenger-action', { detail })
+  );
+};
 </script>
 
 <template>
@@ -77,6 +83,35 @@ const shouldShowFeaturePlaceholder = computed(
     >
       {{ $t('CONVERSATION.SIMPLE_EMPTY_STATE_SUBTITLE') }}
     </span>
+    <div
+      v-if="shouldShowSimpleSubtitle"
+      class="mt-5 flex flex-wrap items-center justify-center gap-2"
+    >
+      <button
+        type="button"
+        class="inline-flex items-center gap-2 rounded-full bg-n-brand px-4 py-2 text-sm font-medium text-white"
+        @click="emitAgentMessengerAction({ action: 'new_conversation' })"
+      >
+        <span class="i-lucide-message-circle-plus size-4" />
+        {{ $t('CONVERSATION.SIMPLE_EMPTY_ACTIONS.NEW_CONVERSATION') }}
+      </button>
+      <button
+        type="button"
+        class="inline-flex items-center gap-2 rounded-full bg-n-alpha-2 px-4 py-2 text-sm font-medium text-n-slate-11"
+        @click="emitAgentMessengerAction({ filter: 'unassigned' })"
+      >
+        <span class="i-lucide-user-plus size-4" />
+        {{ $t('CONVERSATION.SIMPLE_EMPTY_ACTIONS.NEW_CUSTOMERS') }}
+      </button>
+      <button
+        type="button"
+        class="inline-flex items-center gap-2 rounded-full bg-n-alpha-2 px-4 py-2 text-sm font-medium text-n-slate-11"
+        @click="emitAgentMessengerAction({ filter: 'unread' })"
+      >
+        <span class="i-lucide-mail-open size-4" />
+        {{ $t('CONVERSATION.SIMPLE_EMPTY_ACTIONS.UNREAD') }}
+      </button>
+    </div>
     <FeaturePlaceholder v-if="shouldShowFeaturePlaceholder" />
   </div>
 </template>

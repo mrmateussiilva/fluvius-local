@@ -14,8 +14,19 @@
       "INPUT": "Pesquisar pessoas, conversas, respostas salvas .."
     },
     "MESSENGER_SEARCH_PLACEHOLDER": "Pesquisar ou começar uma conversa",
-    "SEARCH_EMPTY": "Nenhuma conversa encontrada para esta pesquisa.",
+    "SEARCH_EMPTY": "Nenhuma conversa encontrada.",
+    "NEW_CONVERSATION": "Nova conversa",
+    "START_CONVERSATION_WITH_NUMBER": "Iniciar conversa com este número",
+    "START_CONVERSATION_UNSUPPORTED": "Este ambiente ainda não expõe um fluxo seguro para iniciar conversa por telefone.",
     "FILTER_ALL": "Todos",
+    "AGENT_MESSENGER_FILTERS": {
+      "ME": "Meus atendimentos",
+      "NEW": "Novos clientes",
+      "UNREAD": "Não lidas",
+      "GROUPS": "Grupos",
+      "ARCHIVED": "Arquivadas",
+      "BACK_TO_ACTIVE": "Voltar para atendimentos"
+    },
     "ASSIGNEE_TYPE_TABS": {
       "me": "Minhas",
       "unassigned": "Não atribuídas",

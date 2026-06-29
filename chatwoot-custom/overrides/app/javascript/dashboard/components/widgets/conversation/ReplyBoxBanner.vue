@@ -106,10 +106,11 @@ const selfAssignConversation = async () => {
 
 const onClickSelfAssign = async () => {
   try {
+    useAlert(t('CONVERSATION.FEEDBACK.ASSIGNING'));
     await selfAssignConversation();
-    useAlert(t('CONVERSATION.CHANGE_AGENT'));
+    useAlert(t('CONVERSATION.FEEDBACK.ASSIGNED'));
   } catch (error) {
-    useAlert(t('CONVERSATION.CHANGE_AGENT_FAILED'));
+    useAlert(t('CONVERSATION.FEEDBACK.ACTION_FAILED'));
   }
 };
 

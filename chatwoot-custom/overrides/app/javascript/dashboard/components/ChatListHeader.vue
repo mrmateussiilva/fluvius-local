@@ -28,6 +28,8 @@ const emit = defineEmits([
   'basicFilterChange',
   'filtersModal',
   'updateSearch',
+  'submitSearch',
+  'newConversation',
 ]);
 
 const { uiSettings, updateUISettings } = useUISettings();
@@ -89,13 +91,13 @@ const toggleConversationLayout = () => {
         </h1>
       </div>
       <NextButton
-        v-tooltip.left="$t('FILTER.TOOLTIP_LABEL')"
-        icon="i-lucide-sliders-horizontal"
+        v-tooltip.left="$t('CHAT_LIST.NEW_CONVERSATION')"
+        icon="i-lucide-message-circle-plus"
         slate
         sm
         faded
         class="shrink-0 rounded-full"
-        @click="emit('filtersModal')"
+        @click="emit('newConversation')"
       />
     </div>
 
@@ -109,6 +111,7 @@ const toggleConversationLayout = () => {
         class="w-full border-0 bg-transparent p-0 text-sm text-n-slate-12 placeholder:text-n-slate-10 focus:outline-none focus:ring-0"
         :placeholder="$t('CHAT_LIST.MESSENGER_SEARCH_PLACEHOLDER')"
         @input="emit('updateSearch', $event.target.value)"
+        @keydown.enter.prevent="emit('submitSearch')"
       />
       <button
         v-if="searchQuery"

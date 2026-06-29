@@ -3,6 +3,11 @@
     "SELECT_A_CONVERSATION": "Por favor, selecione uma conversa no painel da esquerda",
     "SIMPLE_EMPTY_STATE_TITLE": "Selecione uma conversa para começar o atendimento.",
     "SIMPLE_EMPTY_STATE_SUBTITLE": "Escolha um cliente na lista à esquerda.",
+    "SIMPLE_EMPTY_ACTIONS": {
+      "NEW_CONVERSATION": "Nova conversa",
+      "NEW_CUSTOMERS": "Ver novos clientes",
+      "UNREAD": "Ver não lidas"
+    },
     "CSAT_REPLY_MESSAGE": "Por favor, classifique a conversa",
     "404": "Desculpe, não conseguimos encontrar a conversa. Por favor, tente novamente",
     "SWITCH_VIEW_LAYOUT": "Alternar o layout",
@@ -175,6 +180,9 @@
       "RESOLVED": "Marcar como finalizado",
       "MARK_AS_UNREAD": "Marcar como não lida",
       "MARK_AS_READ": "Marcar como lida",
+      "ARCHIVE": "Arquivar",
+      "UNARCHIVE": "Desarquivar",
+      "COPY_PHONE": "Copiar telefone",
       "REOPEN": "Reabrir conversa",
       "SNOOZE": {
         "TITLE": "Adiar",
@@ -208,6 +216,17 @@
           "FAILED": "Não foi possível atribuir time. Por favor, tente novamente."
         }
       }
+    },
+    "FEEDBACK": {
+      "ASSIGNING": "Assumindo atendimento...",
+      "ASSIGNED": "Atendimento assumido",
+      "FINALIZING": "Finalizando...",
+      "FINALIZED": "Atendimento finalizado",
+      "MARKED_UNREAD": "Marcado como não lido",
+      "MARKED_READ": "Marcado como lido",
+      "UNARCHIVED": "Conversa desarquivada",
+      "PHONE_COPIED": "Telefone copiado",
+      "ACTION_FAILED": "Não foi possível executar ação"
     },
     "FOOTER": {
       "MESSAGE_SIGN_TOOLTIP": "Assinatura de mensagem",

@@ -56,3 +56,58 @@ export const isAgentSimpleMode = (user, accountId, currentRole = '') => {
 
   return accountRole(user, accountId, currentRole) === 'agent';
 };
+
+export const isSimplifiedAgentMode = isAgentSimpleMode;
+export const shouldUseAgentMessengerMode = isAgentSimpleMode;
+
+export const cappedCount = count => {
+  const numericCount = Number(count || 0);
+  return numericCount > 99 ? '99+' : String(numericCount);
+};
+
+export const isLikelyPhoneSearch = value => {
+  const digits = String(value || '').replace(/\D/g, '');
+  return digits.length >= 8;
+};
+
+export const conversationSearchText = conversation => {
+  const sender = conversation?.meta?.sender || {};
+  const emailSubject =
+    conversation?.custom_attributes?.email?.subject ||
+    conversation?.customAttributes?.email?.subject ||
+    '';
+
+  return [
+    sender.name,
+    sender.phone_number,
+    sender.identifier,
+    sender.email,
+    conversation?.display_id,
+    conversation?.id,
+    conversation?.identifier,
+    conversation?.meta?.sender?.additional_attributes?.source_id,
+    conversation?.contact_inbox?.source_id,
+    conversation?.last_non_activity_message?.content,
+    conversation?.lastNonActivityMessage?.content,
+    emailSubject,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+};
+
+export const isWhatsAppGroupConversation = conversation => {
+  const sender = conversation?.meta?.sender || {};
+  const identifiers = [
+    sender.identifier,
+    sender.additional_attributes?.source_id,
+    sender.additionalAttributes?.sourceId,
+    conversation?.identifier,
+    conversation?.contact_inbox?.source_id,
+    conversation?.contactInbox?.sourceId,
+    conversation?.additional_attributes?.source_id,
+    conversation?.additionalAttributes?.sourceId,
+  ];
+
+  return identifiers.some(value => String(value || '').includes('@g.us'));
+};
