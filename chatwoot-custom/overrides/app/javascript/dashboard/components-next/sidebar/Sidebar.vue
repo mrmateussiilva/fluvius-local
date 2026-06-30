@@ -206,6 +206,12 @@ const simpleAgentMenuItems = () => [
       },
     ],
   },
+  {
+    name: 'Canned Responses',
+    label: 'Respostas rápidas',
+    icon: 'i-lucide-message-square-quote',
+    to: accountScopedRoute('canned_list'),
+  },
 ];
 
 const newReportRoutes = () => [
