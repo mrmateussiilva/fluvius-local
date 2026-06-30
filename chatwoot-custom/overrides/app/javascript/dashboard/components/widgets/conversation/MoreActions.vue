@@ -29,6 +29,7 @@ const currentRole = useMapGetter('getCurrentRole');
 
 const [showEmailActionsModal, toggleEmailModal] = useToggle(false);
 const [showActionsDropdown, toggleDropdown] = useToggle(false);
+const CONVERSATION_SEARCH_OPEN = 'conversation-search:open';
 
 const currentChat = computed(() => store.getters.getSelectedChat);
 const currentContact = computed(() => {
@@ -73,6 +74,11 @@ const assignButtonLabel = computed(() =>
     ? t('CONVERSATION.HEADER.ASSUME_SHORT')
     : t('CONVERSATION.ASSUME_ATTENDANCE')
 );
+const conversationSearchLabel = computed(() => 'Pesquisar na conversa');
+
+const openConversationSearch = () => {
+  emitter.emit(CONVERSATION_SEARCH_OPEN);
+};
 
 const actionMenuItems = computed(() => {
   const items = [];
@@ -151,34 +157,6 @@ const actionMenuItems = computed(() => {
 
   return items;
 });
-
-const handleActionClick = ({ action }) => {
-  toggleDropdown(false);
-
-  if (action === 'mute') {
-    store.dispatch('muteConversation', currentChat.value.id);
-    useAlert(t('CONTACT_PANEL.MUTED_SUCCESS'));
-  } else if (action === 'unmute') {
-    store.dispatch('unmuteConversation', currentChat.value.id);
-    useAlert(t('CONTACT_PANEL.UNMUTED_SUCCESS'));
-  } else if (action === 'send_transcript') {
-    toggleEmailModal();
-  }
-
-  if (action === 'assign_to_me') {
-    onAssignToMe();
-  } else if (action === 'mark_unread') {
-    markConversationUnread();
-  } else if (action === 'mark_read') {
-    markConversationRead();
-  } else if (action === 'copy_phone') {
-    copyPhone();
-  } else if (action === 'archive' || action === 'finalize') {
-    finalizeAttendance();
-  } else if (action === 'reopen') {
-    reopenConversation();
-  }
-};
 
 const selfAssignConversation = async () => {
   const { avatar_url, ...rest } = currentUser.value || {};
@@ -262,6 +240,34 @@ const reopenConversation = async () => {
   }
 };
 
+const handleActionClick = ({ action }) => {
+  toggleDropdown(false);
+
+  if (action === 'mute') {
+    store.dispatch('muteConversation', currentChat.value.id);
+    useAlert(t('CONTACT_PANEL.MUTED_SUCCESS'));
+  } else if (action === 'unmute') {
+    store.dispatch('unmuteConversation', currentChat.value.id);
+    useAlert(t('CONTACT_PANEL.UNMUTED_SUCCESS'));
+  } else if (action === 'send_transcript') {
+    toggleEmailModal();
+  }
+
+  if (action === 'assign_to_me') {
+    onAssignToMe();
+  } else if (action === 'mark_unread') {
+    markConversationUnread();
+  } else if (action === 'mark_read') {
+    markConversationRead();
+  } else if (action === 'copy_phone') {
+    copyPhone();
+  } else if (action === 'archive' || action === 'finalize') {
+    finalizeAttendance();
+  } else if (action === 'reopen') {
+    reopenConversation();
+  }
+};
+
 const mute = () => {
   store.dispatch('muteConversation', currentChat.value.id);
   useAlert(t('CONTACT_PANEL.MUTED_SUCCESS'));
@@ -299,6 +305,16 @@ onUnmounted(() => {
       v-else
       :conversation-id="currentChat.id"
       :status="currentChat.status"
+    />
+    <ButtonV4
+      v-tooltip="conversationSearchLabel"
+      size="sm"
+      variant="ghost"
+      color="slate"
+      icon="i-lucide-search"
+      class="rounded-full hover:bg-n-alpha-2"
+      :aria-label="conversationSearchLabel"
+      @click="openConversationSearch"
     />
     <div
       v-on-clickaway="() => toggleDropdown(false)"
