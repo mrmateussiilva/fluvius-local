@@ -665,17 +665,17 @@ export default {
     <div ref="topBannerRef">
       <div
         v-if="isConversationSearchOpen"
-        class="mx-2 mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-n-weak bg-n-background px-3 py-2 shadow-sm"
+        class="mx-2 mt-2 flex min-h-14 min-w-0 items-center gap-2 rounded-lg border border-n-weak bg-n-background px-3 py-2 shadow-sm"
       >
         <div
-          class="flex min-w-[12rem] flex-1 items-center gap-2 rounded-lg bg-n-alpha-1 px-2 py-1.5"
+          class="flex h-10 min-w-0 flex-1 items-center gap-2 rounded-lg bg-n-alpha-1 px-3"
         >
           <span class="i-lucide-search size-4 flex-shrink-0 text-n-slate-10" />
           <input
             ref="conversationSearchInputRef"
             v-model="conversationSearchTerm"
             type="search"
-            class="min-w-0 flex-1 border-0 bg-transparent p-0 text-sm text-n-slate-12 outline-none placeholder:text-n-slate-10"
+            class="h-full min-w-0 flex-1 border-0 bg-transparent p-0 text-sm leading-5 text-n-slate-12 outline-none placeholder:text-n-slate-10"
             :placeholder="conversationSearchPlaceholder"
             :aria-label="conversationSearchInputLabel"
             @keydown="handleConversationSearchKeydown"
@@ -683,22 +683,22 @@ export default {
         </div>
         <span
           v-if="conversationSearchCounterText"
-          class="min-w-[3.5rem] text-center text-xs font-medium text-n-slate-11"
+          class="inline-flex h-8 min-w-[3.5rem] shrink-0 items-center justify-center text-center text-xs font-medium text-n-slate-11"
         >
           {{ conversationSearchCounterText }}
         </span>
         <span
           v-else-if="shouldShowConversationSearchEmptyState"
-          class="text-xs font-medium text-n-ruby-11"
+          class="min-w-0 max-w-[14rem] truncate text-xs font-medium text-n-ruby-11"
         >
           {{ conversationSearchEmptyText }}
         </span>
-        <span v-else class="text-xs text-n-slate-10">
+        <span v-else class="min-w-0 max-w-[14rem] truncate text-xs text-n-slate-10">
           {{ conversationSearchLoadedOnlyText }}
         </span>
         <button
           type="button"
-          class="grid size-8 place-content-center rounded-lg text-n-slate-11 hover:bg-n-alpha-2 disabled:cursor-not-allowed disabled:opacity-40"
+          class="grid size-9 shrink-0 place-content-center rounded-lg text-n-slate-11 hover:bg-n-alpha-2 disabled:cursor-not-allowed disabled:opacity-40"
           :title="conversationSearchPreviousLabel"
           :aria-label="conversationSearchPreviousLabel"
           :disabled="!conversationSearchResultCount"
@@ -708,7 +708,7 @@ export default {
         </button>
         <button
           type="button"
-          class="grid size-8 place-content-center rounded-lg text-n-slate-11 hover:bg-n-alpha-2 disabled:cursor-not-allowed disabled:opacity-40"
+          class="grid size-9 shrink-0 place-content-center rounded-lg text-n-slate-11 hover:bg-n-alpha-2 disabled:cursor-not-allowed disabled:opacity-40"
           :title="conversationSearchNextLabel"
           :aria-label="conversationSearchNextLabel"
           :disabled="!conversationSearchResultCount"
@@ -718,7 +718,7 @@ export default {
         </button>
         <button
           type="button"
-          class="grid size-8 place-content-center rounded-lg text-n-slate-11 hover:bg-n-alpha-2"
+          class="grid size-9 shrink-0 place-content-center rounded-lg text-n-slate-11 hover:bg-n-alpha-2"
           :title="conversationSearchCloseLabel"
           :aria-label="conversationSearchCloseLabel"
           @click="closeConversationSearch"

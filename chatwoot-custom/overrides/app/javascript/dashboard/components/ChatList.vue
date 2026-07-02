@@ -1251,27 +1251,27 @@ watch(conversationFilters, (newVal, oldVal) => {
 
     <div
       v-if="isSimpleAgentMode && !hasAppliedFiltersOrActiveFolders"
-      class="border-b border-n-weak bg-n-background px-4 py-2"
+      class="border-b border-n-weak bg-n-background px-4 pb-3 pt-2"
     >
       <button
         v-if="activeAssigneeTab !== SIMPLE_AGENT_FILTERS.ARCHIVED"
         type="button"
-        class="flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-medium text-n-slate-11 transition hover:bg-n-alpha-2"
+        class="flex h-10 w-full items-center justify-between rounded-xl px-3 text-sm font-medium text-n-slate-11 transition hover:bg-n-alpha-2"
         @click="updateAssigneeTab(SIMPLE_AGENT_FILTERS.ARCHIVED)"
       >
-        <span class="inline-flex items-center gap-2">
-          <span class="i-lucide-archive size-4" />
+        <span class="inline-flex min-w-0 items-center gap-2">
+          <span class="i-lucide-archive size-4 shrink-0" />
           {{ $t('CHAT_LIST.AGENT_MESSENGER_FILTERS.ARCHIVED') }}
         </span>
-        <span class="i-lucide-chevron-right size-4 text-n-slate-9" />
+        <span class="i-lucide-chevron-right size-4 shrink-0 text-n-slate-9" />
       </button>
       <button
         v-else
         type="button"
-        class="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-n-slate-11 transition hover:bg-n-alpha-2"
+        class="inline-flex h-10 w-full items-center gap-2 rounded-xl px-3 text-sm font-medium text-n-slate-11 transition hover:bg-n-alpha-2"
         @click="updateAssigneeTab(SIMPLE_AGENT_FILTERS.ME)"
       >
-        <span class="i-lucide-arrow-left size-4" />
+        <span class="i-lucide-arrow-left size-4 shrink-0" />
         {{ $t('CHAT_LIST.AGENT_MESSENGER_FILTERS.BACK_TO_ACTIVE') }}
       </button>
     </div>

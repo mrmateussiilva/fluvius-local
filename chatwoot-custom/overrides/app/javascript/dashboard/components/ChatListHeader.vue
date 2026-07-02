@@ -79,9 +79,9 @@ const toggleConversationLayout = () => {
 <template>
   <div
     v-if="shouldUseMessengerHeader"
-    class="agent-conversation-list border-b border-n-weak bg-n-background px-4 pb-2.5 pt-3"
+    class="agent-conversation-list border-b border-n-weak bg-n-background px-4 pb-3 pt-3"
   >
-    <div class="mb-2.5 flex items-center justify-between gap-3">
+    <div class="mb-3 flex items-center justify-between gap-3">
       <div class="min-w-0">
         <h1
           class="truncate text-lg font-semibold text-n-slate-12"
@@ -102,13 +102,13 @@ const toggleConversationLayout = () => {
     </div>
 
     <label
-      class="flex h-10 items-center gap-2.5 rounded-full border border-transparent bg-n-alpha-2 px-3.5 text-sm text-n-slate-11 transition focus-within:bg-n-solid-1 focus-within:ring-1 focus-within:ring-n-weak"
+      class="flex h-11 w-full items-center gap-2.5 rounded-xl border border-n-weak bg-n-alpha-1 px-3.5 text-sm text-n-slate-11 transition focus-within:border-n-slate-6 focus-within:bg-n-solid-1 focus-within:ring-1 focus-within:ring-n-weak"
     >
-      <span class="i-lucide-search size-4 shrink-0 text-n-slate-9" />
+      <span class="i-lucide-search size-4 shrink-0 self-center text-n-slate-9" />
       <input
         :value="searchQuery"
         type="search"
-        class="w-full border-0 bg-transparent p-0 text-sm text-n-slate-12 placeholder:text-n-slate-10 focus:outline-none focus:ring-0"
+        class="h-full min-w-0 flex-1 border-0 bg-transparent p-0 text-sm leading-5 text-n-slate-12 placeholder:text-n-slate-10 focus:outline-none focus:ring-0"
         :placeholder="$t('CHAT_LIST.MESSENGER_SEARCH_PLACEHOLDER')"
         @input="emit('updateSearch', $event.target.value)"
         @keydown.enter.prevent="emit('submitSearch')"

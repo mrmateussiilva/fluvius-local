@@ -62,13 +62,13 @@ useKeyboardEvents(keyboardEvents);
 <template>
   <div
     v-if="isSimpleMode"
-    class="agent-conversation-chip-list flex flex-wrap gap-1.5 border-b border-n-weak bg-n-background px-4 py-2"
+    class="agent-conversation-chip-list flex flex-wrap items-center gap-2 border-b border-n-weak bg-n-background px-4 py-2"
   >
     <button
       v-for="item in items"
       :key="item.key"
       type="button"
-      class="agent-conversation-chip inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-xs font-medium transition"
+      class="agent-conversation-chip inline-flex h-9 max-w-full items-center justify-center gap-2 rounded-full px-3 text-xs font-medium leading-none transition"
       :class="
         item.key === activeTab
           ? 'bg-n-alpha-3 text-n-slate-12 ring-1 ring-n-weak dark:bg-n-brand/20 dark:text-n-slate-12 dark:ring-n-brand/40'
@@ -76,9 +76,9 @@ useKeyboardEvents(keyboardEvents);
       "
       @click="emit('chatTabChange', item.key)"
     >
-      <span>{{ item.name }}</span>
+      <span class="truncate leading-none">{{ item.name }}</span>
       <span
-        class="inline-flex min-w-5 items-center justify-center rounded-full px-1.5 py-0.5 text-[0.625rem] leading-none"
+        class="inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full px-1.5 text-[0.6875rem] font-semibold leading-none"
         :class="
           item.key === activeTab
             ? 'bg-n-solid-1 text-n-slate-11 dark:bg-n-brand/20 dark:text-n-slate-12'
