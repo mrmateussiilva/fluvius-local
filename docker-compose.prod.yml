@@ -86,6 +86,7 @@ services:
       ENABLE_ACCOUNT_SIGNUP: ${CHATWOOT_ENABLE_ACCOUNT_SIGNUP}
       ALLOW_PRIVATE_WEBHOOK_URLS: ${ALLOW_PRIVATE_WEBHOOK_URLS:-true}
       FLUVIUS_FILTER_EVOLUTION_WEBHOOKS: ${FLUVIUS_FILTER_EVOLUTION_WEBHOOKS:-true}
+      FLUVIUS_EVOLUTION_MEDIA_BASE_URL: ${FLUVIUS_EVOLUTION_MEDIA_BASE_URL:-http://chatwoot:3000}
 
       MAILER_SENDER_EMAIL: ${MAILER_SENDER_EMAIL}
       SMTP_ADDRESS: ${SMTP_ADDRESS}
@@ -113,6 +114,7 @@ services:
       - chatwoot_storage:/app/storage
       - chatwoot_public_uploads:/app/public/uploads
       - ./chatwoot-initializers/filter_evolution_api_inbox_webhooks.rb:/app/config/initializers/filter_evolution_api_inbox_webhooks.rb:ro
+      - ./chatwoot-initializers/evolution_media_delivery_guard.rb:/app/config/initializers/evolution_media_delivery_guard.rb:ro
       - ./brand-assets:/app/public/brand-assets:ro
       - ./brand-assets:/app/public/packs/brand-assets:ro
 
@@ -164,6 +166,7 @@ services:
       ENABLE_ACCOUNT_SIGNUP: ${CHATWOOT_ENABLE_ACCOUNT_SIGNUP}
       ALLOW_PRIVATE_WEBHOOK_URLS: ${ALLOW_PRIVATE_WEBHOOK_URLS:-true}
       FLUVIUS_FILTER_EVOLUTION_WEBHOOKS: ${FLUVIUS_FILTER_EVOLUTION_WEBHOOKS:-true}
+      FLUVIUS_EVOLUTION_MEDIA_BASE_URL: ${FLUVIUS_EVOLUTION_MEDIA_BASE_URL:-http://chatwoot:3000}
 
       MAILER_SENDER_EMAIL: ${MAILER_SENDER_EMAIL}
       SMTP_ADDRESS: ${SMTP_ADDRESS}
@@ -187,6 +190,7 @@ services:
       - chatwoot_storage:/app/storage
       - chatwoot_public_uploads:/app/public/uploads
       - ./chatwoot-initializers/filter_evolution_api_inbox_webhooks.rb:/app/config/initializers/filter_evolution_api_inbox_webhooks.rb:ro
+      - ./chatwoot-initializers/evolution_media_delivery_guard.rb:/app/config/initializers/evolution_media_delivery_guard.rb:ro
       - ./brand-assets:/app/public/brand-assets:ro
       - ./brand-assets:/app/public/packs/brand-assets:ro
 

@@ -83,6 +83,7 @@ services:
       ENABLE_ACCOUNT_SIGNUP: "true"
       ALLOW_PRIVATE_WEBHOOK_URLS: ${ALLOW_PRIVATE_WEBHOOK_URLS}
       FLUVIUS_FILTER_EVOLUTION_WEBHOOKS: ${FLUVIUS_FILTER_EVOLUTION_WEBHOOKS:-true}
+      FLUVIUS_EVOLUTION_MEDIA_BASE_URL: ${FLUVIUS_EVOLUTION_MEDIA_BASE_URL:-http://chatwoot:3000}
       ENABLE_PLATFORM_APIS: "true"
 
       MAILER_SENDER_EMAIL: ${MAILER_SENDER_EMAIL}
@@ -97,6 +98,7 @@ services:
       - ./chatwoot-initializers/allow_private_webhooks.rb:/app/config/initializers/allow_private_webhooks.rb:ro
       - ./chatwoot-initializers/z_fluvius_ai_agents.rb:/app/config/initializers/z_fluvius_ai_agents.rb:ro
       - ./chatwoot-initializers/filter_evolution_api_inbox_webhooks.rb:/app/config/initializers/filter_evolution_api_inbox_webhooks.rb:ro
+      - ./chatwoot-initializers/evolution_media_delivery_guard.rb:/app/config/initializers/evolution_media_delivery_guard.rb:ro
       - ./brand-assets:/app/public/brand-assets:ro
       - ./brand-assets:/app/public/packs/brand-assets:ro
 
@@ -142,6 +144,7 @@ services:
       ENABLE_ACCOUNT_SIGNUP: "true"
       ALLOW_PRIVATE_WEBHOOK_URLS: ${ALLOW_PRIVATE_WEBHOOK_URLS}
       FLUVIUS_FILTER_EVOLUTION_WEBHOOKS: ${FLUVIUS_FILTER_EVOLUTION_WEBHOOKS:-true}
+      FLUVIUS_EVOLUTION_MEDIA_BASE_URL: ${FLUVIUS_EVOLUTION_MEDIA_BASE_URL:-http://chatwoot:3000}
       ENABLE_PLATFORM_APIS: "true"
 
       MAILER_SENDER_EMAIL: ${MAILER_SENDER_EMAIL}
@@ -156,6 +159,7 @@ services:
       - ./chatwoot-initializers/allow_private_webhooks.rb:/app/config/initializers/allow_private_webhooks.rb:ro
       - ./chatwoot-initializers/z_fluvius_ai_agents.rb:/app/config/initializers/z_fluvius_ai_agents.rb:ro
       - ./chatwoot-initializers/filter_evolution_api_inbox_webhooks.rb:/app/config/initializers/filter_evolution_api_inbox_webhooks.rb:ro
+      - ./chatwoot-initializers/evolution_media_delivery_guard.rb:/app/config/initializers/evolution_media_delivery_guard.rb:ro
 
     command: bundle exec sidekiq -C config/sidekiq.yml
 
