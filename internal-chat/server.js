@@ -93,6 +93,9 @@ const CLIENT_PUBLIC_FIELDS = `
   integration_last_checked_at,
   integration_last_error,
   integration_repaired_at,
+  archived_at,
+  archived_reason,
+  archive_cleanup,
   created_at,
   updated_at
 `;
@@ -341,7 +344,10 @@ async function migrate() {
       ADD COLUMN IF NOT EXISTS integration_status TEXT NOT NULL DEFAULT 'pending',
       ADD COLUMN IF NOT EXISTS integration_last_checked_at TIMESTAMP,
       ADD COLUMN IF NOT EXISTS integration_last_error TEXT,
-      ADD COLUMN IF NOT EXISTS integration_repaired_at TIMESTAMP;
+      ADD COLUMN IF NOT EXISTS integration_repaired_at TIMESTAMP,
+      ADD COLUMN IF NOT EXISTS archived_at TIMESTAMP,
+      ADD COLUMN IF NOT EXISTS archived_reason TEXT,
+      ADD COLUMN IF NOT EXISTS archive_cleanup JSONB;
 
     CREATE TABLE IF NOT EXISTS fluvius_password_reset_tokens (
       token_hash TEXT PRIMARY KEY,
@@ -1914,6 +1920,14 @@ async function cleanupProvisioning(created) {
   return cleanup;
 }
 
+async function logoutEvolutionInstance(instanceName) {
+  if (!instanceName) return 'skipped';
+  const response = await evoFetch(`/instance/logout/${instanceName}`, { method: 'DELETE' });
+  return response.status < 300 || response.status === 404
+    ? 'disconnected'
+    : { status: response.status, error: response.data };
+}
+
 async function enableEvolutionHistorySync(instanceName, accountId, userToken, nameInbox = null) {
   const settings = await evoFetch(`/settings/set/${instanceName}`, {
     method: 'POST',
@@ -3083,8 +3097,10 @@ app.get('/manager', (_req, res) => {
 // ─── Client Provisioning ─────────────────────────────────────────────────────
 
 // List clients
-app.get('/manager/api/clients', async (_req, res) => {
-  const { rows } = await pool.query(`SELECT ${CLIENT_PUBLIC_FIELDS} FROM fluvius_clients ORDER BY created_at DESC`);
+app.get('/manager/api/clients', async (req, res) => {
+  const includeArchived = String(req.query.include_archived || '') === 'true';
+  const where = includeArchived ? '' : 'WHERE archived_at IS NULL';
+  const { rows } = await pool.query(`SELECT ${CLIENT_PUBLIC_FIELDS} FROM fluvius_clients ${where} ORDER BY created_at DESC`);
   res.json(rows.map(row => ({ ...row, chatwoot_url: CHATWOOT_PUBLIC_URL })));
 });
 
@@ -4476,12 +4492,100 @@ app.post('/manager/api/clients/:id/automations/:ruleId/toggle', async (req, res)
   }
 });
 
-// Delete client + Evolution instance
+// Archive client safely: disconnects WhatsApp sessions, keeps Fluvius data.
+app.post('/manager/api/clients/:id/archive', async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (isNaN(id)) return res.status(400).json({ error: 'invalid id' });
+
+    const { rows } = await pool.query('SELECT * FROM fluvius_clients WHERE id = $1', [id]);
+    if (!rows.length) return res.status(404).json({ error: 'client not found' });
+    const client = rows[0];
+    if (client.archived_at) {
+      return res.status(409).json({ error: 'client already archived' });
+    }
+
+    const extraInboxes = await pool.query(
+      'SELECT id, instance_name FROM fluvius_client_inboxes WHERE client_id = $1 ORDER BY created_at ASC',
+      [id],
+    );
+    const cleanup = {
+      main_instance: await logoutEvolutionInstance(client.instance_name),
+      extra_instances: [],
+    };
+
+    for (const inbox of extraInboxes.rows) {
+      cleanup.extra_instances.push({
+        id: inbox.id,
+        instance_name: inbox.instance_name,
+        result: await logoutEvolutionInstance(inbox.instance_name),
+      });
+    }
+
+    const reason = String(req.body?.reason || '').trim().slice(0, 500) || null;
+
+    await pool.query(
+      `UPDATE fluvius_client_inboxes
+       SET status = 'pending', updated_at = NOW()
+       WHERE client_id = $1`,
+      [id],
+    );
+
+    const updated = await pool.query(
+      `UPDATE fluvius_clients
+       SET archived_at = NOW(),
+           archived_reason = $2,
+           archive_cleanup = $3::jsonb,
+           status = 'pending',
+           updated_at = NOW()
+       WHERE id = $1
+       RETURNING ${CLIENT_PUBLIC_FIELDS}`,
+      [id, reason, JSON.stringify(cleanup)],
+    );
+
+    res.json({ ok: true, client: { ...updated.rows[0], chatwoot_url: CHATWOOT_PUBLIC_URL }, cleanup });
+  } catch (err) {
+    res.status(500).json({ step: 'archive_client', error: err.message });
+  }
+});
+
+app.post('/manager/api/clients/:id/restore', async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (isNaN(id)) return res.status(400).json({ error: 'invalid id' });
+
+    const updated = await pool.query(
+      `UPDATE fluvius_clients
+       SET archived_at = NULL,
+           archived_reason = NULL,
+           archive_cleanup = NULL,
+           status = 'pending',
+           updated_at = NOW()
+       WHERE id = $1
+       RETURNING ${CLIENT_PUBLIC_FIELDS}`,
+      [id],
+    );
+    if (!updated.rowCount) return res.status(404).json({ error: 'client not found' });
+
+    res.json({ ok: true, client: { ...updated.rows[0], chatwoot_url: CHATWOOT_PUBLIC_URL } });
+  } catch (err) {
+    res.status(500).json({ step: 'restore_client', error: err.message });
+  }
+});
+
+// Destructive delete kept for maintenance only. Manager UI uses archive instead.
 app.delete('/manager/api/clients/:id', async (req, res) => {
   const id = Number(req.params.id);
   const { rows } = await pool.query('SELECT * FROM fluvius_clients WHERE id = $1', [id]);
   if (!rows.length) return res.status(404).json({ error: 'not found' });
   const client = rows[0];
+  const confirmation = String(req.body?.confirmation || '');
+  if (confirmation !== `DELETE ${client.name}`) {
+    return res.status(400).json({
+      error: 'destructive_delete_confirmation_required',
+      confirmation: `DELETE ${client.name}`,
+    });
+  }
   const cleanup = {};
   if (client.instance_name) {
     const evo = await evoFetch(`/instance/delete/${client.instance_name}`, { method: 'DELETE' });
@@ -4501,10 +4605,23 @@ async function getClientByToken(token) {
   const { rows } = await pool.query("SELECT *, 'main' as token_type FROM fluvius_clients WHERE token = $1", [token]);
   if (rows.length) return rows[0];
 
-  const extraRows = await pool.query("SELECT *, 'extra' as token_type, channel_display_name as name FROM fluvius_client_inboxes WHERE token = $1", [token]);
+  const extraRows = await pool.query(
+    `SELECT i.*, 'extra' as token_type, i.channel_display_name as name, c.archived_at, c.archived_reason
+     FROM fluvius_client_inboxes i
+     INNER JOIN fluvius_clients c ON c.id = i.client_id
+     WHERE i.token = $1`,
+    [token],
+  );
   if (extraRows.rows.length) return extraRows.rows[0];
 
   return null;
+}
+
+function archivedClientPayload() {
+  return {
+    error: 'client_archived',
+    message: 'Empresa arquivada. Restaure no Manager antes de reconectar o WhatsApp.',
+  };
 }
 
 // Onboarding page
@@ -4517,13 +4634,20 @@ app.get('/onboard/:token/info', async (req, res) => {
   const client = await getClientByToken(req.params.token);
   if (!client) return res.status(404).json({ error: 'Link inválido ou expirado' });
   const chatwootUrl = process.env.CHATWOOT_PUBLIC_URL || process.env.CHATWOOT_FRONTEND_URL || 'http://localhost:3000';
-  res.json({ name: client.name, status: client.status, phone: client.phone, chatwootUrl });
+  res.json({
+    name: client.name,
+    status: client.archived_at ? 'archived' : client.status,
+    phone: client.phone,
+    chatwootUrl,
+    archived_at: client.archived_at,
+  });
 });
 
 // Get QR code for onboarding
 app.get('/onboard/:token/qr', async (req, res) => {
   const client = await getClientByToken(req.params.token);
   if (!client) return res.status(404).json({ error: 'Link inválido' });
+  if (client.archived_at) return res.status(409).json(archivedClientPayload());
   const { status, data } = await evoFetch(`/instance/connect/${client.instance_name}`);
   res.status(status).json(data);
 });
@@ -4532,6 +4656,7 @@ app.get('/onboard/:token/qr', async (req, res) => {
 app.post('/onboard/:token/phone', async (req, res) => {
   const client = await getClientByToken(req.params.token);
   if (!client) return res.status(404).json({ error: 'Link inválido' });
+  if (client.archived_at) return res.status(409).json(archivedClientPayload());
   const phone = String(req.body.phone || '').replace(/\D/g, '');
   if (!phone || phone.length < 10) return res.status(400).json({ error: 'Número inválido' });
   const { status, data } = await evoFetch(`/instance/connect/${client.instance_name}?number=${encodeURIComponent(phone)}`);
@@ -4549,6 +4674,7 @@ app.post('/onboard/:token/phone', async (req, res) => {
 app.get('/onboard/:token/status', async (req, res) => {
   const client = await getClientByToken(req.params.token);
   if (!client) return res.status(404).json({ error: 'Link inválido' });
+  if (client.archived_at) return res.status(409).json(archivedClientPayload());
   const { data } = await evoFetch(`/instance/connectionState/${client.instance_name}`);
   const state = (data?.instance?.state || data?.state || '').toLowerCase();
   const phone = data?.instance?.profileName || data?.instance?.wuid?.replace('@s.whatsapp.net','') || '';
@@ -4580,6 +4706,7 @@ app.get('/client/:token/settings', async (req, res) => {
   const token = req.params.token;
   const client = await getClientByToken(token);
   if (!client) return res.status(404).json({ error: 'Link inválido ou expirado' });
+  if (client.archived_at) return res.status(409).json(archivedClientPayload());
 
   let connectionState = 'close';
   let phone = client.phone || '';
@@ -4631,6 +4758,7 @@ app.post('/client/:token/settings', async (req, res) => {
   const token = req.params.token;
   const client = await getClientByToken(token);
   if (!client) return res.status(404).json({ error: 'Link inválido' });
+  if (client.archived_at) return res.status(409).json(archivedClientPayload());
 
   const {
     chatbot_enabled,
@@ -4672,6 +4800,7 @@ app.post('/client/:token/disconnect', async (req, res) => {
   const token = req.params.token;
   const client = await getClientByToken(token);
   if (!client) return res.status(404).json({ error: 'Link inválido' });
+  if (client.archived_at) return res.status(409).json(archivedClientPayload());
 
   // Call Evolution API logout
   const { status, data } = await evoFetch(`/instance/logout/${client.instance_name}`, { method: 'DELETE' });

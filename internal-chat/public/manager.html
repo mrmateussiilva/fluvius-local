@@ -355,6 +355,7 @@
   .company-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 16px; }
   .company-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; }
   .company-card:hover { border-color: #4b5563; }
+  .company-card.archived { border-color: #f8717155; opacity: 0.86; }
   .company-top { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; margin-bottom: 14px; }
   .company-title { font-size: 16px; font-weight: 700; margin-bottom: 4px; }
   .company-meta { color: var(--muted); font-size: 12px; line-height: 1.6; word-break: break-word; }
@@ -363,6 +364,13 @@
   .company-kpi span { display: block; color: var(--muted); font-size: 11px; margin-bottom: 4px; }
   .company-kpi strong { display: block; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .company-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+  .company-toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .toggle-row { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; }
+  .toggle-row input { accent-color: var(--green); }
+  .archived-banner { background: var(--red-dim); border: 1px solid #f8717155; border-radius: 8px; color: var(--red); padding: 12px; font-size: 13px; line-height: 1.5; margin-bottom: 14px; }
+  .danger-zone { border: 1px solid #f8717144; border-radius: var(--radius); padding: 14px; margin-top: 18px; background: #dc262611; }
+  .danger-zone h3 { color: var(--red); font-size: 14px; margin-bottom: 6px; }
+  .danger-zone p { color: var(--muted); font-size: 12px; line-height: 1.5; margin: 0 0 12px; }
   .ops-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
   .ops-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; min-width: 0; }
   .ops-card span { display: block; color: var(--muted); font-size: 12px; margin-bottom: 8px; }
@@ -458,7 +466,11 @@
       <h2 class="section-title">Empresas</h2>
       <p class="section-subtitle">Painel privado para provisionar empresas, canais, agentes e suporte técnico.</p>
     </div>
-    <div style="display:flex;gap:10px">
+    <div class="company-toolbar">
+      <label class="toggle-row">
+        <input type="checkbox" id="showArchivedClients" onchange="toggleArchivedCompanies(this.checked)" />
+        Mostrar arquivadas
+      </label>
       <button class="btn btn-ghost" onclick="loadClients()">Atualizar</button>
       <button class="btn btn-primary" onclick="openClientModal()">Nova empresa</button>
     </div>
@@ -694,7 +706,10 @@
     reset_agent_password: 'Não foi possível redefinir a senha do agente.',
     rename_channel: 'Não foi possível renomear a conexão WhatsApp.',
     update_crm_stage: 'Não foi possível atualizar a etapa do lead.',
+    archive_client: 'Não foi possível arquivar a empresa.',
+    restore_client: 'Não foi possível restaurar a empresa.',
   };
+  let showArchivedCompanies = false;
 
   function requireLogin() {
     document.body.classList.add('auth-required');
@@ -778,6 +793,11 @@
     if (tab === 'instances') loadInstances();
   }
 
+  function toggleArchivedCompanies(checked) {
+    showArchivedCompanies = Boolean(checked);
+    loadClients();
+  }
+
   async function checkHealth() {
     document.getElementById('healthModal').classList.remove('hidden');
     const content = document.getElementById('healthContent');
@@ -842,10 +862,13 @@
     summary.innerHTML = '';
     wrap.innerHTML = `<div class="loading-wrap"><span class="spinner"></span> Carregando...</div>`;
     try {
-      const r = await apiFetch(`${API}/clients`);
+      const query = showArchivedCompanies ? '?include_archived=true' : '';
+      const r = await apiFetch(`${API}/clients${query}`);
       const clients = await r.json();
       if (!clients.length) {
-        wrap.innerHTML = `<div class="empty-state"><h3>Nenhuma empresa cadastrada</h3><p>Crie a primeira empresa para liberar o painel de atendimento e a conexão WhatsApp.</p></div>`;
+        wrap.innerHTML = showArchivedCompanies
+          ? `<div class="empty-state"><h3>Nenhuma empresa cadastrada</h3><p>Crie a primeira empresa para liberar o painel de atendimento e a conexão WhatsApp.</p></div>`
+          : `<div class="empty-state"><h3>Nenhuma empresa ativa</h3><p>Crie uma empresa ou marque “Mostrar arquivadas” para revisar empresas arquivadas.</p></div>`;
         return;
       }
       summary.innerHTML = renderOpsSummary(clients);
@@ -860,13 +883,15 @@
   }
 
   function renderOpsSummary(clients) {
-    const total = clients.length;
-    const connected = clients.filter(c => c.status === 'connected').length;
-    const pending = clients.filter(c => c.status !== 'connected').length;
-    const withFluvius = clients.filter(c => c.chatwoot_account_id).length;
+    const active = clients.filter(c => !c.archived_at);
+    const archived = clients.filter(c => c.archived_at).length;
+    const total = active.length;
+    const connected = active.filter(c => c.status === 'connected').length;
+    const pending = active.filter(c => c.status !== 'connected').length;
+    const withFluvius = active.filter(c => c.chatwoot_account_id).length;
     return `
       <div class="ops-summary">
-        <div class="ops-card"><span>Empresas</span><strong>${total}</strong><small>Total provisionado no Fluvius</small></div>
+        <div class="ops-card"><span>Empresas ativas</span><strong>${total}</strong><small>${archived ? `${archived} arquivada(s) fora da operação` : 'Operação atual no Fluvius'}</small></div>
         <div class="ops-card"><span>WhatsApp conectado</span><strong>${connected}</strong><small>Prontas para atendimento</small></div>
         <div class="ops-card"><span>Pendências</span><strong>${pending}</strong><small>Exigem conexão ou revisão</small></div>
         <div class="ops-card"><span>Contas Fluvius</span><strong>${withFluvius}</strong><small>Painéis de atendimento criados</small></div>
@@ -899,23 +924,26 @@
   }
 
   function companyCard(c) {
+    const isArchived = Boolean(c.archived_at);
     const link = `${CHAT_BASE}/onboard/${c.token}`;
     const date = new Date(c.created_at).toLocaleDateString('pt-BR');
     const chatwootBase = c.chatwoot_url || 'https://fluvius.finderbit.com.br';
     const chatwootUrl = c.chatwoot_account_id ? `${chatwootBase}/app/accounts/${c.chatwoot_account_id}/dashboard` : chatwootBase;
     const channelName = c.channel_display_name || c.instance_name || 'WhatsApp principal';
-    const primaryAction = c.status === 'connected'
+    const primaryAction = isArchived
+      ? `<button class="btn btn-primary btn-sm" onclick="restoreClient(${c.id}, '${escapeAttr(c.name)}', this)">Restaurar</button>`
+      : c.status === 'connected'
       ? `<a class="btn btn-primary btn-sm" href="${chatwootUrl}" target="_blank" style="text-decoration:none">Abrir atendimento</a>`
       : `<a class="btn btn-primary btn-sm" href="${link}" target="_blank" style="text-decoration:none">Conectar WhatsApp</a>`;
     return `
-      <div class="company-card">
+      <div class="company-card ${isArchived ? 'archived' : ''}">
         <div class="company-top">
           <div>
             <div class="company-title">${c.name}</div>
             <div class="company-meta">${c.chatwoot_user_email || c.email || 'Admin nao definido'}</div>
-            <div class="company-meta">Criada em ${date}</div>
+            <div class="company-meta">${isArchived ? `Arquivada em ${new Date(c.archived_at).toLocaleDateString('pt-BR')}` : `Criada em ${date}`}</div>
           </div>
-          ${statusBadge(c.status)}
+          ${isArchived ? statusBadge('archived') : statusBadge(c.status)}
         </div>
         <div class="company-kpis">
           <div class="company-kpi"><span>Canal</span><strong>${escapeHtml(channelName)}</strong></div>
@@ -925,11 +953,11 @@
         <div class="company-actions">
           ${primaryAction}
           <button class="btn btn-ghost btn-sm" onclick="openCompany(${c.id})">Ver empresa</button>
-          ${c.chatwoot_account_id ? `<button class="btn btn-ghost btn-sm" onclick="generateClientAdminPasswordResetLink(${c.id}, '${escapeAttr(c.chatwoot_user_email || c.email || 'admin')}', this)">Link senha admin</button>` : ''}
-          <a class="btn btn-ghost btn-sm" href="${chatwootUrl}" target="_blank" style="text-decoration:none">Fluvius</a>
-          <a class="btn btn-ghost btn-sm" href="${CHAT_BASE}/client/${c.token}" target="_blank" style="text-decoration:none">⚙️ Configurar Bot</a>
-          <a class="btn btn-ghost btn-sm" href="${link}" target="_blank" style="text-decoration:none">Onboarding</a>
-          <button class="btn btn-ghost btn-sm" onclick="copyLink('${link}', this)">Copiar onboarding</button>
+          ${!isArchived && c.chatwoot_account_id ? `<button class="btn btn-ghost btn-sm" onclick="generateClientAdminPasswordResetLink(${c.id}, '${escapeAttr(c.chatwoot_user_email || c.email || 'admin')}', this)">Link senha admin</button>` : ''}
+          ${!isArchived ? `<a class="btn btn-ghost btn-sm" href="${chatwootUrl}" target="_blank" style="text-decoration:none">Fluvius</a>` : ''}
+          ${!isArchived ? `<a class="btn btn-ghost btn-sm" href="${CHAT_BASE}/client/${c.token}" target="_blank" style="text-decoration:none">⚙️ Configurar Bot</a>` : ''}
+          ${!isArchived ? `<a class="btn btn-ghost btn-sm" href="${link}" target="_blank" style="text-decoration:none">Onboarding</a>` : ''}
+          ${!isArchived ? `<button class="btn btn-ghost btn-sm" onclick="copyLink('${link}', this)">Copiar onboarding</button>` : ''}
         </div>
       </div>
     `;
@@ -958,15 +986,19 @@
   }
 
   function renderCompany(c) {
+    const isArchived = Boolean(c.archived_at);
     const onboardLink = `${CHAT_BASE}/onboard/${c.token}`;
     const chatwootAccountUrl = `${c.chatwoot_url}/app/accounts/${c.chatwoot_account_id}/dashboard`;
     const pendingActions = companyPendingActions(c, chatwootAccountUrl, onboardLink);
     const channelName = c.channel_display_name || c.instance_name || 'WhatsApp principal';
     document.getElementById('companyTitle').textContent = c.name;
-    document.getElementById('companySubtitle').textContent = c.status === 'connected'
+    document.getElementById('companySubtitle').textContent = isArchived
+      ? 'Empresa arquivada. Dados preservados e WhatsApp desconectado.'
+      : c.status === 'connected'
       ? 'Operação pronta para atendimento no Fluvius.'
       : 'Empresa provisionada, aguardando conclusão da conexão WhatsApp.';
     document.getElementById('companyContent').innerHTML = `
+      ${isArchived ? archivedBanner(c) : ''}
       <div class="panel-map">
         <div class="panel-box">
           <strong>Cliente entra no Fluvius</strong>
@@ -977,31 +1009,35 @@
           <p>Esta tela é privada da revenda: conexão WhatsApp, criação de agentes, senhas, diagnóstico e manutenção.</p>
         </div>
       </div>
-      ${pendingActions}
+      ${!isArchived ? pendingActions : ''}
       <div class="detail-grid">
         <div class="detail-box"><span>Painel da empresa</span><strong><a href="${chatwootAccountUrl}" target="_blank" style="color:var(--accent)">${chatwootAccountUrl}</a></strong></div>
         <div class="detail-box"><span>Admin da empresa</span><strong>${c.chatwoot_user_email || c.email || '—'}</strong></div>
         <div class="detail-box"><span>Canal WhatsApp</span><strong>${escapeHtml(channelName)}</strong></div>
-        <div class="detail-box"><span>Status WhatsApp</span><strong>${statusBadge(c.status)}</strong></div>
+        <div class="detail-box"><span>Status</span><strong>${isArchived ? statusBadge('archived') : statusBadge(c.status)}</strong></div>
         <div class="detail-box"><span>Número conectado</span><strong>${c.phone || 'Aguardando conexão'}</strong></div>
         <div class="detail-box"><span>Link de conexão WhatsApp</span><strong><a href="${onboardLink}" target="_blank" style="color:var(--accent)">${onboardLink}</a></strong></div>
         <div class="detail-box"><span>Instância técnica</span><code>${c.instance_name || '—'}</code></div>
       </div>
       <div class="company-actions" style="margin-bottom:18px">
-        <a class="btn btn-primary btn-sm" href="${chatwootAccountUrl}" target="_blank" style="text-decoration:none">Abrir Fluvius da empresa</a>
-        <a class="btn btn-ghost btn-sm" href="${CHAT_BASE}/client/${c.token}" target="_blank" style="text-decoration:none">⚙️ Configurar Bot</a>
-        <button class="btn btn-ghost btn-sm" onclick="copyLink('${CHAT_BASE}/client/${c.token}', this)">Copiar link do Painel</button>
-        <a class="btn btn-ghost btn-sm" href="${onboardLink}" target="_blank" style="text-decoration:none">Abrir onboarding WhatsApp</a>
-        <button class="btn btn-ghost btn-sm" onclick="copyCompanyAccess(${c.id})">Copiar acesso</button>
-        <button class="btn btn-ghost btn-sm" onclick="renameCompanyChannel(${c.id}, '${escapeAttr(channelName)}', this)">Renomear conexão</button>
-        <button class="btn btn-ghost btn-sm" onclick="generateClientAdminPasswordResetLink(${c.id}, '${escapeAttr(c.chatwoot_user_email || c.email || 'admin')}', this)">Gerar link de senha do admin</button>
-        <button class="btn btn-ghost btn-sm" onclick="openAgentsModal(${c.id}, '${escapeAttr(c.name)}')">Adicionar agentes</button>
-        <button class="btn btn-ghost btn-sm" onclick="importHistory(${c.id}, '${escapeAttr(c.name)}', this)">Sync histórico leve</button>
+        ${isArchived
+          ? `<button class="btn btn-primary btn-sm" onclick="restoreClient(${c.id}, '${escapeAttr(c.name)}', this)">Restaurar empresa</button>`
+          : `
+            <a class="btn btn-primary btn-sm" href="${chatwootAccountUrl}" target="_blank" style="text-decoration:none">Abrir Fluvius da empresa</a>
+            <a class="btn btn-ghost btn-sm" href="${CHAT_BASE}/client/${c.token}" target="_blank" style="text-decoration:none">⚙️ Configurar Bot</a>
+            <button class="btn btn-ghost btn-sm" onclick="copyLink('${CHAT_BASE}/client/${c.token}', this)">Copiar link do Painel</button>
+            <a class="btn btn-ghost btn-sm" href="${onboardLink}" target="_blank" style="text-decoration:none">Abrir onboarding WhatsApp</a>
+            <button class="btn btn-ghost btn-sm" onclick="copyCompanyAccess(${c.id})">Copiar acesso</button>
+            <button class="btn btn-ghost btn-sm" onclick="renameCompanyChannel(${c.id}, '${escapeAttr(channelName)}', this)">Renomear conexão</button>
+            <button class="btn btn-ghost btn-sm" onclick="generateClientAdminPasswordResetLink(${c.id}, '${escapeAttr(c.chatwoot_user_email || c.email || 'admin')}', this)">Gerar link de senha do admin</button>
+            <button class="btn btn-ghost btn-sm" onclick="openAgentsModal(${c.id}, '${escapeAttr(c.name)}')">Adicionar agentes</button>
+            <button class="btn btn-ghost btn-sm" onclick="importHistory(${c.id}, '${escapeAttr(c.name)}', this)">Sync histórico leve</button>
+          `}
       </div>
 
       <div style="display:flex;align-items:center;justify-content:space-between;margin:24px 0 12px">
         <h3 style="font-size:14px;margin:0">Conexões WhatsApp Extras</h3>
-        <button class="btn btn-ghost btn-sm" onclick="openAddInboxModal(${c.id})">+ Adicionar conexão</button>
+        ${!isArchived ? `<button class="btn btn-ghost btn-sm" onclick="openAddInboxModal(${c.id})">+ Adicionar conexão</button>` : ''}
       </div>
       <div id="companyInboxesContent">
         <div class="loading-wrap"><span class="spinner"></span> Carregando conexões...</div>
@@ -1009,7 +1045,7 @@
 
       <div style="display:flex;align-items:center;justify-content:space-between;margin:24px 0 12px">
         <h3 style="font-size:14px;margin:0">Automações</h3>
-        <button class="btn btn-ghost btn-sm" onclick="openAddAutomationModal(${c.id})">+ Nova regra</button>
+        ${!isArchived ? `<button class="btn btn-ghost btn-sm" onclick="openAddAutomationModal(${c.id})">+ Nova regra</button>` : ''}
       </div>
       <div id="companyAutomationsContent">
         <div class="loading-wrap"><span class="spinner"></span> Carregando automações...</div>
@@ -1036,6 +1072,13 @@
       <div style="margin-top:18px;color:var(--muted);font-size:12px;line-height:1.6">
         A empresa deve usar o Fluvius para atendimento e CRM. O Manager fica reservado para sua operacao privada de revenda, provisionamento, conexao WhatsApp e manutencao.
       </div>
+      ${!isArchived ? `
+        <section class="danger-zone">
+          <h3>Zona de perigo</h3>
+          <p>Arquivar remove a empresa da operação ativa e desconecta o WhatsApp na Evolution. Dados, conta Fluvius, conversas e usuários ficam preservados.</p>
+          <button class="btn btn-danger" onclick="archiveClient(${c.id}, '${escapeAttr(c.name)}', this)">Excluir empresa</button>
+        </section>
+      ` : ''}
     `;
     loadCompanyInboxes(c.id);
     loadCompanyAutomations(c.id);
@@ -1064,6 +1107,18 @@
             ${href ? `<a class="btn btn-ghost btn-sm" href="${href}" target="_blank" style="text-decoration:none">Abrir</a>` : ''}
           </div>
         `).join('')}
+      </div>
+    `;
+  }
+
+  function archivedBanner(c) {
+    const archivedAt = c.archived_at ? new Date(c.archived_at).toLocaleString('pt-BR') : 'data não registrada';
+    const reason = c.archived_reason ? `<br><strong>Motivo:</strong> ${escapeHtml(c.archived_reason)}` : '';
+    return `
+      <div class="archived-banner">
+        <strong>Empresa arquivada em ${archivedAt}.</strong>
+        O WhatsApp foi desconectado e a empresa saiu da operação ativa. A conta Fluvius, conversas e usuários foram preservados.
+        ${reason}
       </div>
     `;
   }
@@ -1773,11 +1828,61 @@
     }
   }
 
-  async function deleteClient(id, name) {
-    if (!confirm(`Excluir a empresa "${name}"? A instância WhatsApp e a conta Fluvius também serão removidas.`)) return;
-    await apiFetch(`${API}/clients/${id}`, { method: 'DELETE' });
-    toast(`${name} excluído`, 'error');
-    loadClients();
+  async function archiveClient(id, name, btn) {
+    const typed = prompt(`Para arquivar "${name}", digite exatamente o nome da empresa.`);
+    if (typed !== name) {
+      if (typed !== null) toast('Nome diferente. Arquivamento cancelado.', 'error');
+      return;
+    }
+    const reason = prompt('Motivo do arquivamento (opcional):') || '';
+    const original = btn?.innerHTML || 'Excluir empresa';
+    if (btn) {
+      btn.innerHTML = '<span class="spinner"></span> Arquivando...';
+      btn.disabled = true;
+    }
+    try {
+      const r = await apiFetch(`${API}/clients/${id}/archive`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason }),
+      });
+      const data = await readJsonResponse(r);
+      if (!r.ok) throw new Error(readableError(data));
+      toast(`${name} arquivada. WhatsApp desconectado.`, 'error');
+      closeCompanyModal();
+      await loadClients();
+    } catch (e) {
+      toast(`Erro: ${e.message}`, 'error');
+    } finally {
+      if (btn) {
+        btn.innerHTML = original;
+        btn.disabled = false;
+      }
+    }
+  }
+
+  async function restoreClient(id, name, btn) {
+    if (!confirm(`Restaurar "${name}" para a lista de empresas ativas? O WhatsApp precisará ser reconectado pelo onboarding.`)) return;
+    const original = btn?.innerHTML || 'Restaurar';
+    if (btn) {
+      btn.innerHTML = '<span class="spinner"></span> Restaurando...';
+      btn.disabled = true;
+    }
+    try {
+      const r = await apiFetch(`${API}/clients/${id}/restore`, { method: 'POST' });
+      const data = await readJsonResponse(r);
+      if (!r.ok) throw new Error(readableError(data));
+      toast(`${name} restaurada. Reconecte o WhatsApp pelo onboarding.`);
+      closeCompanyModal();
+      await loadClients();
+    } catch (e) {
+      toast(`Erro: ${e.message}`, 'error');
+    } finally {
+      if (btn) {
+        btn.innerHTML = original;
+        btn.disabled = false;
+      }
+    }
   }
 
   async function importHistory(id, name, btn) {
@@ -1834,6 +1939,7 @@
       connected: ['badge-open', '✓ Conectado'],
       pending: ['badge-connecting', '⟳ Aguardando'],
       disconnected: ['badge-close', '✗ Desconectado'],
+      archived: ['badge-close', 'Arquivada'],
     };
     const [cls, label] = map[status] || ['badge-unknown', status];
     return `<span class="badge ${cls}">${label}</span>`;

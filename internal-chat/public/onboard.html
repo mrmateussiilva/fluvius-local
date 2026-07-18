@@ -377,6 +377,7 @@
       if (!r.ok) return showInvalid(data.error || 'Link inválido');
       if (data.chatwootUrl) window.CHATWOOT_URL = data.chatwootUrl;
       document.getElementById('clientNameBadge').textContent = data.name;
+      if (data.status === 'archived') return showArchived();
       if (data.status === 'connected') return showSuccess(data.phone, data.name);
       showConnect(data.name);
     } catch {
@@ -390,6 +391,16 @@
         <div class="icon">🔗</div>
         <h2>Link inválido</h2>
         <p>${msg}</p>
+      </div>
+    `;
+  }
+
+  function showArchived() {
+    document.getElementById('cardBody').innerHTML = `
+      <div class="invalid-screen">
+        <div class="icon">⛔</div>
+        <h2>Empresa arquivada</h2>
+        <p>Este WhatsApp foi removido da operação ativa. Fale com o administrador para restaurar a empresa no Manager antes de reconectar.</p>
       </div>
     `;
   }
