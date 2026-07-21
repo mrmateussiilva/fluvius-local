@@ -1,9 +1,16 @@
+x-default-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
 services:
 
   postgres:
     image: pgvector/pgvector:pg16
     container_name: postgres
     restart: unless-stopped
+    logging: *default-logging
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -23,6 +30,8 @@ services:
     image: redis:7-alpine
     container_name: redis
     restart: unless-stopped
+    logging: *default-logging
+    command: ["redis-server", "--appendonly", "yes"]
     # Sem "ports" — redis nao fica exposto na internet
     volumes:
       - redis_data:/data
@@ -44,6 +53,7 @@ services:
         VITE_FLUVIUS_AGENT_SIMPLE_MODE: ${VITE_FLUVIUS_AGENT_SIMPLE_MODE:-auto}
     container_name: chatwoot
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
       postgres:
         condition: service_healthy
@@ -75,7 +85,7 @@ services:
 
       DEFAULT_LOCALE: ${CHATWOOT_DEFAULT_LOCALE}
 
-      REDIS_URL: redis://redis:6379
+      REDIS_URL: redis://redis:6379/0
 
       POSTGRES_HOST: postgres
       POSTGRES_PORT: 5432
@@ -133,6 +143,7 @@ services:
         VITE_INTERNAL_CHAT_API_URL: ${INTERNAL_CHAT_PUBLIC_URL}
     container_name: chatwoot-sidekiq
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
       postgres:
         condition: service_healthy
@@ -155,7 +166,7 @@ services:
 
       DEFAULT_LOCALE: ${CHATWOOT_DEFAULT_LOCALE}
 
-      REDIS_URL: redis://redis:6379
+      REDIS_URL: redis://redis:6379/0
 
       POSTGRES_HOST: postgres
       POSTGRES_PORT: 5432
@@ -200,6 +211,7 @@ services:
     image: evoapicloud/evolution-api:v2.3.7
     container_name: evolution
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
       postgres:
         condition: service_healthy
@@ -219,11 +231,15 @@ services:
       DATABASE_ENABLED: "true"
       DATABASE_PROVIDER: postgresql
       DATABASE_CONNECTION_URI: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${EVOLUTION_POSTGRES_DB}
+      # Credenciais/sessao da instancia persistidas no Postgres, nao apenas em cache.
+      DATABASE_SAVE_DATA_INSTANCE: "true"
 
       CACHE_REDIS_ENABLED: "true"
-      CACHE_REDIS_URI: redis://redis:6379/0
+      CACHE_REDIS_URI: redis://redis:6379/1
 
-      LOG_LEVEL: ERROR
+      # A Evolution trata LOG_LEVEL como lista de niveis, nao como limiar.
+      # Manter INFO temporariamente para diagnosticar desconexoes.
+      LOG_LEVEL: ERROR,WARN,INFO
 
       CONFIG_SESSION_PHONE_CLIENT: ${EVOLUTION_SESSION_PHONE_CLIENT}
 
@@ -239,6 +255,7 @@ services:
       context: ./internal-chat
     container_name: fluvius-internal-chat
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
       postgres:
         condition: service_healthy
